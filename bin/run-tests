@@ -1,0 +1,27 @@
+#!/bin/sh -e
+
+log() {
+  /bin/echo -e "\n\x1b[1;33m[+] $*\x1b[0m";
+}
+
+log "Building"
+cabal build -O0 --enable-tests --ghc-option=-Werror
+
+log "Testing"
+cabal test -O0 --test-show-details=direct
+cabal check
+
+log "Doctests"
+cabal repl --with-ghc=doctest --ghc-options=-Wno-unused-packages
+
+log "Formatting"
+fourmolu -i src/ app/ test/
+
+log "Linting"
+hlint .
+
+log "Check for diff"
+if [ ! -z "$(git status --porcelain)" ]; then
+  git status
+  exit 1
+fi

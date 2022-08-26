@@ -1,0 +1,355 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.35.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           butler
+version:        0.0.1.0
+synopsis:       At your service.
+description:    At your service..
+category:       Development
+homepage:       https://github.com/TristanCacqueray/butler#readme
+bug-reports:    https://github.com/TristanCacqueray/butler/issues
+author:         Tristan Cacqueray
+maintainer:     tdecacqu@redhat.com
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/TristanCacqueray/butler
+
+library
+  exposed-modules:
+      Butler
+      Butler.Prelude
+  other-modules:
+      Paths_butler
+  hs-source-dirs:
+      src
+  default-extensions:
+      OverloadedStrings
+      NamedFieldPuns
+      ImportQualifiedPost
+      LambdaCase
+      ViewPatterns
+      MultiWayIf
+      QuasiQuotes
+      DeriveGeneric
+      DerivingVia
+      GeneralizedNewtypeDeriving
+      DuplicateRecordFields
+      RecordWildCards
+      OverloadedStrings
+      OverloadedRecordDot
+      TemplateHaskell
+      DataKinds
+      DeriveAnyClass
+      TypeFamilies
+      BlockArguments
+      OverloadedLabels
+      DerivingStrategies
+      PartialTypeSignatures
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods
+  build-depends:
+      HsOpenSSL
+    , PyF
+    , SHA
+    , aeson
+    , auto-update
+    , base <5
+    , binary
+    , bytestring
+    , case-insensitive
+    , cborg
+    , cborg-json
+    , chart-svg
+    , containers
+    , directory
+    , filepath
+    , generic-lens
+    , hashable
+    , http-api-data
+    , http-types
+    , jose
+    , ki
+    , ki-effectful
+    , ki-unlifted
+    , lens
+    , lens-aeson
+    , lucid
+    , lucid-htmx
+    , lucid-xstatic
+    , mmorph
+    , mtl
+    , network
+    , network-run
+    , one-line-aeson-text
+    , optparse-applicative
+    , posix-pty
+    , process
+    , random
+    , relude
+    , retry
+    , serialise
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-lucid
+    , servant-server
+    , servant-websockets
+    , servant-xstatic
+    , stm
+    , tagged
+    , text
+    , time
+    , transformers
+    , typed-process
+    , unix
+    , unix-time
+    , unliftio
+    , uuid
+    , wai
+    , wai-extra
+    , warp
+    , warp-tls
+    , websockets
+    , witch
+    , xstatic
+    , xstatic-htmx
+    , xstatic-hyperscript
+    , xstatic-novnc
+    , xstatic-remixicon
+    , xstatic-sakura
+    , xstatic-sweetalert2
+    , xstatic-tailwind
+    , xstatic-th
+    , xstatic-winbox
+    , xstatic-xterm
+  default-language: GHC2021
+
+executable butler
+  main-is: Main.hs
+  other-modules:
+      Paths_butler
+  hs-source-dirs:
+      app
+  default-extensions:
+      OverloadedStrings
+      NamedFieldPuns
+      ImportQualifiedPost
+      LambdaCase
+      ViewPatterns
+      MultiWayIf
+      QuasiQuotes
+      DeriveGeneric
+      DerivingVia
+      GeneralizedNewtypeDeriving
+      DuplicateRecordFields
+      RecordWildCards
+      OverloadedStrings
+      OverloadedRecordDot
+      TemplateHaskell
+      DataKinds
+      DeriveAnyClass
+      TypeFamilies
+      BlockArguments
+      OverloadedLabels
+      DerivingStrategies
+      PartialTypeSignatures
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
+  build-depends:
+      HsOpenSSL
+    , PyF
+    , SHA
+    , aeson
+    , auto-update
+    , base <5
+    , binary
+    , butler
+    , bytestring
+    , case-insensitive
+    , cborg
+    , cborg-json
+    , chart-svg
+    , containers
+    , directory
+    , filepath
+    , generic-lens
+    , hashable
+    , http-api-data
+    , http-types
+    , jose
+    , ki
+    , ki-effectful
+    , ki-unlifted
+    , lens
+    , lens-aeson
+    , lucid
+    , lucid-htmx
+    , lucid-xstatic
+    , mmorph
+    , mtl
+    , network
+    , network-run
+    , one-line-aeson-text
+    , optparse-applicative
+    , posix-pty
+    , process
+    , random
+    , relude
+    , retry
+    , serialise
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-lucid
+    , servant-server
+    , servant-websockets
+    , servant-xstatic
+    , stm
+    , tagged
+    , text
+    , time
+    , transformers
+    , typed-process
+    , unix
+    , unix-time
+    , unliftio
+    , uuid
+    , wai
+    , wai-extra
+    , warp
+    , warp-tls
+    , websockets
+    , witch
+    , xstatic
+    , xstatic-htmx
+    , xstatic-hyperscript
+    , xstatic-novnc
+    , xstatic-remixicon
+    , xstatic-sakura
+    , xstatic-sweetalert2
+    , xstatic-tailwind
+    , xstatic-th
+    , xstatic-winbox
+    , xstatic-xterm
+  default-language: GHC2021
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Driver.hs
+  other-modules:
+      Paths_butler
+  hs-source-dirs:
+      test
+  default-extensions:
+      OverloadedStrings
+      NamedFieldPuns
+      ImportQualifiedPost
+      LambdaCase
+      ViewPatterns
+      MultiWayIf
+      QuasiQuotes
+      DeriveGeneric
+      DerivingVia
+      GeneralizedNewtypeDeriving
+      DuplicateRecordFields
+      RecordWildCards
+      OverloadedStrings
+      OverloadedRecordDot
+      TemplateHaskell
+      DataKinds
+      DeriveAnyClass
+      TypeFamilies
+      BlockArguments
+      OverloadedLabels
+      DerivingStrategies
+      PartialTypeSignatures
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
+  build-tool-depends:
+      tasty-discover:tasty-discover
+  build-depends:
+      HsOpenSSL
+    , PyF
+    , SHA
+    , aeson
+    , auto-update
+    , base <5
+    , binary
+    , butler
+    , bytestring
+    , case-insensitive
+    , cborg
+    , cborg-json
+    , chart-svg
+    , containers
+    , directory
+    , filepath
+    , generic-lens
+    , hashable
+    , hspec-expectations
+    , http-api-data
+    , http-types
+    , jose
+    , ki
+    , ki-effectful
+    , ki-unlifted
+    , lens
+    , lens-aeson
+    , lucid
+    , lucid-htmx
+    , lucid-xstatic
+    , mmorph
+    , mtl
+    , network
+    , network-run
+    , one-line-aeson-text
+    , optparse-applicative
+    , posix-pty
+    , process
+    , random
+    , relude
+    , retry
+    , serialise
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-lucid
+    , servant-server
+    , servant-websockets
+    , servant-xstatic
+    , stm
+    , tagged
+    , tasty
+    , tasty-hunit
+    , text
+    , time
+    , transformers
+    , typed-process
+    , unix
+    , unix-time
+    , unliftio
+    , uuid
+    , wai
+    , wai-extra
+    , warp
+    , warp-tls
+    , websockets
+    , witch
+    , xstatic
+    , xstatic-htmx
+    , xstatic-hyperscript
+    , xstatic-novnc
+    , xstatic-remixicon
+    , xstatic-sakura
+    , xstatic-sweetalert2
+    , xstatic-tailwind
+    , xstatic-th
+    , xstatic-winbox
+    , xstatic-xterm
+  default-language: GHC2021
