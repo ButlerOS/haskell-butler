@@ -26,6 +26,10 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.Clock
+      Butler.History
+      Butler.Logger
+      Butler.NatMap
       Butler.Prelude
   other-modules:
       Paths_butler
@@ -244,6 +248,9 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Driver.hs
   other-modules:
+      ClockTest
+      HistoryTest
+      LoggerTest
       Paths_butler
   hs-source-dirs:
       test
