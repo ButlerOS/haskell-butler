@@ -33,11 +33,13 @@ library
       Butler.Logger
       Butler.Memory
       Butler.NatMap
+      Butler.Network
       Butler.OS
       Butler.Prelude
       Butler.Process
       Butler.Processor
       Butler.Storage
+      XStatic.Butler
   other-modules:
       Paths_butler
   hs-source-dirs:
