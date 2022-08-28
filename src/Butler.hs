@@ -1,4 +1,9 @@
 module Butler where
 
+import Butler.Clock
+import Butler.OS
+
 demo :: IO ()
-demo = putStrLn "At your service"
+demo =
+    print =<< withButlerOS do
+        sleep 1800_000
