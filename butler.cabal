@@ -26,8 +26,19 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.App.Clock
+      Butler.App.LogViewer
+      Butler.App.NoVnc
+      Butler.App.ProcessExplorer
+      Butler.App.REPL
+      Butler.App.Seat
+      Butler.App.SessionManager
+      Butler.App.SpeedTest
+      Butler.App.Terminal
+      Butler.App.Timer
       Butler.Buzzer
       Butler.Clock
+      Butler.Desktop
       Butler.Display
       Butler.Events
       Butler.GUI

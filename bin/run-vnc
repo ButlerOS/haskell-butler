@@ -1,0 +1,2 @@
+#!/bin/sh
+nix develop --command nixGLIntel cabal run -O0 butler -- vnc
