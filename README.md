@@ -27,6 +27,7 @@ A window-xp clone with support for multiple "seats":
 
 - [x] Simple invitation system to share the session with other users.
 - [x] Dekstop with a menu and tray bar
+- [x] Window manager
 - [ ] Per user cursor and audio channel
 - [ ] Xterm and Vnc gateway
 
@@ -35,6 +36,6 @@ Usage:
 ```ShellSession
 ./bin/gen-cert
 ./bin/run-vnc
-./bin/run-ghcid
+./bin/run-ghcid "Butler.demoDesktop"
 firefox https://localhost:8080
 ```
