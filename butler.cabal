@@ -30,10 +30,12 @@ library
       Butler.Events
       Butler.History
       Butler.Logger
+      Butler.Memory
       Butler.NatMap
       Butler.Prelude
       Butler.Process
       Butler.Processor
+      Butler.Storage
   other-modules:
       Paths_butler
   hs-source-dirs:
@@ -254,6 +256,7 @@ test-suite spec
       ClockTest
       HistoryTest
       LoggerTest
+      MemoryTest
       ProcessorTest
       Paths_butler
   hs-source-dirs:
