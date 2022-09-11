@@ -38,7 +38,9 @@ library
       Butler.Prelude
       Butler.Process
       Butler.Processor
+      Butler.Session
       Butler.Storage
+      Butler.WebSocket
       XStatic.Butler
   other-modules:
       Paths_butler
