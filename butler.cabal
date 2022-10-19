@@ -28,13 +28,16 @@ library
       Butler
       Butler.Buzzer
       Butler.Clock
+      Butler.Display
       Butler.Events
+      Butler.GUI
       Butler.History
       Butler.Logger
       Butler.Memory
       Butler.NatMap
       Butler.Network
       Butler.OS
+      Butler.Pipe
       Butler.Prelude
       Butler.Process
       Butler.Processor
