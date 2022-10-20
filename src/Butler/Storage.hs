@@ -1,7 +1,7 @@
 module Butler.Storage (
     Storage,
     newStorage,
-    mkDir,
+    scopeStorage,
     syncThread,
 
     -- * Read/Write
@@ -20,27 +20,37 @@ import Prelude hiding (readFile, writeFile)
 import Butler.Clock
 import Butler.Prelude
 
-newtype StorageAddress = StorageAddress ByteString deriving newtype (Eq, Ord, Serialise, IsString, Semigroup)
+newtype StorageAddress = StorageAddress ByteString
+  deriving newtype (Eq, Ord, Serialise, IsString, Semigroup)
+  deriving (Show)
+
+instance From Text StorageAddress where
+  from = StorageAddress . from
 
 data Storage = Storage
     { rootDir :: RawFilePath
-    , journal :: TVar (Map StorageAddress LByteString)
+    , journal :: TVar (Map RawFilePath LByteString)
     , sync :: TMVar ()
     }
 
-newStorage :: RawFilePath -> IO Storage
-newStorage rootDir = do
+prepareRootDir :: MonadIO m => RawFilePath -> m RawFilePath
+prepareRootDir rootDir = liftIO do
     createDirectoryIfMissing True (unsafeFrom rootDir)
-    atomically $ newStorageSTM dir
+    pure dir
   where
     dir
         | "/" `BS.isSuffixOf` rootDir = rootDir
         | otherwise = rootDir <> "/"
 
-mkDir :: MonadIO m => Storage -> StorageAddress -> m StorageAddress
-mkDir storage (StorageAddress path) = liftIO do
-    createDirectoryIfMissing True (unsafeFrom $ storage.rootDir <> path)
-    pure (StorageAddress $ path <> "/")
+newStorage :: MonadIO m => RawFilePath -> m Storage
+newStorage rootDir = do
+    dir <- prepareRootDir rootDir
+    atomically $ newStorageSTM dir
+
+scopeStorage :: MonadIO m => Storage -> StorageAddress -> m Storage
+scopeStorage storage (StorageAddress path) = do
+  dir <- prepareRootDir (storage.rootDir <> path)
+  pure $ storage { rootDir = dir}
 
 newStorageSTM :: RawFilePath -> STM Storage
 newStorageSTM rootDir = do
@@ -58,9 +68,8 @@ syncThread storage fire = forever do
     fire $ length contents
     traverse_ (liftIO . writeJournal) contents
   where
-    writeJournal :: (StorageAddress, LByteString) -> IO ()
-    writeJournal (addr, content) = do
-        BS.writeFile (unsafeFrom $ getStoragePath storage.rootDir addr) (from content)
+    writeJournal :: (RawFilePath, LByteString) -> IO ()
+    writeJournal (path, content) = BS.writeFile (unsafeFrom path) (from content)
 
 getStoragePath :: RawFilePath -> StorageAddress -> RawFilePath
 getStoragePath rootDir (StorageAddress n) = rootDir <> n
@@ -74,5 +83,5 @@ readStorage storage addr = liftIO do
 
 writeStorage :: Storage -> StorageAddress -> LByteString -> STM ()
 writeStorage storage addr obj = do
-    modifyTVar' storage.journal (Map.insert addr obj)
+    modifyTVar' storage.journal (Map.insert (getStoragePath storage.rootDir addr) obj)
     void $ tryPutTMVar storage.sync ()
