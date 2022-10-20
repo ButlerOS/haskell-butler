@@ -348,12 +348,14 @@ desktopProgram appLauncher xinit = startDisplay 8080 \display -> do
             Just n -> pure (wss, n)
             Nothing -> do
                 desktopMVar <- newEmptyMVar
-                void $ spawnProcess (ProgramName $ "desktop-" <> from name) do
+                let desktopID = "desktop-" <> from name
+                os <- asks os
+                desktopStorage <- scopeStorage os.storage (from desktopID)
+                void $ spawnProcess (ProgramName desktopID) $ local (#os . #storage .~ desktopStorage) do
                     processEnv <- ask
-                    baseStorage <- mkDir processEnv.os.storage $ StorageAddress (via @Text name)
 
-                    windows <- snd <$> newProcessMemory (baseStorage <> "wins.bin") (pure newWindows)
-                    (apps, appHistory) <- newProcessMemory (baseStorage <> "apps.bin") (pure mempty)
+                    windows <- snd <$> newProcessMemory "wins.bin" (pure newWindows)
+                    (apps, appHistory) <- newProcessMemory "apps.bin" (pure mempty)
 
                     desktop <- atomically (newDesktop processEnv display name windows appHistory)
                     void $ atomically $ newHandler desktop (tryHandleWinEvent desktop)
