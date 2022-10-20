@@ -28,6 +28,16 @@
     in {
       packages."x86_64-linux".default =
         pkgs.haskell.lib.justStaticExecutables hsPkgs.butler;
+
+      apps."x86_64-linux".electron = rec {
+        type = "app";
+        script = pkgs.writers.writeBash "butler-electron.sh" ''
+          set -xe
+          exec ${pkgs.nixGLIntel}/bin/nixGLIntel ${pkgs.electron}/bin/electron ${self}/bin/electron.js $*
+        '';
+        program = builtins.toString script;
+      };
+
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
         buildInputs = with pkgs;

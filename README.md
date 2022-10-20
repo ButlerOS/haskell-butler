@@ -39,3 +39,9 @@ Usage:
 ./bin/run-ghcid "Butler.demoDesktop"
 firefox https://localhost:8080
 ```
+
+Start electron client (Alt-F4 to quit):
+
+```ShellSession
+nix run .#electron https://localhost:8080
+```
