@@ -224,6 +224,7 @@ menuHtml :: Monad m => WinID -> HtmlT m ()
 menuHtml (WinID winId) = do
     with ul_ [class_ "list-disc"] do
         mkLauncher "clock"
+        mkLauncher "minesweeper"
         mkLauncher "ps"
         mkLauncher "log-viewer"
         mkLauncher "term"

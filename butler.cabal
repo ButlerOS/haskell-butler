@@ -27,6 +27,7 @@ library
   exposed-modules:
       Butler
       Butler.App.Clock
+      Butler.App.MineSweeper
       Butler.App.LogViewer
       Butler.App.NoVnc
       Butler.App.ProcessExplorer

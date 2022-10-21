@@ -9,6 +9,7 @@ import Butler.Prelude
 
 import Butler.App.Clock
 import Butler.App.LogViewer
+import Butler.App.MineSweeper (mineSweeperApp)
 import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
 import Butler.App.Seat
@@ -91,6 +92,7 @@ demoDesktop = do
         "app-term" -> Just <$> termApp desktop winID
         "app-ps" -> Just <$> peApp desktop winID
         "app-vnc" -> Just <$> vncApp desktop winID
+        "app-minesweeper" -> Just <$> mineSweeperApp desktop winID
         _ -> pure Nothing
 
 demo :: IO ()
