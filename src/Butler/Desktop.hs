@@ -224,6 +224,7 @@ menuHtml :: Monad m => WinID -> HtmlT m ()
 menuHtml (WinID winId) = do
     with ul_ [class_ "list-disc"] do
         mkLauncher "clock"
+        mkLauncher "minesweeper"
         mkLauncher "ps"
         mkLauncher "log-viewer"
         mkLauncher "term"
@@ -347,13 +348,12 @@ desktopProgram appLauncher xinit = startDisplay 8080 \display -> do
         getDesktop name = modifyMVar workspaces $ \wss -> case Map.lookup name wss of
             Just n -> pure (wss, n)
             Nothing -> do
-                desktopMVar <- newEmptyMVar
+                desktopMVar <- newEmptyMVar 
                 let desktopID = "desktop-" <> from name
                 os <- asks os
                 desktopStorage <- scopeStorage os.storage (from desktopID)
                 void $ spawnProcess (ProgramName desktopID) $ local (#os . #storage .~ desktopStorage) do
                     processEnv <- ask
-
                     windows <- snd <$> newProcessMemory "wins.bin" (pure newWindows)
                     (apps, appHistory) <- newProcessMemory "apps.bin" (pure mempty)
 
@@ -365,7 +365,7 @@ desktopProgram appLauncher xinit = startDisplay 8080 \display -> do
                     xinit desktop
 
                     case Map.toList apps of
-                        [] -> do
+                        [] -> do 
                             (winID, _) <- atomically $ newWindow desktop.windows "Welcome"
                             addWinApp desktop winID =<< mkWelcome winID
                         xs -> forM_ xs $ \(winID, prog) -> do

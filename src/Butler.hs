@@ -23,6 +23,7 @@ import Data.ByteString qualified as BS
 import Data.Text qualified as Text
 import System.Environment (getArgs)
 import System.Process.Typed
+import Butler.App.MineSweeper (mineSweeperApp)
 
 startVnc :: ProcessIO ()
 startVnc = do
@@ -65,13 +66,17 @@ demoDesktop = do
   where
     runDemo =
         withButlerOS do
-            desktop <- superviseProcess "desktop" $ desktopProgram appLauncher \desktop -> do
+            desktop <- superviseProcess "desktop" $ desktopProgram appLauncher $ \desktop -> do
                 -- addApp desktop =<< peApp desktop
                 -- addApp desktop =<< clockApp desktop
                 -- addChannelApp desktop =<< speedTestApp desktop
                 when False do
                     (winID, _) <- atomically $ newWindow desktop.windows "Clock"
                     addWinApp desktop winID =<< clockApp desktop winID
+
+                when False do
+                    (winID, _) <- atomically $ newWindow desktop.windows "MineSweeper"
+                    addWinApp desktop winID =<< mineSweeperApp desktop winID
 
                 when False do
                     (winID, _) <- atomically $ newWindow desktop.windows "PS"
@@ -91,6 +96,7 @@ demoDesktop = do
         "app-term" -> Just <$> termApp desktop winID
         "app-ps" -> Just <$> peApp desktop winID
         "app-vnc" -> Just <$> vncApp desktop winID
+        "app-minesweeper" -> Just <$> mineSweeperApp desktop winID
         _ -> pure Nothing
 
 demo :: IO ()
