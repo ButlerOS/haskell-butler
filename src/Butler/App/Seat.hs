@@ -21,14 +21,15 @@ sessionColor session =
 
 renderSeat :: DesktopClient -> HtmlT STM ()
 renderSeat dclient = do
-    let color = "color : " <> sessionColor dclient.client.session
+    let session = dclient.client.session
+        color = "color : " <> sessionColor session.sessionID
         Pid idx = dclient.client.process.pid
     with
         i_
         [ id_ ("seat-" <> showT idx)
         , class_ "ri-user-fill bg-stone-600 p-0.5"
         , style_ color
-        , title_ "username"
+        , title_ (from session.username)
         ]
         mempty
     with
@@ -39,6 +40,52 @@ renderSeat dclient = do
         ]
         "°"
     with div_ [id_ "seat-script"] mempty
+
+renderCursorToggle :: SessionID -> Bool -> HtmlT STM ()
+renderCursorToggle sessionID status = do
+    let color = "color : " <> sessionColor sessionID
+        bg = if status then "bg-stone-400" else "bg-stone-800"
+    with
+        i_
+        [ style_ color
+        , class_ $ "ri-cursor-fill " <> bg <> " rounded-xl px-0.5 text-bold text-xl"
+        , title_ (if status then "Hide cursor" else "Show cursor")
+        , wsSend
+        , hxTrigger_ "click"
+        , id_ "toggle-cursor"
+        , encodeVal ["running" .= status]
+        ]
+        do
+            script_ $ "seatCursor = " <> if status then "true" else "false" <> ";"
+
+renderSeats :: Desktop -> Natural -> SessionID -> HtmlT STM ()
+renderSeats desktop chan sessionID = do
+    with div_ [id_ "seats", class_ "flex content-center mr-1"] do
+        currentSeats <- lift (NM.elems desktop.clients)
+        traverse_ renderSeat currentSeats
+        renderCursorToggle sessionID True
+        with
+            i_
+            [ class_ "ri-keyboard-box-fill bg-stone-400 rounded-xl px-0.5 text-bold text-xl"
+            , hyper_ $
+                Text.unlines
+                    [ "on click"
+                    , popup "Not Implemented"
+                    ]
+            ]
+            mempty
+        with
+            i_
+            [ class_ "ri-volume-up-line bg-stone-800 rounded-xl px-0.5 text-bold text-xl"
+            , hyper_ $
+                Text.unlines
+                    [ "on click"
+                    , popup "Not Implemented"
+                    ]
+            ]
+            mempty
+
+        script_ (seatClient chan)
 
 seatApp :: Desktop -> ProcessIO GuiApp
 seatApp desktop = do
@@ -66,64 +113,8 @@ seatApp desktop = do
                 with div_ [id_ $ "cursor-" <> showT idx, hxSwapOob_ "delete"] mempty
                 with div_ [id_ $ "seat-" <> showT idx, hxSwapOob_ "delete"] mempty
 
-        {-
-                broadcastSeats :: (Natural, DesktopClient) -> (Int, Int) -> ProcessIO ()
-                broadcastSeats (_idx, fromSeat) pos = do
-                    atomically $ writeTVar fromSeat.cursor (Just pos)
-                    currentSeats <- atomically $ NM.elemsIndex seats.seats
-                    forM_ currentSeats $ \(idx, seat) -> do
-                        let body = object ["seat" .= idx, "pos" .= pos]
-                        v <- try (clientMessage seat.client (from $ encodeJSON body))
-                        case v of
-                            Left (_ :: SomeException) -> do
-                                logError "seat down" ["seat" .= seat]
-                                atomically $ removeSeat seats (idx, seat)
-                            Right () -> pure ()
-        -}
-        cursorToggle session status = do
-            let color = "color : " <> sessionColor session
-                bg = if status then "bg-stone-400" else "bg-stone-800"
-            with
-                i_
-                [ style_ color
-                , class_ $ "ri-cursor-fill " <> bg <> " rounded-xl px-0.5 text-bold text-xl"
-                , title_ (if status then "Hide cursor" else "Show cursor")
-                , wsSend
-                , hxTrigger_ "click"
-                , id_ "toggle-cursor"
-                , encodeVal ["running" .= status]
-                ]
-                do
-                    script_ $ "seatCursor = " <> if status then "true" else "false" <> ";"
-
         tray :: DisplayClient -> HtmlT STM ()
-        tray client = do
-            with div_ [id_ "seats", class_ "flex content-center mr-1"] do
-                currentSeats <- lift (NM.elems desktop.clients)
-                traverse_ renderSeat currentSeats
-                cursorToggle client.session True
-                with
-                    i_
-                    [ class_ "ri-keyboard-box-fill bg-stone-400 rounded-xl px-0.5 text-bold text-xl"
-                    , hyper_ $
-                        Text.unlines
-                            [ "on click"
-                            , popup "Not Implemented"
-                            ]
-                    ]
-                    mempty
-                with
-                    i_
-                    [ class_ "ri-volume-up-line bg-stone-800 rounded-xl px-0.5 text-bold text-xl"
-                    , hyper_ $
-                        Text.unlines
-                            [ "on click"
-                            , popup "Not Implemented"
-                            ]
-                    ]
-                    mempty
-
-                script_ (seatClient chan)
+        tray client = renderSeats desktop chan client.session.sessionID
 
     newGuiApp2 "seat" Nothing (pure . tray) emptyDraw emptyDraw ["toggle-cursor"] \app -> do
         forever do
@@ -147,8 +138,6 @@ seatApp desktop = do
 seatClient :: Natural -> Text
 seatClient chan =
     [raw|
-globalThis.startCursorClient = (chan, idx) => {
-}
 function seatClient(chan) {
   butlerDataHandlers[chan] = buf => {
     let body = decodeJSON(buf)

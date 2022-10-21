@@ -75,7 +75,7 @@ data DisplayClient = DisplayClient
     , channel :: ChannelName
     , endpoint :: Endpoint
     , process :: Process
-    , session :: SessionID
+    , session :: Session
     , recv :: TVar Word64
     , send :: TVar Word64
     }
@@ -83,7 +83,7 @@ data DisplayClient = DisplayClient
 instance ToJSON DisplayClient where
     toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session]
 
-newClient :: MonadIO m => WS.Connection -> ChannelName -> Endpoint -> Process -> SessionID -> m DisplayClient
+newClient :: MonadIO m => WS.Connection -> ChannelName -> Endpoint -> Process -> Session -> m DisplayClient
 newClient c mc endpoint p s = DisplayClient c mc endpoint p s <$> newTVarIO 0 <*> newTVarIO 0
 
 addClient :: Display -> DisplayClient -> STM ()
@@ -91,7 +91,7 @@ addClient display client = do
     let alter = \case
             Just clients -> Just (client : clients)
             Nothing -> Just [client]
-    modifyTVar' display.clients (Map.alter alter client.session)
+    modifyTVar' display.clients (Map.alter alter client.session.sessionID)
 
 getClient :: Display -> SessionID -> Endpoint -> STM (Maybe DisplayClient)
 getClient display session endpoint = do
@@ -212,7 +212,7 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
     (processEnv, handler) <- onClient workspaceM
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
-        client <- newClient connection channel endpoint clientProcess session.sessionID
+        client <- newClient connection channel endpoint clientProcess session
         -- Add the client to server state
         atomically do
             addClient display client

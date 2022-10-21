@@ -56,12 +56,12 @@ performTest t client = do
     pureGen = mkStdGen 137
     buf = fst $ genByteString (1024 * 1024) pureGen
 
-clientScript :: Text -> Text
-clientScript wsUrl =
+clientScript :: Text
+clientScript =
     [str|
- function speedTest(wsUrl) {
+function speedTest() {
   console.log("Connecting to", wsUrl)
-  var socket = new WebSocket("wss://" + window.location.host + wsUrl);
+  var socket = new WebSocket(wsUrl("speedtest"));
   socket.binaryType = 'arraybuffer';
   socket.onopen = (e) => {
     console.log("connected!", e);
@@ -72,10 +72,8 @@ clientScript wsUrl =
     socket.send("Got: " + buf.length)
   };
 };
+speedTest();
 |]
-        <> "speedTest(\""
-        <> wsUrl
-        <> "\");"
 
 speedTestApp :: Desktop -> ProcessIO (GuiApp, ChannelName, DisplayClient -> ProcessIO ())
 speedTestApp desktop = do
@@ -91,9 +89,8 @@ speedTestApp desktop = do
             ev <- atomically $ readPipe app.events
             case ev.trigger of
                 "start-speed-test" -> do
-                    let wsUrl :: Text = "/channel/speed-test/connect?session=" <> from ev.client.session
                     clientMessageT ev.client do
                         with div_ [id_ "speed-test-root", hxSwapOob_ "beforeend"] do
                             "Starting go!"
-                            script_ (clientScript wsUrl)
+                            script_ clientScript
                 _ -> logError "unknown ev" ["ev" .= ev]

@@ -43,7 +43,7 @@ renderSM sm display = do
                             with
                                 i_
                                 [ id_ "close-connection"
-                                , encodeVal ["uuid" .= into @Text client.session, "client" .= client.endpoint]
+                                , encodeVal ["uuid" .= into @Text client.session.sessionID, "client" .= client.endpoint]
                                 , class_ "ri-focus-3-fill text-red-400 cursor-pointer top-0.5 relative"
                                 , wsSend
                                 , title_ "Close the connection"
