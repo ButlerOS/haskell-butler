@@ -19,6 +19,7 @@ module Butler.Prelude (
     -- * base extra
     whenM,
     module GHC.Stack,
+    module Data.Char,
 
     -- * relude
     Relude.putText,
@@ -156,6 +157,7 @@ import Data.Bifunctor
 import Data.Bool (bool)
 import Data.ByteString qualified
 import Data.ByteString.Lazy qualified
+import Data.Char
 import Data.Coerce
 import Data.Dynamic
 import Data.Either

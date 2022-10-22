@@ -2,11 +2,6 @@
 
 module Butler.App.MineSweeper (mineSweeperApp) where
 
-import Butler.Clock
-import Butler.Desktop
-import Butler.GUI
-import Butler.Prelude
-import Butler.Window
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as Aeson
 import Data.Aeson.Text qualified as Aeson
@@ -14,6 +9,11 @@ import Data.Map qualified as Map
 import Data.Text qualified as T
 import Data.Text.Lazy (toStrict)
 import System.Random (randomRIO)
+
+import Butler.Clock
+import Butler.GUI
+import Butler.Prelude
+import Butler.Window
 
 data MSState = MSState
     { board :: MSBoard
@@ -214,15 +214,14 @@ mkHxVals vals =
   where
     hxVals = makeAttribute "hx-vals"
 
-mineSweeperApp :: Desktop -> WinID -> ProcessIO GuiApp
-mineSweeperApp desktop winID = do
+mineSweeperApp :: DisplayClients -> WinID -> ProcessIO GuiApp
+mineSweeperApp clients winID = do
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
     let draw = const $ renderApp winID state
     size <- newTVarIO (240, 351)
     newGuiApp "minesweeper" (Just size) draw (scopeTriggers winID ["showCell", "play"]) \app -> forever do
         res <- atomically =<< waitTransaction 60_000 (readPipe app.events)
-        logInfo "Got ev" ["res" .= res]
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted ev -> case ( ev.body ^? key "play" . _String
@@ -253,4 +252,4 @@ mineSweeperApp desktop winID = do
                 _ -> pure ()
 
         -- print =<< atomically (readTVar state)
-        liftIO $ broadcastMessageT desktop =<< renderApp winID state
+        clientsBroadcast clients =<< renderApp winID state

@@ -89,7 +89,7 @@ speedTestApp desktop = do
             ev <- atomically $ readPipe app.events
             case ev.trigger of
                 "start-speed-test" -> do
-                    clientMessageT ev.client do
+                    sendHtml ev.client do
                         with div_ [id_ "speed-test-root", hxSwapOob_ "beforeend"] do
                             "Starting go!"
                             script_ clientScript

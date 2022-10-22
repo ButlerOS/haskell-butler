@@ -23,6 +23,7 @@ import Data.Text qualified as Text
 
 import Butler.Clock
 import Butler.History
+import Butler.Pipe
 import Butler.Prelude
 
 -- Lazy bytestring pretty debug encoding
@@ -39,7 +40,7 @@ instance ToJSON BSLog where
 data Logger event = Logger
     { history :: History (Event event)
     -- ^ The recent events
-    , events :: TChan (Event event)
+    , events :: BroadcastChan (Event event)
     -- ^ The worker channel
     }
 
@@ -60,10 +61,10 @@ data Event event = Event
     deriving (Eq, Ord, Show)
 
 newLogger :: Natural -> STM (Logger event)
-newLogger size = Logger <$> newHistory size <*> newBroadcastTChan
+newLogger size = Logger <$> newHistory size <*> newBroadcastChan
 
 getLogsChan :: Logger event -> STM (TChan (Event event))
-getLogsChan logger = dupTChan logger.events
+getLogsChan logger = newReaderChan logger.events
 
 waitLog :: MonadIO m => Logger event -> Milli -> (event -> Bool) -> m (STM (WaitResult (Event event)))
 waitLog logger timeLimit test = do
@@ -95,4 +96,4 @@ addEvent logger t s e = do
     -- add to history
     addHistory logger.history event
     -- broadcast the message
-    writeTChan logger.events event
+    broadcast logger.events event

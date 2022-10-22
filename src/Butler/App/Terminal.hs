@@ -49,12 +49,12 @@ termApp desktop wid = do
     dimChan <- atomically newTChan
 
     let clientHandler _chan _client buf = atomically $ writeTChan server.inputChan buf
-        dimHandler chan dclient buf = case (buf ^? key "cols" . _Integer, buf ^? key "rows" . _Integer) of
+        dimHandler chan client buf = case (buf ^? key "cols" . _Integer, buf ^? key "rows" . _Integer) of
             (Just (unsafeFrom -> cols), Just (unsafeFrom -> rows)) -> do
                 logInfo "Got resize" ["cols" .= cols, "rows" .= rows]
                 atomically $ writeTChan dimChan (cols, rows)
-                broadcastDesktopMessage desktop (\o -> o.client.endpoint /= dclient.client.endpoint) chan buf
-            _ -> logError "invalid dim" ["buf" .= BSLog buf, "client" .= dclient.client]
+                broadcastDesktopMessage desktop (\o -> o.endpoint /= client.endpoint) chan buf
+            _ -> logError "invalid dim" ["buf" .= BSLog buf, "client" .= client]
 
     chan <- atomically (newHandler desktop clientHandler)
     dimChanID <- atomically (newHandler desktop dimHandler)
@@ -113,7 +113,7 @@ termApp desktop wid = do
             waitForR
             supervisor
 
-    let draw = pure . const (renderApp wid chan dimChanID server)
+    let draw = pure . const (renderApp wid (from chan) (from dimChanID) server)
     -- tray = pure . renderTray server
 
     newGuiApp "term" Nothing draw (scopeTriggers wid ["term-resize"]) \app -> do

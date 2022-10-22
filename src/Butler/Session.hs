@@ -25,7 +25,6 @@ import Codec.Serialise.Encoding (encodeBytes)
 import Data.Binary (Binary (get, put))
 import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
-import Data.Char (isAlphaNum)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.UUID qualified as UUID
@@ -34,17 +33,7 @@ import Servant.Auth.JWT (FromJWT, ToJWT)
 
 import Butler.Memory
 import Butler.OS
-
-newtype UserName = UserName Text
-    deriving newtype (Ord, Eq, IsString, Show, Serialise)
-    deriving (FromJSON, ToJSON) via Text
-    deriving (Generic)
-
-instance ToHtml UserName where
-    toHtml (UserName n) = toHtml n
-
-instance From UserName Text where
-    from (UserName n) = n
+import Butler.User
 
 isValidUserName :: Text -> Maybe UserName
 isValidUserName n
@@ -52,9 +41,6 @@ isValidUserName n
     | otherwise = Just (UserName alphaName)
   where
     alphaName = Text.takeWhile isAlphaNum n
-
-instance FromHttpApiData UserName where
-    parseUrlPiece txt = pure $ UserName txt
 
 data Session = Session
     { sessionID :: SessionID

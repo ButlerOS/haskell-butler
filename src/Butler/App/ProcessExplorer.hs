@@ -60,7 +60,7 @@ renderPE stV wid = do
 
 peApp :: Desktop -> WinID -> ProcessIO GuiApp
 peApp desktop wid = do
-    stV <- newTVarIO (PEScopped desktop.processEnv.process.pid)
+    stV <- newTVarIO (PEScopped desktop.env.process.pid)
     newGuiApp "ps" Nothing (const $ renderPE stV wid) (scopeTriggers wid ["ps-kill", "ps-toggle"]) \app -> do
         spawnThread_ $ forever do
             ev <- atomically $ readPipe app.events
@@ -72,7 +72,7 @@ peApp desktop wid = do
                     "ps-toggle" -> do
                         st <- readTVarIO stV
                         atomically $ writeTVar stV $ case st of
-                            PEAll -> PEScopped desktop.processEnv.process.pid
+                            PEAll -> PEScopped desktop.env.process.pid
                             PEScopped _ -> PEAll
                         broadcastMessageT desktop =<< renderPE stV wid
                     _ -> logError "unknown event" ["ev" .= ev]

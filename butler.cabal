@@ -26,9 +26,10 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.App.Chat
       Butler.App.Clock
-      Butler.App.MineSweeper
       Butler.App.LogViewer
+      Butler.App.MineSweeper
       Butler.App.NoVnc
       Butler.App.ProcessExplorer
       Butler.App.REPL
@@ -42,8 +43,10 @@ library
       Butler.Desktop
       Butler.Display
       Butler.Events
+      Butler.Frame
       Butler.GUI
       Butler.History
+      Butler.Lobby
       Butler.Logger
       Butler.Memory
       Butler.NatMap
@@ -55,6 +58,7 @@ library
       Butler.Processor
       Butler.Session
       Butler.Storage
+      Butler.User
       Butler.WebSocket
       Butler.Window
       XStatic.Butler

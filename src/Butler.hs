@@ -3,10 +3,18 @@
 
 module Butler where
 
+import Data.ByteString qualified as BS
+import Data.Text qualified as Text
+import System.Environment (getArgs)
+import System.Process.Typed
+
 import Butler.Desktop
+import Butler.Display
+import Butler.Lobby
 import Butler.OS
 import Butler.Prelude
 
+import Butler.App.Chat
 import Butler.App.Clock
 import Butler.App.LogViewer
 import Butler.App.MineSweeper (mineSweeperApp)
@@ -20,10 +28,6 @@ import Butler.App.Terminal
 import Butler.Clock
 import Butler.Logger
 import Butler.Window
-import Data.ByteString qualified as BS
-import Data.Text qualified as Text
-import System.Environment (getArgs)
-import System.Process.Typed
 
 startVnc :: ProcessIO ()
 startVnc = do
@@ -66,33 +70,24 @@ demoDesktop = do
   where
     runDemo =
         withButlerOS do
-            desktop <- superviseProcess "desktop" $ desktopProgram appLauncher \desktop -> do
-                -- addApp desktop =<< peApp desktop
-                -- addApp desktop =<< clockApp desktop
-                -- addChannelApp desktop =<< speedTestApp desktop
-                when False do
-                    (winID, _) <- atomically $ newWindow desktop.windows "Clock"
-                    addWinApp desktop winID =<< clockApp desktop winID
-
-                when False do
-                    (winID, _) <- atomically $ newWindow desktop.windows "PS"
-                    addWinApp desktop winID =<< peApp desktop winID
-
-                when False do
-                    (winID, _) <- atomically $ newWindow desktop.windows "Xterm"
-                    addWinApp desktop winID =<< termApp desktop winID
-
-                addApp desktop =<< smApp desktop
-                addApp desktop =<< seatApp desktop
-
+            chat <- atomically newChatServer
+            desktop <- superviseProcess "desktop" $ startDisplay 8080 $ \display -> do
+                superviseProcess "chat-service" $ chatServerProgram chat display
+                lobbyProgram (appLauncher chat) xinit chat display
             void $ awaitProcess desktop
-    appLauncher desktop name winID = case name of
-        "app-clock" -> Just <$> clockApp desktop winID
+
+    xinit desktop = do
+        atomically . addApp desktop =<< smApp desktop
+        atomically . addApp desktop =<< seatApp desktop
+
+    appLauncher chat desktop name winID = case name of
+        "app-chat" -> Just <$> chatApp desktop.hclients winID chat
+        "app-clock" -> Just <$> clockApp desktop.hclients winID
         "app-log-viewer" -> Just <$> logViewerApp desktop winID
         "app-term" -> Just <$> termApp desktop winID
         "app-ps" -> Just <$> peApp desktop winID
         "app-vnc" -> Just <$> vncApp desktop winID
-        "app-minesweeper" -> Just <$> mineSweeperApp desktop winID
+        "app-minesweeper" -> Just <$> mineSweeperApp desktop.hclients winID
         _ -> pure Nothing
 
 demo :: IO ()

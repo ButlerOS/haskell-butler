@@ -1,5 +1,6 @@
 module Butler.Display (
     Display (..),
+    OnClient,
     startDisplay,
     getClient,
     DisplayEvent (..),
@@ -8,8 +9,16 @@ module Butler.Display (
     spawnPingThread,
     recvMessage,
     sendMessage,
-    clientMessage,
-    clientMessageT,
+    sendTextMessage,
+    sendHtml,
+    safeSend,
+    DisplayClients,
+    newDisplayClients,
+    getClients,
+    addClient,
+    delClient,
+    clientsBroadcast,
+    clientsDraw,
 ) where
 
 import Codec.Serialise.Decoding (decodeBytes)
@@ -39,8 +48,10 @@ import XStatic.Winbox qualified as XStatic
 import XStatic.Xterm qualified as XStatic
 
 import Butler.Clock
+import Butler.NatMap qualified as NM
 import Butler.Network
 import Butler.OS
+import Butler.Pipe (BroadcastChan (..), broadcast, newBroadcastChan)
 import Butler.Prelude
 import Butler.Process
 import Butler.Session
@@ -48,13 +59,10 @@ import Butler.WebSocket
 
 data Display = Display
     { sessions :: Sessions
-    , clients :: TVar (Map SessionID [DisplayClient])
     , jwtSettings :: JWTSettings
+    , clients :: TVar (Map SessionID [DisplayClient])
+    , events :: BroadcastChan DisplayEvent
     }
-
-newtype DisplayPath = DisplayPath Text
-    deriving newtype (Eq, Ord, Show, IsString)
-    deriving (FromJSON, ToJSON, ToHtml) via Text
 
 type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
@@ -64,7 +72,7 @@ loadDisplay = do
     let jwtSettings = defaultJWTSettings myKey
     sessions <- loadSessions
     liftIO $ atomically do
-        Display sessions <$> newTVar mempty <*> pure jwtSettings
+        Display sessions jwtSettings <$> newTVar mempty <*> newBroadcastChan
 
 newtype Endpoint = Endpoint Text
     deriving newtype (Eq, Ord, Show, IsString)
@@ -86,8 +94,8 @@ instance ToJSON DisplayClient where
 newClient :: MonadIO m => WS.Connection -> ChannelName -> Endpoint -> Process -> Session -> m DisplayClient
 newClient c mc endpoint p s = DisplayClient c mc endpoint p s <$> newTVarIO 0 <*> newTVarIO 0
 
-addClient :: Display -> DisplayClient -> STM ()
-addClient display client = do
+addDisplayClient :: Display -> DisplayClient -> STM ()
+addDisplayClient display client = do
     let alter = \case
             Just clients -> Just (client : clients)
             Nothing -> Just [client]
@@ -127,19 +135,56 @@ sendMessage client t = liftIO do
     atomically $ modifyTVar' client.send (+ unsafeFrom (BS.length t))
     WS.sendBinaryData client.conn t
 
-clientMessage :: MonadIO m => DisplayClient -> ByteString -> m ()
-clientMessage client t = liftIO do
+sendTextMessage :: MonadIO m => DisplayClient -> ByteString -> m ()
+sendTextMessage client t = liftIO do
     atomically $ modifyTVar' client.send (+ unsafeFrom (BS.length t))
     WS.sendTextData client.conn t
 
-clientMessageT :: MonadIO m => DisplayClient -> HtmlT STM () -> m ()
-clientMessageT client msg = liftIO do
+sendHtml :: MonadIO m => DisplayClient -> HtmlT STM () -> m ()
+sendHtml client msg = liftIO do
     body <- atomically $ renderBST msg
-    clientMessage client (from body)
+    sendTextMessage client (from body)
+
+newtype DisplayClients = DisplayClients (NM.NatMap DisplayClient)
+
+newDisplayClients :: STM DisplayClients
+newDisplayClients = DisplayClients <$> NM.newNatMap
+
+getClients :: DisplayClients -> STM [DisplayClient]
+getClients (DisplayClients x) = NM.elems x
+
+addClient :: DisplayClients -> DisplayClient -> STM ()
+addClient (DisplayClients x) = void . NM.add x
+
+delClient :: DisplayClients -> DisplayClient -> STM ()
+delClient (DisplayClients x) client = NM.nmDelete x (\o -> o.endpoint == client.endpoint)
+
+safeSend :: DisplayClients -> (DisplayClient -> a -> ProcessIO ()) -> DisplayClient -> a -> ProcessIO ()
+safeSend clients action client body = do
+    res <- try (action client body)
+    case res of
+        Right () -> pure ()
+        Left (err :: WS.ConnectionException) -> do
+            atomically $ delClient clients client
+            logError "send error" ["client" .= client, "err" .= showT err]
+
+clientsBroadcast :: DisplayClients -> HtmlT STM () -> ProcessIO ()
+clientsBroadcast clients message = do
+    body <- from <$> atomically (renderBST message)
+    xs <- atomically (getClients clients)
+    forM_ xs $ \client -> safeSend clients sendTextMessage client body
+
+clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
+clientsDraw clients draw = do
+    xs <- atomically (getClients clients)
+    forM_ xs $ \client -> do
+        htmlT <- draw client
+        body <- from <$> atomically (renderBST htmlT)
+        safeSend clients sendTextMessage client body
 
 data DisplayEvent
     = UserConnected ChannelName DisplayClient
-    | UserDisconnected ChannelName Endpoint
+    | UserDisconnected ChannelName DisplayClient
     deriving (Generic, ToJSON)
 
 instance Show DisplayEvent where
@@ -210,20 +255,28 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
         name = ProgramName $ progName <> "-" <> clientAddr
         endpoint = Endpoint clientAddr
     (processEnv, handler) <- onClient workspaceM
+    clientM <- newEmptyMVar
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
         client <- newClient connection channel endpoint clientProcess session
+        putMVar clientM client
         -- Add the client to server state
+        let ev = UserConnected channel client
         atomically do
-            addClient display client
-        handler $ UserConnected channel client
+            addDisplayClient display client
+            broadcast display.events ev
+        handler ev
 
+    client <- takeMVar clientM
     -- Wait for client completion
     res <- atomically $ await clientProcess.thread
 
-    -- Remove the client from the server state and update the connected counter
-    asProcess processEnv $ handler $ UserDisconnected channel endpoint
-    atomically $ removeClient display session.sessionID endpoint
+    -- Remove the client from the server state
+    let ev = UserDisconnected channel client
+    atomically do
+        removeClient display session.sessionID endpoint
+        broadcast display.events ev
+    asProcess processEnv $ handler ev
     logInfo "Client quit" ["endpoint" .= endpoint, "reason" .= into @Text res]
 
     -- Say goodbye

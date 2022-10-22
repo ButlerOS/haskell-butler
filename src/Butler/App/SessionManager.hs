@@ -165,4 +165,4 @@ smApp desktop = do
             _ -> do
                 logError "unknown ev" ["ev" .= ev]
                 pure mempty
-        clientMessageT ev.client resp
+        sendHtml ev.client resp

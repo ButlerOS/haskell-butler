@@ -1,13 +1,14 @@
 module Butler.Window where
 
-import Data.Char (isDigit)
 import Data.IntMap.Strict qualified as IM
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 
 import Butler.GUI
 import Butler.Memory
 import Butler.Prelude
+import Butler.Process
 
 newtype WinID = WinID Int
     deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
@@ -28,8 +29,33 @@ data WindowsState = WindowsState
 
 type Windows = MemoryVar WindowsState
 
+data WindowManager = WindowManager
+    { windows :: MemoryVar WindowsState
+    , apps :: MemoryVar (Map WinID ProgramName)
+    , running :: TVar (Map WinID GuiApp)
+    }
+
+newWindowManager :: ProcessIO WindowManager
+newWindowManager =
+    WindowManager
+        <$> (snd <$> newProcessMemory "wins.bin" (pure newWindows))
+        <*> (snd <$> newProcessMemory "apps.bin" (pure mempty))
+        <*> newTVarIO mempty
+
 newWindows :: WindowsState
 newWindows = WindowsState mempty (WinID 0) Nothing
+
+addWindowApp :: WindowManager -> WinID -> GuiApp -> STM ()
+addWindowApp wm wid app = do
+    modifyTVar' wm.running (Map.insert wid app)
+    modifyMemoryVar wm.apps (Map.insert wid app.process.program)
+    void $ updateWindow wm.windows wid (#title .~ processID app.process)
+
+delWindowApp :: WindowManager -> WinID -> STM ()
+delWindowApp wm wid = do
+    deleteWindow wm.windows wid
+    modifyTVar' wm.running (Map.delete wid)
+    modifyMemoryVar wm.apps (Map.delete wid)
 
 lookupWindow :: Windows -> WinID -> STM (Maybe Window)
 lookupWindow ws (WinID wid) = IM.lookup wid . (.windows) <$> readMemoryVar ws
@@ -163,3 +189,10 @@ wid_ wid n = id_ (withWID wid n)
 
 scopeTriggers :: WinID -> [TriggerName] -> [TriggerName]
 scopeTriggers winID = map (\(TriggerName tn) -> TriggerName (withWID winID tn))
+
+newGuiAppWin :: WinID -> ProgramName -> Maybe (TVar (Int, Int)) -> DrawHtml -> [TriggerName] -> (GuiApp -> ProcessIO ()) -> ProcessIO GuiApp
+newGuiAppWin wid name size draw triggers = newGuiApp name size newDraw (scopeTriggers wid triggers)
+  where
+    newDraw client = do
+        content <- draw client
+        pure $ with div_ [id_ (withWID wid "w")] content

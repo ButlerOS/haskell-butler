@@ -3,7 +3,6 @@ module Butler.App.Clock (clockApp) where
 import Butler.Prelude
 
 import Butler.Clock
-import Butler.Desktop
 import Butler.GUI
 import Butler.Window
 
@@ -56,15 +55,14 @@ clockContent wid s = do
             ClockEDT -> read "EDT"
     pure $ clockValueHtml wid tz (Data.Time.LocalTime.utcToLocalTime tz now)
 
-clockApp :: Desktop -> WinID -> ProcessIO GuiApp
-clockApp desktop winID = do
+clockApp :: DisplayClients -> WinID -> ProcessIO GuiApp
+clockApp clients winID = do
     state <- newTVarIO ClockUTC
     let draw = const (clockHtml winID <$> clockContent winID state)
     size <- newTVarIO (164, 164)
     newGuiApp "clock" (Just size) draw (scopeTriggers winID ["clock-tz"]) \app -> forever do
         -- TODO: adjust wait time based until the next minute starting second
         res <- atomically =<< waitTransaction 60_000 (readPipe app.events)
-        logInfo "Got ev" ["res" .= res]
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted ev -> case ev.body ^? key "v" . _String of
@@ -73,4 +71,4 @@ clockApp desktop winID = do
                 Just "EDT" -> atomically $ writeTVar state ClockEDT
                 _ -> logError "Unknown event" ["ev" .= ev]
         -- print =<< atomically (readTVar state)
-        liftIO $ broadcastMessageT desktop =<< clockContent winID state
+        clientsBroadcast clients =<< clockContent winID state
