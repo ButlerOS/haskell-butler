@@ -38,10 +38,12 @@ library
       Butler.App.SpeedTest
       Butler.App.Terminal
       Butler.App.Timer
+      Butler.Auth.Invitation
       Butler.Buzzer
       Butler.Clock
       Butler.Desktop
       Butler.Display
+      Butler.DisplayClient
       Butler.Events
       Butler.Frame
       Butler.GUI

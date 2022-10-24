@@ -32,6 +32,8 @@ module Butler.Prelude (
 
     -- * lucid
     Lucid.ToHtml (..),
+    Lucid.Html,
+    Lucid.HtmlT,
 
     -- * lens
     (%~),

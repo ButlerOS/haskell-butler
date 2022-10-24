@@ -5,6 +5,7 @@ module Butler where
 
 import Data.ByteString qualified as BS
 import Data.Text qualified as Text
+import Lucid
 import System.Environment (getArgs)
 import System.Process.Typed
 
@@ -13,6 +14,8 @@ import Butler.Display
 import Butler.Lobby
 import Butler.OS
 import Butler.Prelude
+
+import Butler.Auth.Invitation
 
 import Butler.App.Chat
 import Butler.App.Clock
@@ -28,6 +31,17 @@ import Butler.App.Terminal
 import Butler.Clock
 import Butler.Logger
 import Butler.Window
+
+import Lucid.XStatic
+import XStatic.Butler as XStatic
+import XStatic.Htmx qualified as XStatic
+import XStatic.Hyperscript qualified as XStatic
+import XStatic.NoVNC qualified as XStatic
+import XStatic.Remixicon qualified as XStatic
+import XStatic.SweetAlert2 qualified as XStatic
+import XStatic.Tailwind qualified as XStatic
+import XStatic.Winbox qualified as XStatic
+import XStatic.Xterm qualified as XStatic
 
 startVnc :: ProcessIO ()
 startVnc = do
@@ -68,10 +82,38 @@ demoDesktop = do
     v <- runDemo
     putStrLn $ "The end: " <> show v
   where
+    indexHtml :: Html () -> Html ()
+    indexHtml body = do
+        doctypehtml_ do
+            head_ do
+                title_ "Butler"
+                meta_ [charset_ "utf-8"]
+                meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
+                xstaticScripts xfiles
+                link_ [rel_ "icon", href_ "/xstatic/favicon.ico"]
+                -- fix the reconnect delay to 1sec
+                script_ "htmx.config.wsReconnectDelay = (retryCount) => 1000;"
+
+            with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
+                body
+                -- Update the status when the connection is dropped
+                script_ displayPulseError
+
+    displayPulseError :: Text
+    displayPulseError =
+        [raw|
+    document.body.addEventListener('htmx:wsError', function(evt) {
+      try {
+        htmx.addClass(htmx.find("#display-pulse"), "bg-red-500");
+      } catch (e) {}
+    });
+    |]
+
     runDemo =
         withButlerOS do
             chat <- atomically newChatServer
-            desktop <- superviseProcess "desktop" $ startDisplay 8080 $ \display -> do
+            let authApp = invitationAuthApp indexHtml
+            desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
                 superviseProcess "chat-service" $ chatServerProgram chat display
                 lobbyProgram (appLauncher chat) xinit chat display
             void $ awaitProcess desktop
@@ -89,6 +131,23 @@ demoDesktop = do
         "app-vnc" -> Just <$> vncApp desktop winID
         "app-minesweeper" -> Just <$> mineSweeperApp desktop.hclients winID
         _ -> pure Nothing
+
+    xfiles', xfiles :: [XStaticFile]
+    xfiles =
+        [ XStatic.sweetAlert2
+        , XStatic.hyperscript
+        , XStatic.htmx
+        , XStatic.htmxExtWS
+        , XStatic.tailwind
+        , XStatic.remixiconCss
+        , XStatic.remixiconWoff2
+        , XStatic.logo
+        , XStatic.xtermFitAddonJs
+        , XStatic.xtermFitAddonJsMap
+        , XStatic.winboxCss
+        ]
+            <> XStatic.xterm
+    xfiles' = XStatic.noVNC <> XStatic.winbox <> xfiles
 
 demo :: IO ()
 demo =

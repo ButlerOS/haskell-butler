@@ -8,6 +8,7 @@ import Data.UUID qualified as UUID
 import Data.Map.Strict qualified as Map
 
 import Butler.Desktop
+import Butler.Display
 import Butler.GUI
 import Butler.Memory
 import Butler.Session

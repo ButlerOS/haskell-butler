@@ -17,11 +17,14 @@ module Butler.GUI (
     popup,
     hideScript,
     showScript,
+    websocketHtml,
+    splashHtml,
+    loginForm,
 
     -- * Re-exports
     makeAttribute,
     module Butler.OS,
-    module Butler.Display,
+    module Butler.DisplayClient,
     module Butler.Pipe,
     module Lucid,
     module Lucid.Htmx,
@@ -36,9 +39,10 @@ import Lucid
 import Lucid.Base (makeAttribute)
 import Lucid.Htmx
 
-import Butler.Display
+import Butler.DisplayClient
 import Butler.OS
 import Butler.Pipe
+import Butler.Session
 import Data.Aeson.Types (Pair)
 
 type DrawHtml = DisplayClient -> ProcessIO (HtmlT STM ())
@@ -148,3 +152,32 @@ topRightMenu items = do
         with div_ [class_ "pt-3 pr-2 hidden peer-hover:flex hover:flex flex-col drop-shadow-lg items-end"] do
             -- with div_ [class_ "flex flex-col drop-shadow-lg items-end"] do
             traverse_ div_ items
+
+-- | Create the htmx websocket root element
+websocketHtml :: Text -> SessionID -> Html ()
+websocketHtml pathPrefix sessionID = do
+    let wsUrl = pathPrefix <> "/ws/htmx?session=" <> from sessionID
+    with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
+        with div_ [id_ "display-root", class_ "h-full"] mempty
+        -- script to get extra websocket url from javascript
+        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '?session=" <> from sessionID <> "';"
+
+-- | Display the content in a splash screen
+splashHtml :: Monad m => HtmlT m () -> HtmlT m ()
+splashHtml content = do
+    with div_ [id_ "display-lock", class_ "h-screen w-screen absolute bg-gray-100 flex flex-col"] do
+        with div_ [class_ "basis-1/6 flex bg-sky-600 border-sky-800 border-b-8"] mempty
+
+        with div_ [class_ "grow flex bg-sky-200 flex-col justify-center"] do
+            with div_ [class_ "flex flex-row justify-center"] do
+                with div_ [class_ "p-3 rounded"] do
+                    content
+
+        with div_ [class_ "basis-1/6 flex bg-sky-600 border-sky-800 border-t-8"] mempty
+
+loginForm :: Text -> Text -> [Pair] -> Html ()
+loginForm pathPrefix title attr = do
+    with form_ [id_ "login-form", hxPost_ (pathPrefix <> "/login"), encodeVal attr] do
+        with div_ [class_ "font-semibold pb-2 flex flex-row justify-center"] do
+            toHtml title
+        with (input_ mempty) [name_ "username", type_ "text", placeholder_ "What is your name?"]
