@@ -11,7 +11,6 @@ import Web.FormUrlEncoded (FromForm)
 
 import Butler.Display
 import Butler.GUI
-import Butler.Network (WaiApplication)
 import Butler.Prelude
 import Butler.Session
 import Butler.WebSocket
@@ -104,7 +103,7 @@ cookieSettings =
         , cookieExpires = Just (UTCTime (fromGregorian 2030 1 1) 0)
         }
 
-invitationAuthApp :: (Html () -> Html ()) -> Sessions -> ProcessIO WaiApplication
+invitationAuthApp :: (Html () -> Html ()) -> Sessions -> ProcessIO AuthApplication
 invitationAuthApp mkIndexHtml sessions = do
     JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> generateKey)
     let jwtSettings = defaultJWTSettings myKey
@@ -112,4 +111,8 @@ invitationAuthApp mkIndexHtml sessions = do
     let cfg = cookieSettings :. jwtSettings :. EmptyContext
     let authSrv = authServer sessions mkIndexHtml jwtSettings
     env <- ask
-    pure $ Servant.serveWithContextT (Proxy @AuthAPI) cfg (liftIO . runProcessIO env.os env.process) authSrv
+    let app = Servant.serveWithContextT (Proxy @AuthAPI) cfg (liftIO . runProcessIO env.os env.process) authSrv
+        getSession = \case
+            Nothing -> pure Nothing
+            Just sessionID -> atomically $ checkSession sessions sessionID
+    pure $ AuthApplication app getSession

@@ -43,7 +43,7 @@ newtype Time = Time Natural
     deriving newtype (Serialise, Num, Real, Enum, Integral, ToJSON)
 
 -- | A duration in millisecond
-newtype Milli = Milli Natural deriving newtype (Num, Eq, Ord)
+newtype Milli = Milli Natural deriving newtype (Num, Eq, Ord, Enum, Show)
 
 instance ToHtml Time where
     toHtml (Time n) = toHtml (show n <> "ms")

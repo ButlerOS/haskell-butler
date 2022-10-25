@@ -21,6 +21,7 @@ getKeys = do
 webService :: [XStaticFile] -> Wai.Application -> Port -> ProcessIO Void
 webService xs app port = do
     keys <- getKeys
+    logInfo "Running WARP" ["port" .= port, "tls" .= True]
     liftIO $ Warp.runTLS (uncurry Warp.tlsSettingsMemory keys) settings handler
     error "warp exited?!"
   where

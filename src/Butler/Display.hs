@@ -1,5 +1,6 @@
 module Butler.Display (
     Display (..),
+    AuthApplication (..),
     OnClient,
     startDisplay,
     getClient,
@@ -39,11 +40,8 @@ data Display = Display
 
 type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
-loadDisplay :: ProcessIO Display
-loadDisplay = do
-    sessions <- loadSessions
-    liftIO $ atomically do
-        Display sessions <$> newTVar mempty <*> newBroadcastChan
+newDisplay :: Sessions -> STM Display
+newDisplay sessions = Display sessions <$> newTVar mempty <*> newBroadcastChan
 
 addDisplayClient :: Display -> DisplayClient -> STM ()
 addDisplayClient display client = do
@@ -140,23 +138,26 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
             WS.sendClose connection ("see you next time!" :: ByteString)
         _ -> pure ()
 
-startDisplay :: Port -> [XStaticFile] -> (Sessions -> ProcessIO WaiApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
-startDisplay port xfiles mkApp withDisplay = do
-    display <- loadDisplay
-    app <- mkApp display.sessions
+data AuthApplication = AuthApplication
+    { app :: WaiApplication
+    , getSession :: Maybe SessionID -> ProcessIO (Maybe Session)
+    }
+
+startDisplay :: Port -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
+startDisplay port xfiles mkAuthApp withDisplay = do
+    sessions <- loadSessions
+    display <- atomically (newDisplay sessions)
+    authApp <- mkAuthApp sessions
     onClient <- withDisplay display
     env <- ask
-    let getSession = \case
-          Nothing -> pure Nothing
-          Just sessionID -> atomically $ checkSession display.sessions sessionID
-        wsSrv :: ServerT WebSocketAPI ProcessIO
-        wsSrv = websocketServer getSession (connectRoute display onClient)
+    let wsSrv :: ServerT WebSocketAPI ProcessIO
+        wsSrv = websocketServer authApp.getSession (connectRoute display onClient)
         wsApp :: WaiApplication
         wsApp = Servant.serveWithContextT (Proxy @WebSocketAPI) EmptyContext (liftIO . runProcessIO env.os env.process) wsSrv
 
         glApp req resp =
             let wsRespHandler wsResp = case HTTP.statusCode (Network.Wai.responseStatus wsResp) of
-                    404 -> app req resp
+                    404 -> authApp.app req resp
                     _ -> resp wsResp
              in wsApp req wsRespHandler
 

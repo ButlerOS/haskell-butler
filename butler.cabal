@@ -38,6 +38,7 @@ library
       Butler.App.SpeedTest
       Butler.App.Terminal
       Butler.App.Timer
+      Butler.Auth.Guest
       Butler.Auth.Invitation
       Butler.Buzzer
       Butler.Clock

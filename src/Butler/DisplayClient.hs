@@ -75,6 +75,12 @@ newtype DisplayClients = DisplayClients (NM.NatMap DisplayClient)
 newDisplayClients :: STM DisplayClients
 newDisplayClients = DisplayClients <$> NM.newNatMap
 
+newDisplayClientsFromClient :: DisplayClient -> STM DisplayClients
+newDisplayClientsFromClient client = do
+    clients <- newDisplayClients
+    addClient clients client
+    pure clients
+
 getClients :: DisplayClients -> STM [DisplayClient]
 getClients (DisplayClients x) = NM.elems x
 

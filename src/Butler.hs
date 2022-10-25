@@ -5,16 +5,17 @@ module Butler where
 
 import Data.ByteString qualified as BS
 import Data.Text qualified as Text
-import Lucid
 import System.Environment (getArgs)
 import System.Process.Typed
 
 import Butler.Desktop
 import Butler.Display
+import Butler.GUI
 import Butler.Lobby
 import Butler.OS
 import Butler.Prelude
 
+import Butler.Auth.Guest
 import Butler.Auth.Invitation
 
 import Butler.App.Chat
@@ -42,6 +43,9 @@ import XStatic.SweetAlert2 qualified as XStatic
 import XStatic.Tailwind qualified as XStatic
 import XStatic.Winbox qualified as XStatic
 import XStatic.Xterm qualified as XStatic
+
+import Lucid
+import Lucid.Base (makeAttribute)
 
 startVnc :: ProcessIO ()
 startVnc = do
@@ -76,6 +80,49 @@ startVnc = do
             forever do
                 buf <- liftIO (BS.hGetLine (getStderr p))
                 logTrace name ["stderr" .= BSLog buf]
+
+demoGUI :: IO ()
+demoGUI = do
+    v <- runDemo
+    putStrLn $ "The end: " <> show v
+  where
+    htmlMain = do
+        doctypehtml_ do
+            head_ do
+                title_ "My GUI"
+                meta_ [charset_ "utf-8"]
+                meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
+                xstaticScripts xfiles
+
+            with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
+                with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
+                    with div_ [id_ "display-root", class_ "h-full"] mempty
+
+    clientHandler = \case
+        UserConnected _ client -> do
+            logInfo "Client connected" ["client" .= client]
+            clients <- atomically $ newDisplayClientsFromClient client
+            msApp <- mineSweeperApp clients (WinID 0)
+            msHtml <- msApp.draw client
+            sendHtml client (with div_ [id_ "display-root"] msHtml)
+
+            handleClientEvents client $ \trigger value -> do
+                let guiEvent = GuiEvent client trigger value
+                logInfo "got ev" ["ev" .= guiEvent]
+                atomically $ writePipe msApp.events guiEvent
+        UserDisconnected _ client -> logInfo "Client disconnected" ["client" .= client]
+
+    xfiles = [XStatic.htmx, XStatic.htmxExtWS, XStatic.tailwind]
+    runDemo =
+        withButlerOS do
+            logInfo "Starting..." []
+            desktop <- superviseProcess "gui" $
+                startDisplay 8085 xfiles (const $ pure $ guestAuthApp htmlMain) $ \_ -> do
+                    pure $ \_ws -> do
+                        env <- ask
+                        pure (env, clientHandler)
+
+            void $ awaitProcess desktop
 
 demoDesktop :: IO ()
 demoDesktop = do
