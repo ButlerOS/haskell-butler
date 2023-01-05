@@ -30,12 +30,12 @@ import Butler.Prelude
 newtype LBSLog = LBSLog LByteString
 
 instance ToJSON LBSLog where
-    toJSON (LBSLog lbs) = String (unsafeFrom lbs)
+    toJSON (LBSLog lbs) = String (decodeUtf8With lenientDecode (from lbs))
 
 newtype BSLog = BSLog ByteString
 
 instance ToJSON BSLog where
-    toJSON (BSLog bs) = String (Text.take 128 $ Text.replace "\n" "\\n" $ unsafeFrom bs)
+    toJSON (BSLog bs) = String (Text.take 128 $ Text.replace "\n" "\\n" $ decodeUtf8With lenientDecode bs)
 
 data Logger event = Logger
     { history :: History (Event event)

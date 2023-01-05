@@ -102,7 +102,7 @@ getTime = do
 
 getLocName :: HasCallStack => ByteString
 getLocName = case getCallStack callStack of
-    (_logStack : (_, srcLoc) : _) -> from (srcLocModule srcLoc) <> ":" <> from (show (srcLocStartLine srcLoc))
+    (_logStack : (_, srcLoc) : _) -> encodeUtf8 $ from (srcLocModule srcLoc) <> ":" <> from (show (srcLocStartLine srcLoc))
     _ -> "N/C"
 
 logTrace :: HasCallStack => Text -> [Pair] -> ProcessIO ()

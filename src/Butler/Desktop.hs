@@ -310,7 +310,7 @@ handleHtmxClient appLauncher desktop client = do
     -- todo: play starting sound
     sleep 500
 
-    sendTextMessage client $ from $ renderText do
+    sendTextMessage client $ encodeUtf8 $ from $ renderText do
         with div_ [id_ "reconnect_script"] do
             -- After connection, we switch the socket url to the reload endpoint,
             -- so that after disconnection, it will receive new instruction, e.g. reload the page.

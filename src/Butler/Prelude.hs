@@ -90,6 +90,8 @@ module Butler.Prelude (
     Data.Set.Set,
     Data.Map.Strict.Map,
     Warp.Port,
+    module Data.Text.Encoding,
+    module Data.Text.Encoding.Error,
 
     -- * servant
     Servant.API.FromHttpApiData (..),
@@ -179,6 +181,8 @@ import Data.Proxy qualified
 import Data.Set qualified
 import Data.String qualified
 import Data.Text qualified
+import Data.Text.Encoding
+import Data.Text.Encoding.Error
 import Data.Time.Clock qualified
 import Data.UUID qualified
 import Data.Void qualified

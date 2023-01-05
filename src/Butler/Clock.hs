@@ -49,7 +49,7 @@ instance ToHtml Time where
     toHtml (Time n) = toHtml (show n <> "ms")
 
 instance From Time ByteString where
-    from = via @Text
+    from = encodeUtf8 . into @Text
 
 instance From Time Milli where
     from (Time n) = Milli n

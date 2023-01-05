@@ -2,8 +2,8 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/acb9b59f2dc1cfb11ffe1b1062449c8a5dc2f145";
-    # "path:///srv/github.com/podenv/hspkgs";
+     "github:podenv/hspkgs/aef39c369f49b0cd0b7ecc17e190f50c3965e53c";
+     # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let

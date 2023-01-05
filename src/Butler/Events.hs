@@ -18,5 +18,5 @@ instance From SystemEvent Text where
     from s = case s of
         ProcessCreated p -> processID p <> " created"
         ProcessStopped p err -> processID p <> " exited " <> from err
-        ProcessMessage loc p msg -> processID p <> "\t" <> unsafeFrom loc <> "\t" <> msg
+        ProcessMessage loc p msg -> processID p <> "\t" <> decodeUtf8 loc <> "\t" <> msg
         _ -> from (show s)

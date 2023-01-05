@@ -98,7 +98,7 @@ hyper_ :: Text -> Attribute
 hyper_ = makeAttribute "_"
 
 encodeVal :: [Pair] -> Attribute
-encodeVal kv = hxVals_ $ unsafeFrom (encodeJSON $ object kv)
+encodeVal kv = hxVals_ $ decodeUtf8 (from $ encodeJSON $ object kv)
 
 withWindow :: Monad m => Text -> Natural -> HtmlT m () -> HtmlT m ()
 withWindow name wid body = do

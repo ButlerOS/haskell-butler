@@ -96,7 +96,7 @@ termApp desktop wid = do
                 -- logTrace (prog <> "-read") ["buf" .= BSLog outputData]
                 broadcastDesktopMessage desktop (const True) chan outputData
 
-    let welcomeMessage = "\rConnected to " <> from prog
+    let welcomeMessage = "\rConnected to " <> encodeUtf8 prog
     statusMsg <- newTVarIO welcomeMessage
 
     let supervisor = do
@@ -104,7 +104,7 @@ termApp desktop wid = do
             res <- awaitProcess ptyProcess
             logError "pty stopped" ["res" .= res]
             now <- getTime
-            let errorMessage = "\r\n" <> from now <> " " <> from prog <> " exited: " <> from (show res) <> "\r\n"
+            let errorMessage = "\r\n" <> from now <> " " <> encodeUtf8 prog <> " exited: " <> encodeUtf8 (from $ show res) <> "\r\n"
             atomically $ writeTVar statusMsg errorMessage
             broadcastDesktopMessage desktop (const True) chan errorMessage
             let waitForR = do

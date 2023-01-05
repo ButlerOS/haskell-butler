@@ -25,7 +25,7 @@ newtype StorageAddress = StorageAddress ByteString
     deriving (Show)
 
 instance From Text StorageAddress where
-    from = StorageAddress . from
+    from = StorageAddress . encodeUtf8
 
 data Storage = Storage
     { rootDir :: RawFilePath
@@ -35,7 +35,7 @@ data Storage = Storage
 
 prepareRootDir :: MonadIO m => RawFilePath -> m RawFilePath
 prepareRootDir rootDir = liftIO do
-    createDirectoryIfMissing True (unsafeFrom rootDir)
+    createDirectoryIfMissing True (from $ decodeUtf8 rootDir)
     pure dir
   where
     dir
@@ -69,7 +69,7 @@ syncThread storage fire = forever do
     traverse_ (liftIO . writeJournal) contents
   where
     writeJournal :: (RawFilePath, LByteString) -> IO ()
-    writeJournal (path, content) = BS.writeFile (unsafeFrom path) (from content)
+    writeJournal (path, content) = BS.writeFile (from $ decodeUtf8 path) (from content)
 
 getStoragePath :: RawFilePath -> StorageAddress -> RawFilePath
 getStoragePath rootDir (StorageAddress n) = rootDir <> n
@@ -79,7 +79,7 @@ readStorage storage addr = liftIO do
     let fp = getStoragePath storage.rootDir addr
     fileExist fp >>= \case
         False -> pure Nothing
-        True -> Just . from <$> BS.readFile (unsafeFrom fp)
+        True -> Just . from <$> BS.readFile (from $ decodeUtf8 fp)
 
 writeStorage :: Storage -> StorageAddress -> LByteString -> STM ()
 writeStorage storage addr obj = do
