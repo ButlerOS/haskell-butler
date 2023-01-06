@@ -18,7 +18,7 @@ import Butler.Prelude
 import Butler.Session
 
 newtype Workspace = Workspace Text
-    deriving newtype (Eq, Ord, Show, IsString, FromHttpApiData)
+    deriving newtype (Serialise, Eq, Ord, Show, IsString, FromHttpApiData)
     deriving (FromJSON, ToJSON, ToHtml) via Text
 
 instance From Workspace Text where

@@ -18,14 +18,20 @@ import Butler.Window
 
 import Butler.App.Chat
 
-newtype Lobby = Lobby
-    { desktops :: MVar (Map Workspace Desktop)
+data Lobby = Lobby
+    { desktops :: MVar (Map Workspace DesktopStatus)
+    , desktopsList :: MemoryVar [Workspace]
     }
+
+data DesktopStatus = DesktopOffline | DesktopRunning Desktop
 
 type Xinit = Desktop -> ProcessIO ()
 
-newLobby :: MonadIO m => m Lobby
-newLobby = Lobby <$> newMVar mempty
+newLobby :: ProcessIO Lobby
+newLobby = do
+    (savedList, desktopsList) <- newProcessMemory "desktops.bin" (pure mempty)
+    let initialMap = Map.fromList $ map (\name -> (name, DesktopOffline)) savedList
+    Lobby <$> newMVar initialMap <*> pure desktopsList
 
 lobbyProgram :: AppLauncher -> Xinit -> ChatServer -> Display -> ProcessIO OnClient
 lobbyProgram appLauncher xinit chat display = do
@@ -38,8 +44,8 @@ lobbyProgram appLauncher xinit chat display = do
 
     let getDesktop :: Workspace -> ProcessIO Desktop
         getDesktop name = modifyMVar dm.desktops $ \wss -> case Map.lookup name wss of
-            Just n -> pure (wss, n)
-            Nothing -> do
+            Just (DesktopRunning desktop) -> pure (wss, desktop)
+            _ -> do
                 desktopMVar <- newEmptyMVar
                 let desktopID = "desktop-" <> from name
                 os <- asks os
@@ -48,7 +54,8 @@ lobbyProgram appLauncher xinit chat display = do
                     startDesktop desktopMVar appLauncher xinit display name
 
                 desktop <- takeMVar desktopMVar
-                pure (Map.insert name desktop wss, desktop)
+                atomically $ modifyMemoryVar dm.desktopsList (name :)
+                pure (Map.insert name (DesktopRunning desktop) wss, desktop)
 
     pure \case
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
@@ -76,11 +83,61 @@ lobbyHandler dm chat = \case
         handleClientEvents client $ handleLobbyEvents dm chat client
     _ -> pure ()
 
-lobbyHtml :: Map Workspace Desktop -> HtmlT STM () -> HtmlT STM ()
+lobbyWsListHtml :: Map Workspace DesktopStatus -> HtmlT STM ()
+lobbyWsListHtml wss =
+    with div_ [id_ "ws-list", class_ "grid auto-cols-auto w-96"] do
+        forM_ (Map.toList wss) $ \(ws, desktopStatus) -> do
+            with
+                div_
+                [ class_ "p-2 mt-4 bg-stone-300 rounded cursor-pointer relative"
+                ]
+                do
+                    with div_ [class_ "flex justify-end absolute bottom-0 right-0"] do
+                        with
+                            i_
+                            [ id_ "delete-ws"
+                            , encodeVal [("ws", toJSON ws)]
+                            , class_ "px-4 py-2 ri-focus-3-fill text-red-500"
+                            , hxTrigger_ "click"
+                            , wsSend
+                            ]
+                            mempty
+                        with
+                            button_
+                            [ hxTrigger_ "click"
+                            , wsSend
+                            , id_ "enter-ws"
+                            , encodeVal [("ws", toJSON ws)]
+                            , class_ btn
+                            ]
+                            "enter"
+                    table_ do
+                        let attr :: Text -> HtmlT STM () -> HtmlT STM ()
+                            attr k v =
+                                tr_ do
+                                    with td_ [class_ "text-right pr-1"] do
+                                        toHtml k
+                                        ":"
+                                    with td_ [class_ "font-medium"] do
+                                        v
+                        attr "name" (toHtml ws)
+                        case desktopStatus of
+                            DesktopOffline -> "offline"
+                            DesktopRunning desktop -> do
+                                clients <- lift (getClients desktop.clients)
+                                attr "clients" do
+                                    with div_ [class_ "flex"] do
+                                        traverse_ (\c -> userIcon c.session.username) clients
+                                wins <- IM.size . (.windows) <$> lift (readMemoryVar desktop.wm.windows)
+                                attr "wins" (toHtml (show wins))
+
+btn :: Text
+btn = "rounded-none px-4 py-2 font-semibold text-sm bg-sky-500 text-white rounded-none shadow-sm"
+
+lobbyHtml :: Map Workspace DesktopStatus -> HtmlT STM () -> HtmlT STM ()
 lobbyHtml wss chat =
     with div_ [id_ "display-root"] do
         script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
-        let btn = "rounded-none px-4 py-2 font-semibold text-sm bg-sky-500 text-white rounded-none shadow-sm"
         splashHtml do
             with div_ [class_ "flex"] do
                 with div_ [class_ "flex flex-col place-content-center pr-3"] do
@@ -95,48 +152,7 @@ lobbyHtml wss chat =
                 with div_ [class_ "border border-2 mr-3"] mempty
                 with div_ [class_ "flex-grow"] do
                     with div_ [class_ "flex flex-col place-items-center"] do
-                        with div_ [class_ "grid auto-cols-auto w-96"] do
-                            forM_ (Map.toList wss) $ \(ws, desktop) -> do
-                                with
-                                    div_
-                                    [ class_ "p-2 mt-4 bg-stone-300 rounded cursor-pointer relative"
-                                    ]
-                                    do
-                                        with div_ [class_ "flex justify-end absolute bottom-0 right-0"] do
-                                            with
-                                                i_
-                                                [ id_ "delete-ws"
-                                                , encodeVal [("ws", toJSON ws)]
-                                                , class_ "px-4 py-2 ri-focus-3-fill text-red-500"
-                                                , hxTrigger_ "click"
-                                                , wsSend
-                                                ]
-                                                mempty
-                                            with
-                                                button_
-                                                [ hxTrigger_ "click"
-                                                , wsSend
-                                                , id_ "enter-ws"
-                                                , encodeVal [("ws", toJSON ws)]
-                                                , class_ btn
-                                                ]
-                                                "enter"
-                                        table_ do
-                                            let attr :: Text -> HtmlT STM () -> HtmlT STM ()
-                                                attr k v =
-                                                    tr_ do
-                                                        with td_ [class_ "text-right pr-1"] do
-                                                            toHtml k
-                                                            ":"
-                                                        with td_ [class_ "font-medium"] do
-                                                            v
-                                            attr "name" (toHtml ws)
-                                            clients <- lift (getClients desktop.clients)
-                                            attr "clients" do
-                                                with div_ [class_ "flex"] do
-                                                    traverse_ (\c -> userIcon c.session.username) clients
-                                            wins <- IM.size . (.windows) <$> lift (readMemoryVar desktop.wm.windows)
-                                            attr "wins" (toHtml (show wins))
+                        lobbyWsListHtml wss
                         with form_ [wsSend, hxTrigger_ "submit", class_ "mt-4 p-2 flex flex-col bg-stone-300 rounded w-96 relative", id_ "new-ws"] do
                             with (input_ mempty) [name_ "ws", type_ "text", placeholder_ "Workspace name"]
                             with select_ [name_ "flavor"] do
@@ -151,9 +167,14 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
         logInfo "got welcome event" ["ws" .= ws, "trigger" .= trigger]
         case trigger of
             "delete-ws" -> modifyMVar_ dm.desktops $ \wss -> case Map.lookup ws wss of
-                Just desktop -> do
-                    void $ killProcess desktop.env.process.pid
-                    pure (Map.delete ws wss)
+                Just desktopStatus -> do
+                    case desktopStatus of
+                        DesktopRunning desktop -> void $ killProcess desktop.env.process.pid
+                        DesktopOffline -> pure ()
+                    let newWss = Map.delete ws wss
+                    sendHtml client (lobbyWsListHtml newWss)
+                    atomically $ modifyMemoryVar dm.desktopsList (filter (/= ws))
+                    pure newWss
                 Nothing -> do
                     logError "unknown ws" ["ws" .= ws]
                     pure wss
