@@ -143,8 +143,8 @@ runExternalProcess name cmd = do
         atomically (await stdoutFlusher)
   where
     eofHandler e
-      | isEOFError e = pure ()
-      | otherwise = throwIO e
+        | isEOFError e = pure ()
+        | otherwise = throwIO e
 
 spawnProcess :: ProgramName -> ProcessIO () -> ProcessIO Process
 spawnProcess name (ProcessIO action) = do

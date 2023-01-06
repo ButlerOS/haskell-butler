@@ -43,11 +43,19 @@ webService xs app port = \case
     Https mKeys -> do
         keys <- maybe getKeys pure mKeys
         logInfo "Running WARP" ["port" .= port, "tls" .= True]
-        liftIO $ Warp.runTLS (uncurry Warp.tlsSettingsMemory keys) settings handler
+        liftIO $ Warp.runTLS (allowInsecure $ uncurry Warp.tlsSettingsMemory keys) settings handlerTLS
         error "warp exited?!"
   where
+    allowInsecure tlsSettings = tlsSettings{Warp.onInsecure = Warp.AllowInsecure}
     settings = Warp.setPort port Warp.defaultSettings
     staticApp = xstaticApp xs
+    handlerTLS req resp
+        | Wai.isSecure req = handler req resp
+        | otherwise = resp $ Wai.responseLBS HTTP.status301 [("Location", secureLocation)] mempty
+      where
+        secureLocation = "https://" <> secureHost <> req.rawPathInfo <> req.rawQueryString
+        secureHost = fromMaybe defaultHost req.requestHeaderHost
+        defaultHost = "localhost:" <> encodeUtf8 (from $ show port)
     handler req resp =
         app
             req
