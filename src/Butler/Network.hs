@@ -1,29 +1,50 @@
-module Butler.Network (WaiApplication, webService) where
+module Butler.Network (
+    WaiApplication,
+    webService,
+    WebProtocol (..),
+) where
 
+import Data.ByteString qualified as BS
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Handler.WarpTLS qualified as Warp
+import System.Process.Typed
 
 import Butler.OS
 import Butler.Prelude
-import Butler.Storage
+import System.FilePath ((</>))
+import UnliftIO.Directory (withCurrentDirectory)
 
 type WaiApplication = Wai.Application
 
-getKeys :: ProcessIO (ByteString, ByteString)
-getKeys = do
-    os <- asks os
-    Just k <- readStorage os.storage "key.pem"
-    Just certificate <- readStorage os.storage "certificate.pem"
-    pure (from certificate, from k)
+data WebProtocol
+    = Http
+    | Https (Maybe (ByteString, ByteString))
 
-webService :: [XStaticFile] -> Wai.Application -> Port -> ProcessIO Void
-webService xs app port = do
-    keys <- getKeys
-    logInfo "Running WARP" ["port" .= port, "tls" .= True]
-    liftIO $ Warp.runTLS (uncurry Warp.tlsSettingsMemory keys) settings handler
-    error "warp exited?!"
+getKeys :: ProcessIO (ByteString, ByteString)
+getKeys = fst <$> newProcessMemory "tls.key" genKeys
+  where
+    genKeys = withSystemTempDirectory "butler-gen-keys" $ \tmpDir -> withCurrentDirectory tmpDir do
+        let keyPath = tmpDir </> "key.pem"
+            reqPath = tmpDir </> "crt.csr"
+            crtPath = tmpDir </> "crt.pem"
+        runExternalProcess "openssl-genrsa" $ proc "openssl" ["genrsa", "-out", keyPath, "2048"]
+        runExternalProcess "openssl-req" $ proc "openssl" ["req", "-new", "-key", keyPath, "-out", reqPath, "-subj", "/CN=localhost"]
+        runExternalProcess "openssl-sign" $ proc "openssl" ["x509", "-req", "-in", reqPath, "-signkey", keyPath, "-out", crtPath]
+        liftIO do
+            crtData <- BS.readFile crtPath
+            keyData <- BS.readFile keyPath
+            pure (crtData, keyData)
+
+webService :: [XStaticFile] -> Wai.Application -> Port -> WebProtocol -> ProcessIO Void
+webService xs app port = \case
+    Http -> error "TODO"
+    Https mKeys -> do
+        keys <- maybe getKeys pure mKeys
+        logInfo "Running WARP" ["port" .= port, "tls" .= True]
+        liftIO $ Warp.runTLS (uncurry Warp.tlsSettingsMemory keys) settings handler
+        error "warp exited?!"
   where
     settings = Warp.setPort port Warp.defaultSettings
     staticApp = xstaticApp xs

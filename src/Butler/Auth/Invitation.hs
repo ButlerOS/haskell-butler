@@ -105,7 +105,7 @@ cookieSettings =
 
 invitationAuthApp :: (Html () -> Html ()) -> Sessions -> ProcessIO AuthApplication
 invitationAuthApp mkIndexHtml sessions = do
-    JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> generateKey)
+    JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO generateKey)
     let jwtSettings = defaultJWTSettings myKey
 
     let cfg = cookieSettings :. jwtSettings :. EmptyContext

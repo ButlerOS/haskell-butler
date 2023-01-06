@@ -1,9 +1,0 @@
-#!/bin/sh -e
-
-mkdir -p .butler-storage
-cd .butler-storage
-
-[ -e key.pem ] && (echo "key.pem already exit"; exit 1)
-openssl genrsa -out key.pem 2048
-openssl req -new -key key.pem -out certificate.csr -subj "/CN=localhost"
-openssl x509 -req -in certificate.csr -signkey key.pem -out certificate.pem

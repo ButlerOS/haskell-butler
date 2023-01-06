@@ -161,4 +161,4 @@ startDisplay port xfiles mkAuthApp withDisplay = do
                     _ -> resp wsResp
              in wsApp req wsRespHandler
 
-    webService xfiles glApp port
+    webService xfiles glApp port (Https Nothing)

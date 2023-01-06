@@ -34,7 +34,6 @@ A window-xp clone with support for multiple "seats":
 Usage:
 
 ```ShellSession
-./bin/gen-cert
 ./bin/run-vnc
 ./bin/run-ghcid "Butler.demoDesktop"
 firefox https://localhost:8080

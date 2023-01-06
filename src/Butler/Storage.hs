@@ -13,7 +13,6 @@ module Butler.Storage (
 import Data.ByteString qualified as BS
 import Data.Map qualified as Map
 import System.Directory (createDirectoryIfMissing)
-import System.Posix.ByteString (RawFilePath)
 import System.Posix.Files.ByteString (fileExist)
 import Prelude hiding (readFile, writeFile)
 
@@ -56,11 +55,8 @@ newStorageSTM :: RawFilePath -> STM Storage
 newStorageSTM rootDir = do
     Storage rootDir <$> newTVar mempty <*> newEmptyTMVar
 
--- | The syncThread must be started for the storage to persist
-syncThread :: MonadIO m => Storage -> (Int -> m ()) -> m Void
-syncThread storage fire = forever do
-    atomically $ takeTMVar storage.sync
-    sleep 5_000
+doStorageSync :: MonadIO m => Storage -> (Int -> m ()) -> m ()
+doStorageSync storage fire = do
     contents <- atomically do
         -- flush request added in between
         void $ tryTakeTMVar storage.sync
@@ -70,6 +66,13 @@ syncThread storage fire = forever do
   where
     writeJournal :: (RawFilePath, LByteString) -> IO ()
     writeJournal (path, content) = BS.writeFile (from $ decodeUtf8 path) (from content)
+
+-- | The syncThread must be started for the storage to persist
+syncThread :: MonadIO m => Storage -> (Int -> m ()) -> m Void
+syncThread storage fire = forever do
+    atomically $ takeTMVar storage.sync
+    sleep 5_000
+    doStorageSync storage fire
 
 getStoragePath :: RawFilePath -> StorageAddress -> RawFilePath
 getStoragePath rootDir (StorageAddress n) = rootDir <> n

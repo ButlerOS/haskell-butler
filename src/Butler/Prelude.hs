@@ -20,6 +20,7 @@ module Butler.Prelude (
     whenM,
     module GHC.Stack,
     module Data.Char,
+    System.Posix.ByteString.RawFilePath,
 
     -- * relude
     Relude.putText,
@@ -201,6 +202,7 @@ import Options.Applicative.Types qualified
 import PyF
 import Relude qualified
 import Servant.API
+import System.Posix.ByteString (RawFilePath)
 import Text.Read (readMaybe)
 import UnliftIO hiding (Handler)
 import UnliftIO.STM

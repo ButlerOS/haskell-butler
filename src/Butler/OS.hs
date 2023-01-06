@@ -7,6 +7,7 @@ module Butler.OS (
     runProcessIO,
     getSelfProcess,
     asProcess,
+    runExternalProcess,
 
     -- * Memory api
     newProcessMemory,
@@ -39,6 +40,8 @@ module Butler.OS (
 ) where
 
 import Control.Retry
+import Data.ByteString qualified as BS
+import System.Process.Typed hiding (Process, startProcess, stopProcess)
 
 import Butler.Buzzer
 import Butler.Clock hiding (getTime)
@@ -55,6 +58,7 @@ import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.OneLine (renderObject)
 import Data.Aeson.Types (Pair)
 import Ki.Unlifted qualified as Ki
+import System.IO.Error (isEOFError)
 
 newtype ProcessIO a = ProcessIO (ProcessEnv -> IO a)
     deriving
@@ -120,10 +124,27 @@ logError = processLog getLocName EventError
 logError_ :: HasCallStack => Text -> ProcessIO ()
 logError_ msg = processLog getLocName EventInfo msg []
 
-newProcessMemory :: Serialise a => StorageAddress -> IO a -> ProcessIO (a, MemoryVar a)
+newProcessMemory :: Serialise a => StorageAddress -> ProcessIO a -> ProcessIO (a, MemoryVar a)
 newProcessMemory addr initialize = do
     os <- asks os
-    liftIO $ newMemoryVar os.storage addr initialize
+    p <- asks process
+    liftIO $ newMemoryVar os.storage addr (runProcessIO os p initialize)
+
+runExternalProcess :: Text -> ProcessConfig stdin stdout0 stderr0 -> ProcessIO ()
+runExternalProcess name cmd = do
+    logInfo "Running" ["cmd" .= show cmd]
+    withProcessWait_ (setStdout createPipe $ setStderr createPipe cmd) $ \p -> do
+        stdoutFlusher <- spawnThread $ handle eofHandler $ forever do
+            buf <- liftIO (BS.hGetLine (getStdout p))
+            logTrace name ["stdout" .= BSLog buf]
+        handle eofHandler $ forever do
+            buf <- liftIO (BS.hGetLine (getStderr p))
+            logTrace name ["stderr" .= BSLog buf]
+        atomically (await stdoutFlusher)
+  where
+    eofHandler e
+      | isEOFError e = pure ()
+      | otherwise = throwIO e
 
 spawnProcess :: ProgramName -> ProcessIO () -> ProcessIO Process
 spawnProcess name (ProcessIO action) = do
@@ -139,6 +160,11 @@ spawnThread_ :: ProcessIO Void -> ProcessIO ()
 spawnThread_ action = do
     process <- asks process
     process.scope `Ki.fork_` action
+
+spawnThread :: ProcessIO a -> ProcessIO (Thread a)
+spawnThread action = do
+    process <- asks process
+    process.scope `Ki.fork` action
 
 killProcess :: Pid -> ProcessIO (Maybe Process)
 killProcess pid = do

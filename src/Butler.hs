@@ -6,7 +6,7 @@ module Butler where
 import Data.ByteString qualified as BS
 import Data.Text qualified as Text
 import System.Environment (getArgs)
-import System.Process.Typed
+import System.Process.Typed hiding (Process)
 
 import Butler.Desktop
 import Butler.Display
@@ -69,17 +69,10 @@ startVnc = do
 
     liftIO . print =<< awaitProcess =<< getSelfProcess
   where
-    runProc' name cmd = spawnProcess (ProgramName name) (handleProcess name cmd)
-    runProc name cmd = superviseProcess (ProgramName name) (handleProcess name cmd)
-    handleProcess name cmd = do
-        logInfo "Running" ["cmd" .= show cmd]
-        withProcessWait_ (setStdout createPipe $ setStderr createPipe cmd) $ \p -> do
-            spawnThread_ $ forever do
-                buf <- liftIO (BS.hGetLine (getStdout p))
-                logTrace name ["stdout" .= BSLog buf]
-            forever do
-                buf <- liftIO (BS.hGetLine (getStderr p))
-                logTrace name ["stderr" .= BSLog buf]
+    runProc' name cmd = spawnProcess (ProgramName name) (runExternalProcess name cmd)
+    runProc name cmd = superviseProcess (ProgramName name) do
+        runExternalProcess name cmd
+        error "process died"
 
 demoGUI :: IO ()
 demoGUI = do
