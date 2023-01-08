@@ -44,3 +44,9 @@ Start electron client (Alt-F4 to quit):
 ```ShellSession
 nix run .#electron https://localhost:8080
 ```
+
+Container usage:
+
+```ShellSession
+podman run -p 8080:8080 -v butler-data:/var/lib/butler ghcr.io/tristancacqueray/haskell-butler:term-latest
+```

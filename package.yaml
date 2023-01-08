@@ -57,6 +57,8 @@ dependencies:
   - posix-pty
   - process
   - typed-process
+  - with-utf8
+  - cgroup-rts-threads
 
   - witch
 

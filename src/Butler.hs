@@ -3,8 +3,10 @@
 
 module Butler where
 
+import Control.Concurrent.CGroup qualified
 import Data.ByteString qualified as BS
 import Data.Text qualified as Text
+import Main.Utf8
 import System.Environment (getArgs)
 import System.Process.Typed hiding (Process)
 
@@ -190,7 +192,12 @@ demoDesktop = do
     xfiles' = XStatic.noVNC <> XStatic.winbox <> xfiles
 
 demo :: IO ()
-demo =
+demo = Main.Utf8.withUtf8 do
+    -- ensure tty-less environment gets line based output
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
+    -- make rts aware of the cgroup capabilities
+    Control.Concurrent.CGroup.initRTSThreads
     getArgs >>= \case
         ["vnc"] -> print =<< withButlerOS startVnc
         _ -> demoDesktop
