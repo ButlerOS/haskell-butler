@@ -45,7 +45,7 @@ lobbyProgram appLauncher xinit chat display = do
     let getDesktop :: Workspace -> ProcessIO Desktop
         getDesktop name = modifyMVar dm.desktops $ \wss -> case Map.lookup name wss of
             Just (DesktopRunning desktop) -> pure (wss, desktop)
-            _ -> do
+            mDesktopStatus -> do
                 desktopMVar <- newEmptyMVar
                 let desktopID = "desktop-" <> from name
                 os <- asks os
@@ -54,7 +54,8 @@ lobbyProgram appLauncher xinit chat display = do
                     startDesktop desktopMVar appLauncher xinit display name
 
                 desktop <- takeMVar desktopMVar
-                atomically $ modifyMemoryVar dm.desktopsList (name :)
+                when (isNothing mDesktopStatus) do
+                    atomically $ modifyMemoryVar dm.desktopsList (name :)
                 pure (Map.insert name (DesktopRunning desktop) wss, desktop)
 
     pure \case

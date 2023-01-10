@@ -82,12 +82,12 @@ startDesktop desktopMVar appLauncher xinit display name = do
             (wid, _) <- atomically $ newWindow desktop.wm.windows "Welcome"
             atomically . addWinApp desktop wid =<< mkWelcome wid
         xs -> forM_ xs $ \(wid, prog) -> do
-            appM <- case prog of
+            mApp <- case prog of
                 "app-welcome" -> Just <$> mkWelcome wid
                 "app-launcher" -> Just <$> newGuiApp (ProgramName "launcher") Nothing (const . pure $ menuWin wid) [] (const $ pure ())
                 _ -> appLauncher desktop prog wid
-            case appM of
-                Just app -> atomically $ addWinApp desktop wid app
+            case mApp of
+                Just app -> atomically $ addApp desktop app
                 Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
 
     putMVar desktopMVar desktop

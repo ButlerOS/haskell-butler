@@ -103,12 +103,16 @@ windowScript =
     [raw|
 import WinBox from '/xstatic/winbox.js'
 globalThis.WinBox = WinBox
+
+// WinBox event handler, called by the js client, forwarded to the server.
 globalThis.onWinEvent = (ev, w) => debounceData(500, (x, y) => {
   if (ev == "resize" && onWindowResize[w] !== undefined) {
     onWindowResize[w]()
   }
   return encodeDataMessage(1, {ev: ev, w: w, x: x, y: y})
 })
+
+// Special handler for close event by the js client.
 globalThis.onWinClose = (w) => (force) => {
   let doDelete = force
   if (!force && confirm("Close window?")) {
@@ -122,6 +126,8 @@ globalThis.onWinClose = (w) => (force) => {
   }
   return true
 }
+
+// Servent event handler.
 butlerDataHandlers[1] = buf => {
   let body = decodeJSON(buf)
   let win = windows[body.w]
@@ -160,23 +166,27 @@ butlerDataHandlers[1] = buf => {
 renderWindow :: (WinID, Window) -> Text
 renderWindow (WinID idx, Window (x, y) (w, h) title) = do
     let attr k v = k <> ": " <> showT v
-        handler n = "on" <> n <> ": onWinEvent(" <> showT n <> ", " <> showT idx <> ")"
         attrs =
-            map handler ["resize", "move", "focus"] -- , minimize", "maximize"]
-                <> [ attr "x" x
-                   , attr "y" y
-                   , attr "width" w
-                   , attr "height" h
-                   , "id: " <> showT idx
-                   , "bottom: 36"
-                   , "class: [\"no-full\"]"
-                   , "root: document.getElementById(\"win-root\")"
-                   , "onclose: onWinClose(" <> showT idx <> ")"
-                   , "mount: document.getElementById(\"w-" <> showT idx <> "\")"
-                   ]
+            [ attr "x" x
+            , attr "y" y
+            , attr "width" w
+            , attr "height" h
+            , "id: " <> showT idx
+            , "bottom: 36"
+            , "class: [\"no-full\"]"
+            , "root: document.getElementById(\"win-root\")"
+            , "onclose: onWinClose(" <> showT idx <> ")"
+            , "mount: document.getElementById(\"w-" <> showT idx <> "\")"
+            ]
         obj = "{" <> Text.intercalate ",\n" attrs <> "}"
-        rs = "if (onWindowResize[" <> showT idx <> "]) {onWindowResize[" <> showT idx <> "]" <> showT (w, h) <> "}; "
-     in "windows[" <> showT idx <> "] = (new WinBox(" <> from (show title) <> ", " <> obj <> ")); " <> rs
+        win = "windows[" <> showT idx <> "]"
+        mkObj = win <> " = (new WinBox(" <> from (show title) <> ", " <> obj <> "))"
+
+        rs = "if (onWindowResize[" <> showT idx <> "]) {onWindowResize[" <> showT idx <> "]" <> showT (w, h) <> "}"
+
+        handler n = win <> "[\"on" <> n <> "\"] = onWinEvent(" <> showT n <> ", " <> showT idx <> ")"
+        handlers = map handler ["resize", "move", "focus"]
+     in (Text.intercalate ";\n" $ [mkObj, rs] <> handlers) <> ";\n"
 
 withWID :: WinID -> Text -> Text
 withWID winID n = n <> "-" <> showT winID
