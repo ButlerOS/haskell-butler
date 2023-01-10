@@ -138,16 +138,22 @@ demoDesktop = do
 
             with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
                 body
-                -- Update the status when the connection is dropped
+                -- Display an overlay when the connection is dropped
                 script_ displayPulseError
+                with div_ [class_ "h-full w-0 fixed z-50 top-0 left-0 bg-blue-300/[0.9] overflow-x-hidden", id_ "ws-error-overlay"] do
+                    with div_ [class_ "flex justify-center items-center h-full"] do
+                        with div_ [class_ "bg-blue-100 rounded p-2"] do
+                            "Disconnected, retrying connection..."
 
     displayPulseError :: Text
     displayPulseError =
         [raw|
     document.body.addEventListener('htmx:wsError', function(evt) {
       try {
-        htmx.addClass(htmx.find("#display-pulse"), "bg-red-500");
-      } catch (e) {}
+        let elt = htmx.find("#ws-error-overlay");
+        htmx.addClass(elt, "w-full");
+        htmx.removeClass(elt, "w-0");
+      } catch (e) { console.log("Error", e); }
     });
     |]
 
