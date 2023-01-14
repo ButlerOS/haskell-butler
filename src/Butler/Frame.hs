@@ -48,6 +48,7 @@ globalThis.encodeDataMessage = (chan, obj) => {
   buf.set(new Uint8Array(dataBuf), 1)
   return buf
 }
+globalThis.withWID = (wid, name) => (name + "-" + wid);
 
 globalThis.windows = {}
 globalThis.onWindowResize = {}

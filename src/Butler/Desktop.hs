@@ -157,7 +157,6 @@ broadcastDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ChannelID -> By
 broadcastDesktopMessage desktop fpred chan bs = do
     broadcastRawDesktopMessage desktop fpred (encodeMessage chan bs)
 
-
 _writeHtml :: MonadIO m => TVar Text -> Html () -> m ()
 _writeHtml t h = atomically $ writeTVar t (from $ renderText h)
 
@@ -201,6 +200,7 @@ menuHtml (WinID winId) = do
     with ul_ [class_ "list-disc"] do
         mkLauncher "clock"
         mkLauncher "chat"
+        mkLauncher "tabletop"
         mkLauncher "minesweeper"
         mkLauncher "ps"
         mkLauncher "log-viewer"

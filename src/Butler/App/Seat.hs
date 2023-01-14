@@ -72,8 +72,8 @@ renderCursorToggle username statusM = do
         do
             case statusM of
                 Just status
-                    | status -> script_ "window.onmousemove = mouseHandler"
-                    | otherwise -> script_ "window.onmousemove = null"
+                    | status -> script_ "window.addEventListener('mousemove', mouseHandler)"
+                    | otherwise -> script_ "window.removeEventListener('mousemove', mouseHandler)"
                 Nothing -> mempty
 
 appendSeat :: Seat -> HtmlT STM ()
@@ -178,7 +178,7 @@ function seatClient(chan) {
   // wait for data conn to be ready
   setTimeout(() => {
     butlerDataSocket.send(encodeDataMessage(chan, {w: window.innerWidth, h: window.innerHeight}))
-    window.onmousemove = mouseHandler
+    window.addEventListener("mousemove", mouseHandler)
   }, 1000)
 }
 |]

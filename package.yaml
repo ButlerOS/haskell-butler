@@ -124,6 +124,7 @@ dependencies:
 
   - lucid
   - lucid-htmx
+  - lucid-svg
   - http-types
   - servant-lucid
   - tagged

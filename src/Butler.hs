@@ -29,6 +29,7 @@ import Butler.App.ProcessExplorer
 import Butler.App.Seat
 import Butler.App.SessionManager
 import Butler.App.SpeedTest
+import Butler.App.Tabletop
 import Butler.App.Terminal
 
 import Butler.Clock
@@ -96,6 +97,7 @@ demoGUI = do
     clientHandler = \case
         UserConnected _ client -> do
             logInfo "Client connected" ["client" .= client]
+            spawnPingThread client
             clients <- atomically $ newDisplayClientsFromClient client
             msApp <- mineSweeperApp clients (WinID 0)
             msHtml <- msApp.draw client
@@ -178,6 +180,7 @@ demoDesktop = do
         "app-ps" -> Just <$> peApp desktop winID
         "app-vnc" -> Just <$> vncApp desktop winID
         "app-minesweeper" -> Just <$> mineSweeperApp desktop.hclients winID
+        "app-tabletop" -> Just <$> tabletopApp desktop winID
         _ -> pure Nothing
 
     xfiles', xfiles :: [XStaticFile]

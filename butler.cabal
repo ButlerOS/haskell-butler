@@ -36,6 +36,7 @@ library
       Butler.App.Seat
       Butler.App.SessionManager
       Butler.App.SpeedTest
+      Butler.App.Tabletop
       Butler.App.Terminal
       Butler.App.Timer
       Butler.Auth.Guest
@@ -122,6 +123,7 @@ library
     , lens-aeson
     , lucid
     , lucid-htmx
+    , lucid-svg
     , lucid-xstatic
     , mmorph
     , mtl
@@ -232,6 +234,7 @@ executable butler
     , lens-aeson
     , lucid
     , lucid-htmx
+    , lucid-svg
     , lucid-xstatic
     , mmorph
     , mtl
@@ -351,6 +354,7 @@ test-suite spec
     , lens-aeson
     , lucid
     , lucid-htmx
+    , lucid-svg
     , lucid-xstatic
     , mmorph
     , mtl
