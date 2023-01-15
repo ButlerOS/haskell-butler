@@ -48,8 +48,8 @@ termApp desktop wid = do
     server <- atomically newXtermServer
     dimChan <- atomically newTChan
 
-    let clientHandler _chan _client buf = atomically $ writeTChan server.inputChan buf
-        dimHandler chan client buf = case (buf ^? key "cols" . _Integer, buf ^? key "rows" . _Integer) of
+    let clientHandler _ _chan _client buf = atomically $ writeTChan server.inputChan buf
+        dimHandler _ chan client buf = case (buf ^? key "cols" . _Integer, buf ^? key "rows" . _Integer) of
             (Just (unsafeFrom -> cols), Just (unsafeFrom -> rows)) -> do
                 logInfo "Got resize" ["cols" .= cols, "rows" .= rows]
                 atomically $ writeTChan dimChan (cols, rows)

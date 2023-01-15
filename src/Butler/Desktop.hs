@@ -14,6 +14,7 @@ module Butler.Desktop (
     broadcastDraw,
     broadcastMessageT,
     broadcastDesktopMessage,
+    broadcastRawDesktopMessage,
 ) where
 
 import Data.Map.Strict qualified as Map
@@ -41,7 +42,7 @@ data Desktop = Desktop
     , apps :: TVar (Map Pid GuiApp)
     , channels :: TVar (Map ChannelName (DisplayClient -> ProcessIO ()))
     -- ^ dedicated websocket, e.g. for novnc
-    , handlers :: NM.NatMap (ChannelID -> DisplayClient -> ByteString -> ProcessIO ())
+    , handlers :: NM.NatMap (ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ())
     -- ^ data channel, e.g. for window manager and xterm
     , clients :: DisplayClients
     -- ^ data clients
@@ -70,7 +71,7 @@ startDesktop desktopMVar appLauncher xinit display name = do
     apps <- atomically $ readMemoryVar wm.apps
 
     desktop <- atomically (newDesktop processEnv display name wm)
-    chan <- atomically $ newHandler desktop (tryHandleWinEvent desktop)
+    chan <- atomically $ newHandler desktop (const $ tryHandleWinEvent desktop)
     when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
 
     let mkWelcome wid = newGuiApp "welcome" Nothing (const . pure $ welcomeWin wid) [] (const $ pure ())
@@ -105,7 +106,7 @@ broadcastMessageT desktop = clientsBroadcast desktop.hclients
 broadcastDraw :: Desktop -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 broadcastDraw desktop = clientsDraw desktop.hclients
 
-newHandler :: Desktop -> (ChannelID -> DisplayClient -> ByteString -> ProcessIO ()) -> STM ChannelID
+newHandler :: Desktop -> (ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()) -> STM ChannelID
 newHandler desktop handl = do
     newChannel <$> NM.add desktop.handlers handl
 
@@ -146,12 +147,16 @@ sendDesktopMessage :: Desktop -> ByteString -> DisplayClient -> ProcessIO ()
 sendDesktopMessage desktop buf client = do
     safeSend desktop.clients sendMessage client buf
 
-broadcastDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ChannelID -> ByteString -> ProcessIO ()
-broadcastDesktopMessage desktop fpred chan bs = do
-    let msg = encodeMessage chan bs
+broadcastRawDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ByteString -> ProcessIO ()
+broadcastRawDesktopMessage desktop fpred bs = do
     -- logTrace "broadcast desktop" ["msg" .= BSLog msg]
     clients <- filter fpred <$> atomically (getClients desktop.clients)
-    traverse_ (sendDesktopMessage desktop msg) clients
+    traverse_ (sendDesktopMessage desktop bs) clients
+
+broadcastDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ChannelID -> ByteString -> ProcessIO ()
+broadcastDesktopMessage desktop fpred chan bs = do
+    broadcastRawDesktopMessage desktop fpred (encodeMessage chan bs)
+
 
 _writeHtml :: MonadIO m => TVar Text -> Html () -> m ()
 _writeHtml t h = atomically $ writeTVar t (from $ renderText h)
@@ -286,7 +291,7 @@ desktopHandler appLauncher desktop event = do
                     Just (chan, xs) -> do
                         handlerM <- atomically $ NM.lookup desktop.handlers (from chan)
                         case handlerM of
-                            Just handler -> handler chan client xs
+                            Just handler -> handler buf chan client xs
                             Nothing -> logError "unknown chan" ["chan" .= chan, "data" .= BSLog buf]
         _ -> do
             channels <- readTVarIO desktop.channels

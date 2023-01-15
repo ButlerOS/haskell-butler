@@ -105,7 +105,7 @@ seatApp :: Desktop -> ProcessIO GuiApp
 seatApp desktop = do
     seats <- atomically newSeats
 
-    let clientHandler chan client buf =
+    let clientHandler _ chan client buf =
             case (buf ^? key "w" . _Integer, buf ^? key "h" . _Integer) of
                 (Just (unsafeFrom -> w), Just (unsafeFrom -> h)) -> do
                     seat <- atomically do
