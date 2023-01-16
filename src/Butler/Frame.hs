@@ -84,6 +84,13 @@ butlerDataSocket.onmessage = event => {
   const buf = new Uint8Array(event.data)
   butlerDataHandlers[buf[0]](buf.slice(1))
 }
+globalThis.butlerDataSocketSend = (buf) => {
+  if (butlerDataSocket.readyState != 1) {
+    setTimeout(() => { butlerDataSocket.send(buf); }, 1000);
+  } else {
+    butlerDataSocket.send(buf)
+  }
+}
 |]
 
 -- | The channel for window data is reserved

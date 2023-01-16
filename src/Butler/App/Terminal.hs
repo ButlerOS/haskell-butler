@@ -56,8 +56,8 @@ termApp desktop wid = do
                 broadcastDesktopMessage desktop (\o -> o.endpoint /= client.endpoint) chan buf
             _ -> logError "invalid dim" ["buf" .= BSLog buf, "client" .= client]
 
-    chan <- atomically (newHandler desktop clientHandler)
-    dimChanID <- atomically (newHandler desktop dimHandler)
+    chan <- atomically (newHandler desktop.handlers clientHandler)
+    dimChanID <- atomically (newHandler desktop.handlers dimHandler)
 
     let Workspace ws = desktop.workspace
         sess = from ("butler-" <> ws <> "-" <> showT chan)

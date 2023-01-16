@@ -1,5 +1,6 @@
 module Butler.Desktop (
     AppLauncher,
+    Handlers,
     Desktop (..),
     newDesktop,
     startDesktop,
@@ -29,6 +30,7 @@ import Butler.Memory
 import Butler.NatMap qualified as NM
 import Butler.Prelude
 import Butler.Processor
+import Butler.SoundBlaster
 import Butler.WebSocket
 import Butler.Window
 
@@ -42,12 +44,13 @@ data Desktop = Desktop
     , apps :: TVar (Map Pid GuiApp)
     , channels :: TVar (Map ChannelName (DisplayClient -> ProcessIO ()))
     -- ^ dedicated websocket, e.g. for novnc
-    , handlers :: NM.NatMap (ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ())
+    , handlers :: Handlers
     -- ^ data channel, e.g. for window manager and xterm
     , clients :: DisplayClients
     -- ^ data clients
     , hclients :: DisplayClients
     -- ^ htmx clients
+    , soundCard :: SoundCard
     , desktopEvents :: BroadcastChan DisplayEvent
     , clientsChannel :: TVar (Map ChannelName DisplayClients)
     }
@@ -60,6 +63,7 @@ newDesktop processEnv display ws wm =
         <*> NM.newNatMap
         <*> newDisplayClients
         <*> newDisplayClients
+        <*> newSoundCard
         <*> newBroadcastChan
         <*> newTVar mempty
 
@@ -71,7 +75,7 @@ startDesktop desktopMVar appLauncher xinit display name = do
     apps <- atomically $ readMemoryVar wm.apps
 
     desktop <- atomically (newDesktop processEnv display name wm)
-    chan <- atomically $ newHandler desktop (const $ tryHandleWinEvent desktop)
+    chan <- atomically $ newHandler desktop.handlers (const $ tryHandleWinEvent desktop)
     when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
 
     let mkWelcome wid = newGuiApp "welcome" Nothing (const . pure $ welcomeWin wid) [] (const $ pure ())
@@ -105,10 +109,6 @@ broadcastMessageT desktop = clientsBroadcast desktop.hclients
 
 broadcastDraw :: Desktop -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 broadcastDraw desktop = clientsDraw desktop.hclients
-
-newHandler :: Desktop -> (ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()) -> STM ChannelID
-newHandler desktop handl = do
-    newChannel <$> NM.add desktop.handlers handl
 
 -- | Register a new gui app without window, e.g. for tray only app.
 addApp :: Desktop -> GuiApp -> STM ()
@@ -202,6 +202,7 @@ menuHtml (WinID winId) = do
         mkLauncher "chat"
         mkLauncher "tabletop"
         mkLauncher "minesweeper"
+        mkLauncher "sound-test"
         mkLauncher "ps"
         mkLauncher "log-viewer"
         mkLauncher "term"

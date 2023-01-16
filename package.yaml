@@ -146,6 +146,7 @@ dependencies:
   - xstatic-xterm
   - xstatic-novnc
   - xstatic-winbox
+  - xstatic-pcm-player
 
 library:
   source-dirs: src

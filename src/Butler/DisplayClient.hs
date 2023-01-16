@@ -5,6 +5,7 @@ import Lucid
 import Network.WebSockets qualified as WS
 
 import Butler.Clock
+import Butler.Frame
 import Butler.NatMap qualified as NM
 import Butler.OS
 import Butler.Prelude
@@ -57,6 +58,11 @@ safeSend clients action client body = do
             atomically $ delClient clients client
             logError "send error" ["client" .= client, "err" .= showT err]
 
+clientsBroadcastMessage :: DisplayClients -> ByteString -> ProcessIO ()
+clientsBroadcastMessage clients buf = do
+    xs <- atomically (getClients clients)
+    forM_ xs $ \client -> safeSend clients sendMessage client buf
+
 clientsBroadcast :: DisplayClients -> HtmlT STM () -> ProcessIO ()
 clientsBroadcast clients message = do
     body <- from <$> atomically (renderBST message)
@@ -97,3 +103,11 @@ clientsDraw clients draw = do
         htmlT <- draw client
         body <- from <$> atomically (renderBST htmlT)
         safeSend clients sendTextMessage client body
+
+type HandlerCallback = ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
+
+type Handlers = NM.NatMap HandlerCallback
+
+newHandler :: Handlers -> HandlerCallback -> STM ChannelID
+newHandler handlers handl = do
+    newChannel <$> NM.add handlers handl

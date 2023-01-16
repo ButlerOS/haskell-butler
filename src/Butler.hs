@@ -28,6 +28,7 @@ import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
 import Butler.App.Seat
 import Butler.App.SessionManager
+import Butler.App.SoundTest
 import Butler.App.SpeedTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
@@ -41,6 +42,7 @@ import XStatic.Butler as XStatic
 import XStatic.Htmx qualified as XStatic
 import XStatic.Hyperscript qualified as XStatic
 import XStatic.NoVNC qualified as XStatic
+import XStatic.PcmPlayer qualified as XStatic
 import XStatic.Remixicon qualified as XStatic
 import XStatic.SweetAlert2 qualified as XStatic
 import XStatic.Tailwind qualified as XStatic
@@ -177,6 +179,7 @@ demoDesktop = do
         "app-clock" -> Just <$> clockApp desktop.hclients winID
         "app-log-viewer" -> Just <$> logViewerApp desktop winID
         "app-term" -> Just <$> termApp desktop winID
+        "app-sound-test" -> Just <$> soundTestApp desktop winID
         "app-ps" -> Just <$> peApp desktop winID
         "app-vnc" -> Just <$> vncApp desktop winID
         "app-minesweeper" -> Just <$> mineSweeperApp desktop.hclients winID
@@ -198,6 +201,7 @@ demoDesktop = do
         , XStatic.winboxCss
         ]
             <> XStatic.xterm
+            <> XStatic.pcmPlayer
     xfiles' = XStatic.noVNC <> XStatic.winbox <> xfiles
 
 demo :: IO ()

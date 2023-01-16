@@ -5,17 +5,17 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1672927652,
-        "narHash": "sha256-bbffjismVirBhvAuJ1/uUvuGJI0yvjdnw+mlG8D4rIg=",
+        "lastModified": 1673896452,
+        "narHash": "sha256-IZhhr6iQqj7yaFz7pRzJxk2srDoNDRJk5z9jnrlZoao=",
         "owner": "podenv",
         "repo": "hspkgs",
-        "rev": "aef39c369f49b0cd0b7ecc17e190f50c3965e53c",
+        "rev": "ba5d181089900f376f765e4a6889bd30c4f96993",
         "type": "github"
       },
       "original": {
         "owner": "podenv",
         "repo": "hspkgs",
-        "rev": "aef39c369f49b0cd0b7ecc17e190f50c3965e53c",
+        "rev": "ba5d181089900f376f765e4a6889bd30c4f96993",
         "type": "github"
       }
     },

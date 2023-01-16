@@ -155,7 +155,7 @@ tabletopApp desktop wid = do
                         broadcastRawDesktopMessage desktop (const True) rawMSG
             Left err -> logError "invalid json" ["ev" .= BSLog bs, "err" .= err]
 
-    chan <- atomically (newHandler desktop clientHandler)
+    chan <- atomically (newHandler desktop.handlers clientHandler)
 
     let draw :: DrawHtml
         draw = pure . renderTable tableState wid chan

@@ -11,6 +11,7 @@ import Butler.GUI
 import Butler.Logger
 import Butler.Process
 import Butler.Session
+import Butler.SoundBlaster
 import Butler.User
 
 newtype Seats = Seats (TVar (Map Endpoint Seat))
@@ -86,8 +87,8 @@ renderCursorToggle username enabled = do
         "window.addEventListener('mousemove', mouseHandler)"
         "window.removeEventListener('mousemove', mouseHandler)"
 
-renderAudioToggle :: UserName -> Bool -> HtmlT STM ()
-renderAudioToggle username enabled = do
+renderAudioToggle :: UserName -> Bool -> ChannelID -> HtmlT STM ()
+renderAudioToggle username enabled audioChan = do
     renderToggle
         "ri-volume-up-line"
         [ userColorStyle username
@@ -95,22 +96,26 @@ renderAudioToggle username enabled = do
         , id_ "toggle-audio"
         ]
         enabled
-        "// start player"
-        "// stop player"
+        (startSoundClient audioChan)
+        (stopSoundClient audioChan)
 
 appendSeat :: Seat -> HtmlT STM ()
 appendSeat seat =
     with div_ [id_ "current-seats", hxSwapOob_ "afterbegin"] do
         renderSeat seat
 
-renderSeatTray :: Session -> ChannelID -> Seats -> HtmlT STM ()
-renderSeatTray session chan seats = do
+renderSeatTray :: Session -> ChannelID -> ChannelID -> Seats -> HtmlT STM ()
+renderSeatTray session chan audioChan seats = do
     with div_ [id_ "seats", class_ "flex content-center mr-1"] do
-        script_ (seatClient (from chan))
+        script_ $
+            mconcat
+                [ seatClient chan
+                , soundClient audioChan
+                ]
         with div_ [id_ "current-seats"] do
             traverse_ renderSeat =<< lift (getSeats seats)
         renderCursorToggle session.username True
-        renderAudioToggle session.username True
+        renderAudioToggle session.username True audioChan
 
 data SeatEvent
     = SeatEventResolution Int Int
@@ -157,7 +162,8 @@ seatApp desktop = do
                 action
             Left err -> logError "invalid json" ["ev" .= BSLog buf, "err" .= err]
 
-    chan <- atomically (newHandler desktop clientHandler)
+    chan <- atomically (newHandler desktop.handlers clientHandler)
+    audioChan <- atomically (registerSoundChannel desktop.soundCard desktop.handlers)
     desktopEvents <- atomically (newReaderChan desktop.desktopEvents)
 
     let removeSeat :: Monad m => DisplayClient -> HtmlT m ()
@@ -167,15 +173,17 @@ seatApp desktop = do
             with div_ [id_ $ "seat-" <> showT idx, hxSwapOob_ "delete"] mempty
 
     let tray :: DisplayClient -> HtmlT STM ()
-        tray client = renderSeatTray client.session chan seats
+        tray client = renderSeatTray client.session chan audioChan seats
 
-    newGuiApp2 "seat" Nothing (pure . tray) emptyDraw emptyDraw ["toggle-cursor"] \app -> do
+    newGuiApp2 "seat" Nothing (pure . tray) emptyDraw emptyDraw ["toggle-cursor", "toggle-audio"] \app -> do
         spawnThread_ $ forever do
             ev <- atomically (readTChan desktopEvents)
             -- logInfo "got desktop ev" ["ev" .= ev]
             case ev of
                 UserDisconnected "data" client -> do
-                    seatM <- atomically $ delSeat seats client
+                    seatM <- atomically do
+                        delSoundClient desktop.soundCard client
+                        delSeat seats client
                     case seatM of
                         Just seat -> broadcastMessageT desktop $ removeSeat seat.client
                         Nothing -> pure ()
@@ -188,9 +196,13 @@ seatApp desktop = do
                     let running = fromMaybe True (ev.body ^? key "running" . _Bool)
                         btn = renderCursorToggle ev.client.session.username (not running)
                      in safeSend desktop.hclients sendHtml ev.client btn
+                "toggle-audio" ->
+                    let running = fromMaybe True (ev.body ^? key "running" . _Bool)
+                        btn = renderAudioToggle ev.client.session.username (not running) audioChan
+                     in safeSend desktop.hclients sendHtml ev.client btn
                 _ -> logError "Invalid ev" ["ev" .= ev]
 
-seatClient :: Natural -> Text
+seatClient :: ChannelID -> Text
 seatClient chan =
     [raw|
 function seatClient(chan) {
@@ -205,10 +217,7 @@ function seatClient(chan) {
         // console.log("Got mouse ev", ev)
         return encodeDataMessage(chan, {x: ev.clientX, y: ev.clientY})
     });
-  // wait for data conn to be ready
-  setTimeout(() => {
-    butlerDataSocket.send(encodeDataMessage(chan, {w: window.innerWidth, h: window.innerHeight}))
-  }, 1000)
+  butlerDataSocketSend(encodeDataMessage(chan, {w: window.innerWidth, h: window.innerHeight}));
 }
 |]
         <> "seatClient("
