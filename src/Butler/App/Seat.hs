@@ -1,8 +1,8 @@
 module Butler.App.Seat (seatApp) where
 
 import Butler.Prelude
+import Data.Aeson
 import Data.Map.Strict qualified as Map
-import Data.Text qualified as Text
 
 import Butler.Desktop
 import Butler.Display
@@ -35,7 +35,7 @@ delSeat (Seats xs) client = do
 
 data Seat = Seat
     { client :: DisplayClient
-    , _resolution :: TVar (Int, Int)
+    , resolution :: TVar (Int, Int)
     , cursor :: TVar (Int, Int)
     }
 
@@ -47,85 +47,115 @@ renderSeat seat = do
     let user = seat.client.session.username
         Pid idx = seat.client.process.pid
     with span_ [id_ ("seat-" <> showT idx)] $ userIcon user
+    createSeatCursor user idx
+
+createSeatCursor :: UserName -> Natural -> HtmlT STM ()
+createSeatCursor user idx =
     with
         span_
         [ id_ ("cursor-" <> showT idx)
-        , class_ "pointer-events-none rounded-xl w-2 h-2 font-bold fixed z-50 "
+        , class_ "pointer-events-none rounded-xl w-2 h-2 font-bold fixed z-50"
         , userColorStyle user
         ]
         "°"
-    with div_ [id_ "seat-script"] mempty
 
-renderCursorToggle :: UserName -> Maybe Bool -> HtmlT STM ()
-renderCursorToggle username statusM = do
-    let bg = if fromMaybe True statusM then "bg-stone-400" else "bg-stone-800"
+renderToggle :: Text -> [Attribute] -> Bool -> Text -> Text -> HtmlT STM ()
+renderToggle icon attrs enabled onScript offScript = do
+    let bg = if enabled then "bg-stone-400" else "bg-stone-800"
     with
         i_
-        [ userColorStyle username
-        , class_ $ "ri-cursor-fill " <> bg <> " rounded-xl px-0.5 text-bold text-xl"
-        , title_ (if fromMaybe True statusM then "Hide cursor" else "Show cursor")
-        , wsSend
-        , hxTrigger_ "click"
-        , id_ "toggle-cursor"
-        , encodeVal ["running" .= statusM]
-        ]
+        ( [ class_ $ icon <> " rounded-xl px-0.5 text-bold text-xl cursor-pointer " <> bg
+          , wsSend
+          , hxTrigger_ "click"
+          , encodeVal ["running" .= enabled]
+          ]
+            <> attrs
+        )
         do
-            case statusM of
-                Just status
-                    | status -> script_ "window.addEventListener('mousemove', mouseHandler)"
-                    | otherwise -> script_ "window.removeEventListener('mousemove', mouseHandler)"
-                Nothing -> mempty
+            script_ $ if enabled then onScript else offScript
+
+renderCursorToggle :: UserName -> Bool -> HtmlT STM ()
+renderCursorToggle username enabled = do
+    renderToggle
+        "ri-cursor-fill"
+        [ userColorStyle username
+        , title_ (if enabled then "Hide cursor" else "Show cursor")
+        , id_ "toggle-cursor"
+        ]
+        enabled
+        "window.addEventListener('mousemove', mouseHandler)"
+        "window.removeEventListener('mousemove', mouseHandler)"
+
+renderAudioToggle :: UserName -> Bool -> HtmlT STM ()
+renderAudioToggle username enabled = do
+    renderToggle
+        "ri-volume-up-line"
+        [ userColorStyle username
+        , title_ (if enabled then "Mute" else "Listen")
+        , id_ "toggle-audio"
+        ]
+        enabled
+        "// start player"
+        "// stop player"
 
 appendSeat :: Seat -> HtmlT STM ()
 appendSeat seat =
-    with div_ [id_ "seats", hxSwapOob_ "afterbegin"] do
+    with div_ [id_ "current-seats", hxSwapOob_ "afterbegin"] do
         renderSeat seat
 
-renderSeats :: UserName -> Seats -> ChannelID -> HtmlT STM ()
-renderSeats username seats chan = do
-    xs <- lift (getSeats seats)
+renderSeatTray :: Session -> ChannelID -> Seats -> HtmlT STM ()
+renderSeatTray session chan seats = do
     with div_ [id_ "seats", class_ "flex content-center mr-1"] do
-        traverse_ renderSeat xs
-        renderCursorToggle username Nothing
-        -- class_ "ri-keyboard-box-fill bg-stone-400 rounded-xl px-0.5 text-bold text-xl"
-        with
-            i_
-            [ class_ "ri-volume-up-line bg-stone-800 rounded-xl px-0.5 text-bold text-xl"
-            , hyper_ $
-                Text.unlines
-                    [ "on click"
-                    , popup "Not Implemented"
-                    ]
-            ]
-            mempty
-
         script_ (seatClient (from chan))
+        with div_ [id_ "current-seats"] do
+            traverse_ renderSeat =<< lift (getSeats seats)
+        renderCursorToggle session.username True
+        renderAudioToggle session.username True
+
+data SeatEvent
+    = SeatEventResolution Int Int
+    | SeatEventPosition Int Int
+    deriving (Generic, ToJSON)
+
+instance FromJSON SeatEvent where
+    parseJSON = withObject "SeatEvent" $ \obj -> do
+        mX <- obj .:? "x"
+        mW <- obj .:? "w"
+        case (mX, mW) of
+            (Just x, Nothing) -> SeatEventPosition x <$> obj .: "y"
+            (Nothing, Just w) -> SeatEventResolution w <$> obj .: "h"
+            _ -> fail "x or w attribute missing"
 
 seatApp :: Desktop -> ProcessIO GuiApp
 seatApp desktop = do
     seats <- atomically newSeats
 
-    let clientHandler _ chan client buf =
-            case (buf ^? key "w" . _Integer, buf ^? key "h" . _Integer) of
-                (Just (unsafeFrom -> w), Just (unsafeFrom -> h)) -> do
-                    seat <- atomically do
-                        seat <- newSeat client (w, h)
-                        addSeat seats seat
-                        pure seat
-                    logInfo "new seat" ["client" .= seat.client]
-                    clientsBroadcast desktop.hclients (appendSeat seat)
-                _ -> case (buf ^? key "x" . _Integer, buf ^? key "y" . _Integer) of
-                    (Just (unsafeFrom -> x), Just (unsafeFrom -> y)) -> do
-                        seatM <- atomically (getSeat seats client)
-                        case seatM of
-                            Just seat -> do
-                                -- logInfo "Got seat pos" ["x" .= x, "y" .= y]
-                                atomically $ writeTVar seat.cursor (x, y)
+    let clientHandler _ chan client buf = case eitherDecode' (from buf) of
+            Right ev -> do
+                (isNew, seat, action) <- atomically do
+                    mSeat <- getSeat seats client
+                    -- create new seat if needed
+                    seat <- case mSeat of
+                        Nothing -> do
+                            seat <- newSeat client (42, 42)
+                            addSeat seats seat
+                            pure seat
+                        Just seat -> pure seat
+                    -- handle seat event
+                    (isNothing mSeat,seat,) <$> case ev of
+                        SeatEventResolution w h -> do
+                            writeTVar seat.resolution (w, h)
+                            pure do
+                                logInfo "seat resolution" ["client" .= client, "size" .= (w, h)]
+                        SeatEventPosition x y -> do
+                            writeTVar seat.cursor (x, y)
+                            pure do
                                 let cbuf = encodeJSON (object ["x" .= x, "y" .= y, "pid" .= client.process.pid])
                                 broadcastDesktopMessage desktop (const True) chan (from cbuf)
-                            Nothing -> logError "no seat" ["client" .= client]
-                    _ ->
-                        logError "unknown ev" ["buf" .= BSLog buf]
+                when isNew do
+                    clientsBroadcast desktop.hclients (appendSeat seat)
+                action
+            Left err -> logError "invalid json" ["ev" .= BSLog buf, "err" .= err]
 
     chan <- atomically (newHandler desktop clientHandler)
     desktopEvents <- atomically (newReaderChan desktop.desktopEvents)
@@ -137,7 +167,7 @@ seatApp desktop = do
             with div_ [id_ $ "seat-" <> showT idx, hxSwapOob_ "delete"] mempty
 
     let tray :: DisplayClient -> HtmlT STM ()
-        tray client = renderSeats client.session.username seats chan
+        tray client = renderSeatTray client.session chan seats
 
     newGuiApp2 "seat" Nothing (pure . tray) emptyDraw emptyDraw ["toggle-cursor"] \app -> do
         spawnThread_ $ forever do
@@ -156,7 +186,7 @@ seatApp desktop = do
             case ev.trigger of
                 "toggle-cursor" ->
                     let running = fromMaybe True (ev.body ^? key "running" . _Bool)
-                        btn = renderCursorToggle ev.client.session.username (Just $ not running)
+                        btn = renderCursorToggle ev.client.session.username (not running)
                      in safeSend desktop.hclients sendHtml ev.client btn
                 _ -> logError "Invalid ev" ["ev" .= ev]
 
@@ -178,7 +208,6 @@ function seatClient(chan) {
   // wait for data conn to be ready
   setTimeout(() => {
     butlerDataSocket.send(encodeDataMessage(chan, {w: window.innerWidth, h: window.innerHeight}))
-    window.addEventListener("mousemove", mouseHandler)
   }, 1000)
 }
 |]

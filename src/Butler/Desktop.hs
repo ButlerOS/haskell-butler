@@ -222,7 +222,7 @@ statusHtml s =
      in with
             span_
             [ id_ "display-pulse"
-            , class_ $ "m-auto mr-1 h-3 w-3 center rounded-full opacity-75 " <> cls
+            , class_ $ "m-auto mr-1 h-3 w-3 center rounded-full opacity-75 cursor-pointer " <> cls
             , hxTrigger_ "click"
             , wsSend
             ]

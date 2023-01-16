@@ -82,7 +82,6 @@ dcSplash :: Html ()
 dcSplash = do
     with div_ [class_ "absolute top-0 left-0 z-50 bg-slate-200/80 flex h-screen w-screen"] do
         with div_ [class_ "m-auto text-xl"] "Thanks for your time, see you next time!"
-        script_ "htmx.addClass(htmx.find('#sm-list'), 'hidden')"
         script_ "htmx.addClass(htmx.find('#display-pulse'), 'bg-red-500')"
 
 newtype JwkStorage = JwkStorage JOSE.JWK
