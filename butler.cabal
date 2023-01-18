@@ -113,6 +113,7 @@ library
     , chart-svg
     , containers
     , directory
+    , ebml
     , filepath
     , generic-lens
     , hashable
@@ -225,6 +226,7 @@ executable butler
     , chart-svg
     , containers
     , directory
+    , ebml
     , filepath
     , generic-lens
     , hashable
@@ -345,6 +347,7 @@ test-suite spec
     , chart-svg
     , containers
     , directory
+    , ebml
     , filepath
     , generic-lens
     , hashable

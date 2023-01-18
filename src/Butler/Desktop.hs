@@ -7,13 +7,14 @@ module Butler.Desktop (
     desktopHandler,
     newHandler,
     handleClientEvents,
+    lookupDataClient,
 
     -- * app
     addApp,
 
     -- * messages
     broadcastDraw,
-    broadcastMessageT,
+    broadcastHtmlT,
     broadcastDesktopMessage,
     broadcastRawDesktopMessage,
 ) where
@@ -30,6 +31,7 @@ import Butler.Memory
 import Butler.NatMap qualified as NM
 import Butler.Prelude
 import Butler.Processor
+import Butler.Session
 import Butler.SoundBlaster
 import Butler.WebSocket
 import Butler.Window
@@ -48,6 +50,8 @@ data Desktop = Desktop
     -- ^ data channel, e.g. for window manager and xterm
     , clients :: DisplayClients
     -- ^ data clients
+    , tabClients :: TVar (Map (SessionID, TabID) DisplayClient)
+    -- ^ data clients indexed by tab, to lookup from htmx client
     , hclients :: DisplayClients
     -- ^ htmx clients
     , soundCard :: SoundCard
@@ -55,15 +59,19 @@ data Desktop = Desktop
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
-newDesktop processEnv display ws wm =
+newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
         <$> newTVar mempty
         <*> newTVar mempty
         <*> NM.newNatMap
         <*> newDisplayClients
+        <*> newTVar mempty
         <*> newDisplayClients
         <*> newSoundCard
         <*> newBroadcastChan
+
+lookupDataClient :: Desktop -> DisplayClient -> STM (Maybe DisplayClient)
+lookupDataClient desktop client = Map.lookup (client.session.sessionID, client.tabID) <$> readTVar desktop.tabClients
 
 startDesktop :: MVar Desktop -> AppLauncher -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
 startDesktop desktopMVar appLauncher xinit display name = do
@@ -75,6 +83,8 @@ startDesktop desktopMVar appLauncher xinit display name = do
     desktop <- atomically (newDesktop processEnv display name wm)
     chan <- atomically $ newHandler desktop.handlers (const $ tryHandleWinEvent desktop)
     when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
+    achan <- atomically $ newHandler desktop.handlers (soundHandler desktop.soundCard)
+    when (achan /= audioChannel) (error $ "Default audio channel is wrong: " <> show achan)
 
     let mkWelcome wid = newGuiApp "welcome" Nothing (const . pure $ welcomeWin wid) [] (const $ pure ())
 
@@ -96,14 +106,14 @@ startDesktop desktopMVar appLauncher xinit display name = do
     putMVar desktopMVar desktop
 
     let updateStatus s = do
-            broadcastMessageT desktop $ statusHtml s
+            broadcastHtmlT desktop $ statusHtml s
             sleep 5_000
             updateStatus (not s)
     _ <- updateStatus True
     error "update status crashed?"
 
-broadcastMessageT :: Desktop -> HtmlT STM () -> ProcessIO ()
-broadcastMessageT desktop = clientsBroadcast desktop.hclients
+broadcastHtmlT :: Desktop -> HtmlT STM () -> ProcessIO ()
+broadcastHtmlT desktop = clientsBroadcast desktop.hclients
 
 broadcastDraw :: Desktop -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 broadcastDraw desktop = clientsDraw desktop.hclients
@@ -238,9 +248,9 @@ desktopHandler appLauncher desktop event = do
     case event of
         UserConnected chan client -> do
             atomically do
-                -- TODO: group connections based on the TabID
                 when (chan == "data") do
                     addClient desktop.clients client
+                    modifyTVar' desktop.tabClients (Map.insert (client.session.sessionID, client.tabID) client)
                 when (chan == "htmx") do
                     addClient desktop.hclients client
                 broadcast desktop.desktopEvents event
@@ -250,6 +260,8 @@ desktopHandler appLauncher desktop event = do
             atomically do
                 when (chan == "data") do
                     delClient desktop.clients client
+                    delSoundClient desktop.soundCard client
+                    modifyTVar' desktop.tabClients (Map.delete (client.session.sessionID, client.tabID))
                 when (chan == "htmx") do
                     delClient desktop.hclients client
                 broadcast desktop.desktopEvents event
@@ -266,6 +278,10 @@ desktopHandler appLauncher desktop event = do
             handleHtmxClient appLauncher desktop client
         "data" -> do
             spawnPingThread client
+
+            spawnThread_ $ forever do
+                dataMessage <- atomically (readTChan client.sendChannel)
+                sendMessage client dataMessage
 
             forever do
                 buf <- recvMessage client

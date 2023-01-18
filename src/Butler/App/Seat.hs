@@ -87,8 +87,8 @@ renderCursorToggle username enabled = do
         "window.addEventListener('mousemove', mouseHandler)"
         "window.removeEventListener('mousemove', mouseHandler)"
 
-renderAudioToggle :: UserName -> Bool -> ChannelID -> HtmlT STM ()
-renderAudioToggle username enabled audioChan = do
+renderAudioToggle :: UserName -> Bool -> HtmlT STM ()
+renderAudioToggle username enabled = do
     renderToggle
         "ri-volume-up-line"
         [ userColorStyle username
@@ -96,8 +96,8 @@ renderAudioToggle username enabled audioChan = do
         , id_ "toggle-audio"
         ]
         enabled
-        (startSoundClient audioChan)
-        (stopSoundClient audioChan)
+        "startAudio()"
+        "stopAudio()"
 
 appendSeat :: Seat -> HtmlT STM ()
 appendSeat seat =
@@ -115,7 +115,7 @@ renderSeatTray session chan audioChan seats = do
         with div_ [id_ "current-seats"] do
             traverse_ renderSeat =<< lift (getSeats seats)
         renderCursorToggle session.username True
-        renderAudioToggle session.username True audioChan
+        renderAudioToggle session.username True
 
 data SeatEvent
     = SeatEventResolution Int Int
@@ -163,7 +163,6 @@ seatApp desktop = do
             Left err -> logError "invalid json" ["ev" .= BSLog buf, "err" .= err]
 
     chan <- atomically (newHandler desktop.handlers clientHandler)
-    audioChan <- atomically (registerSoundChannel desktop.soundCard desktop.handlers)
     desktopEvents <- atomically (newReaderChan desktop.desktopEvents)
 
     let removeSeat :: Monad m => DisplayClient -> HtmlT m ()
@@ -173,7 +172,7 @@ seatApp desktop = do
             with div_ [id_ $ "seat-" <> showT idx, hxSwapOob_ "delete"] mempty
 
     let tray :: DisplayClient -> HtmlT STM ()
-        tray client = renderSeatTray client.session chan audioChan seats
+        tray client = renderSeatTray client.session chan audioChannel seats
 
     newGuiApp2 "seat" Nothing (pure . tray) emptyDraw emptyDraw ["toggle-cursor", "toggle-audio"] \app -> do
         spawnThread_ $ forever do
@@ -182,7 +181,6 @@ seatApp desktop = do
             case ev of
                 UserDisconnected "data" client -> do
                     seatM <- atomically do
-                        delSoundClient desktop.soundCard client
                         delSeat seats client
                     case seatM of
                         Just seat -> broadcastHtmlT desktop $ removeSeat seat.client
@@ -198,7 +196,7 @@ seatApp desktop = do
                      in safeSend desktop.hclients sendHtml ev.client btn
                 "toggle-audio" ->
                     let running = fromMaybe True (ev.body ^? key "running" . _Bool)
-                        btn = renderAudioToggle ev.client.session.username (not running) audioChan
+                        btn = renderAudioToggle ev.client.session.username (not running)
                      in safeSend desktop.hclients sendHtml ev.client btn
                 _ -> logError "Invalid ev" ["ev" .= ev]
 

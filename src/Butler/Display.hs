@@ -107,7 +107,7 @@ connectRoute display onClient sockAddr workspaceM channel session tabID connecti
     clientM <- newEmptyMVar
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
-        client <- newClient connection endpoint clientProcess session tabID
+        client <- atomically (newClient connection endpoint clientProcess session tabID)
         putMVar clientM client
         -- Add the client to server state
         let ev = UserConnected channel client

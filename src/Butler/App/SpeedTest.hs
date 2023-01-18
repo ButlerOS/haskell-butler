@@ -83,7 +83,7 @@ speedTestApp desktop = do
             atomically $ modifyTVar' state.tests (Map.insert client.endpoint newTest)
             logInfo "starting speed test" ["endpoint" .= client.endpoint]
             performTest newTest client
-            broadcastMessageT desktop (renderApp state)
+            broadcastHtmlT desktop (renderApp state)
     (,"speed-test",onClient) <$> newGuiApp "speed-test" Nothing (const $ pure $ renderApp state) ["start-speed-test"] \app -> do
         forever do
             ev <- atomically $ readPipe app.events

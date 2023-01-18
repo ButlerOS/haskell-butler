@@ -74,14 +74,14 @@ peApp desktop wid = do
                         atomically $ writeTVar stV $ case st of
                             PEAll -> PEScopped desktop.env.process.pid
                             PEScopped _ -> PEAll
-                        broadcastMessageT desktop =<< renderPE stV wid
+                        broadcastHtmlT desktop =<< renderPE stV wid
                     _ -> logError "unknown event" ["ev" .= ev]
         forever do
             os <- asks os
             sysEvent <- atomically =<< (waitLog os.logger 10_000 isProcess)
             case sysEvent of
                 WaitCompleted{} -> do
-                    broadcastMessageT desktop =<< renderPE stV wid
+                    broadcastHtmlT desktop =<< renderPE stV wid
                 WaitTimeout{} -> pure ()
   where
     isProcess = \case

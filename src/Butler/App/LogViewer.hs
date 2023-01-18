@@ -27,6 +27,6 @@ logViewerApp desktop wid = do
         chan <- atomically (getLogsChan os.logger)
         forever do
             sysEvent <- atomically $ readTChan chan
-            broadcastMessageT desktop do
+            broadcastHtmlT desktop do
                 with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
                     li_ $ renderLog sysEvent

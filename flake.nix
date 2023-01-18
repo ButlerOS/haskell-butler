@@ -10,6 +10,12 @@
       pkgs = hspkgs.pkgs;
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
+        ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
+          owner = "TristanCacqueray";
+          repo = "haskell-ebml";
+          rev = "aff25512b52e48e92d77cd59019a0291a8b43bf4";
+          sha256 = "sha256-U2Mo83gr7dLm+rRKOLzS9LZUaZ90ECO6Zjbv6maflyc=";
+        }) { };
       };
       hsPkgs = pkgs.hspkgs.extend haskellExtend;
 
@@ -102,7 +108,10 @@
             haskell-language-server
             fourmolu
             hsPkgs.doctest
+            pkgs.gst_all_1.gstreamer
           ] ++ desktop;
+        GST_PLUGIN_PATH =
+          "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
       };
     };
 }

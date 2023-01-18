@@ -40,6 +40,7 @@ module Butler.Prelude (
     (%~),
     (.~),
     (^?),
+    Control.Lens.ix,
     Control.Lens.set,
     Control.Lens.over,
 
@@ -47,6 +48,7 @@ module Butler.Prelude (
     Data.Aeson.Lens.key,
     Data.Aeson.Lens._String,
     Data.Aeson.Lens._Integer,
+    Data.Aeson.Lens._Integral,
     Data.Aeson.Lens._Bool,
     Data.Aeson.Lens._JSON,
 
@@ -203,6 +205,7 @@ import PyF
 import Relude qualified
 import Servant.API
 import System.Posix.ByteString (RawFilePath)
+import System.Process.Typed qualified as ProcessTyped
 import Text.Read (readMaybe)
 import UnliftIO hiding (Handler)
 import UnliftIO.STM
@@ -227,3 +230,5 @@ die = error . Data.Text.unpack
 
 showT :: Show a => a -> Data.Text.Text
 showT = Witch.from . show
+
+instance Data.Aeson.ToJSON ProcessTyped.ExitCode

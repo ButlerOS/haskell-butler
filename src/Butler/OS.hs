@@ -17,6 +17,7 @@ module Butler.OS (
     superviseProcess,
     killProcess,
     spawnThread_,
+    spawnThread,
 
     -- * Log api
     logSystem,

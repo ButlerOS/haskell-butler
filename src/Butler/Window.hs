@@ -171,7 +171,7 @@ renderWindow (WinID idx, Window (x, y) (w, h) title) = do
             , attr "y" y
             , attr "width" w
             , attr "height" h
-            , "id: " <> showT idx
+            , "id: \"win-" <> showT idx <> "\""
             , "bottom: 36"
             , "class: [\"no-full\"]"
             , "root: document.getElementById(\"win-root\")"

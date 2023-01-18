@@ -11,10 +11,12 @@ module Butler.NatMap (
     elems,
     elemsIndex,
     lookup,
+    lookupDefault,
     delete,
     nmDelete,
     insert,
     add,
+    addWithKey,
 ) where
 
 import Butler.Prelude
@@ -63,6 +65,15 @@ nmLength nm = IM.size <$> readTVar nm.values
 lookup :: NatMap a -> Natural -> STM (Maybe a)
 lookup nm mapKey = IM.lookup (unsafeFrom mapKey) <$> readTVar nm.values
 
+lookupDefault :: NatMap a -> Natural -> STM a -> STM a
+lookupDefault nm mapKey mkDef =
+    lookup nm mapKey >>= \case
+        Just a -> pure a
+        Nothing -> do
+            a <- mkDef
+            insert nm mapKey a
+            pure a
+
 delete :: NatMap a -> Natural -> STM ()
 delete nm mapKey = modifyTVar' nm.values (IM.delete (unsafeFrom mapKey))
 
@@ -71,6 +82,13 @@ add nm value = do
     k <- newKey nm
     insert nm k value
     pure k
+
+addWithKey :: NatMap a -> (Natural -> STM a) -> STM a
+addWithKey nm mkValue = do
+    k <- newKey nm
+    value <- mkValue k
+    insert nm k value
+    pure value
 
 -- todo: throw error if elem already exist?
 insert :: NatMap a -> Natural -> a -> STM ()

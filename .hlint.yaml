@@ -3,3 +3,5 @@
 - ignore: {name: "Use uncurry"}
 - ignore: {name: "Use section"}
 - ignore: {name: "Use tuple-section"}
+# Invalid hint for record field id: https://github.com/ndmitchell/hlint/issues/1383
+- ignore: {name: "Redundant id"}

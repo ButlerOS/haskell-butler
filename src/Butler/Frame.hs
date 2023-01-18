@@ -10,6 +10,7 @@ module Butler.Frame (
     decodeMessage,
     clientScript,
     winChannel,
+    audioChannel,
 ) where
 
 import Butler.Prelude
@@ -20,6 +21,12 @@ newtype ChannelID = ChannelID Word8
 
 instance From ChannelID Natural where
     from (ChannelID b) = from b
+
+instance From Word8 ChannelID where
+    from = ChannelID
+
+instance From ChannelID Word8 where
+    from (ChannelID c) = c
 
 -- channelID are encoded as the first byte of the message, thus only 255 channels are presently available.
 newChannel :: Natural -> ChannelID
@@ -91,8 +98,23 @@ globalThis.butlerDataSocketSend = (buf) => {
     butlerDataSocket.send(buf)
   }
 }
+
+globalThis.concatBuffers = (xs) => {
+  if (xs.length == 1) {
+    return xs[0]
+  }
+  const size = xs.reduce((acc, x) => acc + x.length, 0);
+  const res = new Uint8Array(size);
+  let pos = 0;
+  xs.forEach(x => {
+    res.set(x, pos);
+    pos += x.length
+  })
+  return res;
+}
 |]
 
--- | The channel for window data is reserved
-winChannel :: ChannelID
+-- | The channel for window and audio data are reserved
+winChannel, audioChannel :: ChannelID
 winChannel = ChannelID 1
+audioChannel = ChannelID 2

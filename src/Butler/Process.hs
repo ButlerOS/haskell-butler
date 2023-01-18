@@ -14,6 +14,9 @@ newtype Pid = Pid Natural
     deriving (Show)
     deriving newtype (Serialise, ToJSON, Num, Enum, Eq, Ord, Real, Integral)
 
+instance From Pid Natural where
+    from (Pid n) = n
+
 data Process = Process
     { pid :: Pid
     -- ^ the process id

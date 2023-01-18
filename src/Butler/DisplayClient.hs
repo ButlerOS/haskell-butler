@@ -19,10 +19,11 @@ data DisplayClient = DisplayClient
     , tabID :: TabID
     , recv :: TVar Word64
     , send :: TVar Word64
+    , sendChannel :: TChan ByteString
     }
 
-newClient :: MonadIO m => WS.Connection -> Endpoint -> Process -> Session -> TabID -> m DisplayClient
-newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVarIO 0 <*> newTVarIO 0
+newClient :: WS.Connection -> Endpoint -> Process -> Session -> TabID -> STM DisplayClient
+newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
 spawnPingThread :: DisplayClient -> ProcessIO ()
 spawnPingThread client = spawnThread_ $ forever do
