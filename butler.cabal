@@ -67,6 +67,7 @@ library
       Butler.User
       Butler.WebSocket
       Butler.Window
+      ButlerDemos
       XStatic.Butler
   other-modules:
       Paths_butler

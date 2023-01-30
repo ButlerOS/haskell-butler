@@ -1,6 +1,6 @@
 module Main where
 
-import Butler
+import ButlerDemos (main)
 
 main :: IO ()
-main = Butler.demo
+main = ButlerDemos.main

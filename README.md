@@ -35,7 +35,7 @@ Usage:
 
 ```ShellSession
 ./bin/run-vnc
-./bin/run-ghcid "Butler.demoDesktop"
+./bin/run-ghcid "ButlerDemos.multiDesktop"
 firefox https://localhost:8080
 ```
 
