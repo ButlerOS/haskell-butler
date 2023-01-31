@@ -16,12 +16,13 @@ data DisplayClient = DisplayClient
     , endpoint :: Endpoint
     , process :: Process
     , session :: Session
+    , tabID :: TabID
     , recv :: TVar Word64
     , send :: TVar Word64
     }
 
-newClient :: MonadIO m => WS.Connection -> Endpoint -> Process -> Session -> m DisplayClient
-newClient c endpoint p s = DisplayClient c endpoint p s <$> newTVarIO 0 <*> newTVarIO 0
+newClient :: MonadIO m => WS.Connection -> Endpoint -> Process -> Session -> TabID -> m DisplayClient
+newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVarIO 0 <*> newTVarIO 0
 
 spawnPingThread :: DisplayClient -> ProcessIO ()
 spawnPingThread client = spawnThread_ $ forever do
@@ -74,7 +75,7 @@ newtype Endpoint = Endpoint Text
     deriving (FromJSON, ToJSON, ToHtml) via Text
 
 instance ToJSON DisplayClient where
-    toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session]
+    toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session, "tab" .= dc.tabID]
 
 newtype DisplayClients = DisplayClients (NM.NatMap DisplayClient)
 

@@ -52,7 +52,6 @@ data Desktop = Desktop
     -- ^ htmx clients
     , soundCard :: SoundCard
     , desktopEvents :: BroadcastChan DisplayEvent
-    , clientsChannel :: TVar (Map ChannelName DisplayClients)
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
@@ -65,7 +64,6 @@ newDesktop processEnv display ws wm =
         <*> newDisplayClients
         <*> newSoundCard
         <*> newBroadcastChan
-        <*> newTVar mempty
 
 startDesktop :: MVar Desktop -> AppLauncher -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
 startDesktop desktopMVar appLauncher xinit display name = do
@@ -239,40 +237,25 @@ desktopHandler appLauncher desktop event = do
     -- update desktop state with display event
     case event of
         UserConnected chan client -> do
-            clients <- atomically do
+            atomically do
+                -- TODO: group connections based on the TabID
                 when (chan == "data") do
                     addClient desktop.clients client
                 when (chan == "htmx") do
                     addClient desktop.hclients client
                 broadcast desktop.desktopEvents event
 
-                clientsM <- Map.lookup chan <$> readTVar desktop.clientsChannel
-                case clientsM of
-                    Just clients -> do
-                        addClient clients client
-                        pure clients
-                    Nothing -> do
-                        clients <- newDisplayClients
-                        addClient clients client
-                        modifyTVar' desktop.clientsChannel (Map.insert chan clients)
-                        pure clients
-
-            handleNewUser chan clients client
+            handleNewUser chan client
         UserDisconnected chan client -> do
             atomically do
-                clientsM <- Map.lookup chan <$> readTVar desktop.clientsChannel
-                case clientsM of
-                    Just clients -> delClient clients client
-                    Nothing -> pure ()
-
                 when (chan == "data") do
                     delClient desktop.clients client
                 when (chan == "htmx") do
                     delClient desktop.hclients client
                 broadcast desktop.desktopEvents event
   where
-    handleNewUser :: ChannelName -> DisplayClients -> DisplayClient -> ProcessIO ()
-    handleNewUser channel _clients client = case channel of
+    handleNewUser :: ChannelName -> DisplayClient -> ProcessIO ()
+    handleNewUser channel client = case channel of
         "htmx" -> do
             apps <- Map.elems <$> readTVarIO desktop.apps
             menuContents <- traverse (\app -> app.drawMenu client) (reverse apps)
@@ -323,10 +306,10 @@ handleHtmxClient appLauncher desktop client = do
             script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
 
     -- wait for user events
-    handleClientEvents client (handleEvent client)
+    handleClientEvents client handleEvent
   where
-    handleEvent :: DisplayClient -> TriggerName -> Value -> ProcessIO ()
-    handleEvent _client "win-swap" value = do
+    handleEvent :: TriggerName -> Value -> ProcessIO ()
+    handleEvent "win-swap" value = do
         case (value ^? key "prog" . _String, value ^? key "win" . _Integer) of
             (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
                 guiAppM <- asProcess desktop.env (appLauncher desktop appName winId)
@@ -334,10 +317,10 @@ handleHtmxClient appLauncher desktop client = do
                     Just guiApp -> swapWindow winId guiApp
                     Nothing -> logInfo "unknown win-swap prog" ["v" .= value]
             _ -> logInfo "unknown win-swap" ["v" .= value]
-    handleEvent _client "wm-start" _value = do
+    handleEvent "wm-start" _value = do
         logInfo "start" []
         addWindow Nothing
-    handleEvent _client trigger value =
+    handleEvent trigger value =
         traverse_ triggerApp =<< readTVarIO desktop.apps
       where
         triggerApp app

@@ -24,22 +24,23 @@ newtype Workspace = Workspace Text
 instance From Workspace Text where
     from (Workspace n) = n
 
-type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
+type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> QueryParam "tab" TabID :> WebSocket
 
 type ClientAPI = ClientWSAPI :<|> (Capture "workspace" Workspace :> ClientWSAPI)
 
-clientServer :: GetSession session -> (Workspace -> ChannelName -> session -> WS.Connection -> ProcessIO ()) -> ServerT ClientAPI ProcessIO
+clientServer :: GetSession session -> OnConnect session -> ServerT ClientAPI ProcessIO
 clientServer getSession onConnect = connectRoute Nothing :<|> connectRoute . Just
   where
-    connectRoute :: Maybe Workspace -> ChannelName -> Maybe Bool -> Maybe SessionID -> WS.Connection -> ProcessIO ()
-    connectRoute workspaceM name (fromMaybe False -> reconnect) sessionIDM connection
+    connectRoute :: Maybe Workspace -> ChannelName -> Maybe Bool -> Maybe SessionID -> Maybe TabID -> WS.Connection -> ProcessIO ()
+    connectRoute workspaceM name (fromMaybe False -> reconnect) mSessionID mTabID connection
         | reconnect = doReload
         | otherwise = do
-            isSessionValid <- getSession sessionIDM
-            case isSessionValid of
+            mSession <- getSession mSessionID
+            case mSession of
                 Nothing -> doReload
-                Just session -> onConnect workspace name session connection
+                Just session -> onConnect workspace name session tabID connection
       where
+        tabID = fromMaybe 0 mTabID
         workspace = case workspaceM of
             Just ws -> ws
             Nothing -> Workspace ""
@@ -53,7 +54,9 @@ newtype ChannelName = ChannelName Text
 
 type WebSocketAPI = RemoteHost :> ClientAPI
 
-type OnWSConnect session = SockAddr -> Workspace -> ChannelName -> session -> WS.Connection -> ProcessIO ()
+type OnConnect session = Workspace -> ChannelName -> session -> TabID -> WS.Connection -> ProcessIO ()
+
+type OnWSConnect session = SockAddr -> OnConnect session
 
 type GetSession session = Maybe SessionID -> ProcessIO (Maybe session)
 

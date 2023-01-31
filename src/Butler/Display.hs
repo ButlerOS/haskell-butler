@@ -93,8 +93,8 @@ instance Serialise JwkStorage where
         decodeJWK :: ByteString -> JwkStorage
         decodeJWK bs = JwkStorage (fromMaybe (error "bad encoding?!") $ decodeStrict' bs)
 
-connectRoute :: Display -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
-connectRoute display onClient sockAddr workspaceM channel session connection = do
+connectRoute :: Display -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> TabID -> WS.Connection -> ProcessIO ()
+connectRoute display onClient sockAddr workspaceM channel session tabID connection = do
     -- TODO: check if the ping thread is necessary
     -- WS.withPingThread connection 30 (pure ()) do
 
@@ -107,7 +107,7 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
     clientM <- newEmptyMVar
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
-        client <- newClient connection endpoint clientProcess session
+        client <- newClient connection endpoint clientProcess session tabID
         putMVar clientM client
         -- Add the client to server state
         let ev = UserConnected channel client

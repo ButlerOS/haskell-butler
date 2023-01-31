@@ -154,13 +154,15 @@ topRightMenu items = do
             traverse_ div_ items
 
 -- | Create the htmx websocket root element
-websocketHtml :: Text -> SessionID -> Html ()
-websocketHtml pathPrefix sessionID = do
-    let wsUrl = pathPrefix <> "/ws/htmx?session=" <> from sessionID
+websocketHtml :: Text -> SessionID -> TabID -> Html ()
+websocketHtml pathPrefix sessionID tabID = do
+    let wsUrl = pathPrefix <> "/ws/htmx" <> queryArgs
     with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
         with div_ [id_ "display-root", class_ "h-full"] mempty
         -- script to get extra websocket url from javascript
-        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '?session=" <> from sessionID <> "';"
+        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '" <> queryArgs <> "';"
+  where
+    queryArgs = "?session=" <> from sessionID <> "&tab=" <> from tabID
 
 -- | Display the content in a splash screen
 splashHtml :: Monad m => HtmlT m () -> HtmlT m ()

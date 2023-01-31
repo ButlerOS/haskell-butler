@@ -1,5 +1,6 @@
 module Butler.Auth.Invitation (invitationAuthApp) where
 
+import Data.Map.Strict qualified as Map
 import Data.Time (UTCTime (..), fromGregorian)
 import Lucid
 import Lucid.Htmx
@@ -37,13 +38,23 @@ welcomeForm pathPrefix inviteM = do
   where
     attrs = maybe [] (\invite -> ["invite" .= invite]) inviteM
 
-authServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> ServerT AuthAPI ProcessIO
-authServer sessions mkIndexHtml jwtSettings auth =
-    let loginSrv = loginServer sessions mkIndexHtml jwtSettings auth
+newtype SessionTabs = SessionTabs (TVar (Map SessionID TabID))
+
+newSessionTabs :: STM SessionTabs
+newSessionTabs = SessionTabs <$> newTVar mempty
+
+getTab :: SessionTabs -> SessionID -> STM TabID
+getTab (SessionTabs vMap) sessionID = stateTVar vMap $ \m ->
+    let tab = (+ 1) $ fromMaybe 0 $ Map.lookup sessionID m
+     in (tab, Map.insert sessionID tab m)
+
+authServer :: Sessions -> SessionTabs -> (Html () -> Html ()) -> JWTSettings -> ServerT AuthAPI ProcessIO
+authServer sessions tabs mkIndexHtml jwtSettings auth =
+    let loginSrv = loginServer sessions tabs mkIndexHtml jwtSettings auth
      in loginSrv Nothing :<|> (loginSrv . Just)
 
-loginServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> Maybe Workspace -> ServerT LoginAPI ProcessIO
-loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :<|> getSessionRoute
+loginServer :: Sessions -> SessionTabs -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> Maybe Workspace -> ServerT LoginAPI ProcessIO
+loginServer sessions tabs mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :<|> getSessionRoute
   where
     pathPrefix = case workspaceM of
         Nothing -> ""
@@ -54,7 +65,9 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
         Authenticated sessionID -> do
             isSessionValid <- atomically (checkSession sessions sessionID)
             case isSessionValid of
-                Just _ -> pure $ mkIndexHtml (websocketHtml pathPrefix sessionID)
+                Just _ -> do
+                    tabID <- atomically (getTab tabs sessionID)
+                    pure $ mkIndexHtml (websocketHtml pathPrefix sessionID tabID)
                 Nothing -> loginPage
         _OtherAuth -> loginPage
       where
@@ -80,9 +93,10 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
     welcomeResp :: SessionID -> ProcessIO AuthResp
     welcomeResp sessionID = do
         resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings sessionID
-        pure $ case resp of
+        case resp of
             Just r -> do
-                r (swapSplash $ websocketHtml pathPrefix sessionID)
+                tabID <- atomically (getTab tabs sessionID)
+                pure $ r (swapSplash $ websocketHtml pathPrefix sessionID tabID)
             Nothing -> error "oops?!"
 
     getSessionRoute :: LoginForm -> ProcessIO AuthResp
@@ -106,10 +120,11 @@ cookieSettings =
 invitationAuthApp :: (Html () -> Html ()) -> Sessions -> ProcessIO AuthApplication
 invitationAuthApp mkIndexHtml sessions = do
     JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO generateKey)
+    tabs <- atomically newSessionTabs
     let jwtSettings = defaultJWTSettings myKey
 
     let cfg = cookieSettings :. jwtSettings :. EmptyContext
-    let authSrv = authServer sessions mkIndexHtml jwtSettings
+    let authSrv = authServer sessions tabs mkIndexHtml jwtSettings
     env <- ask
     let app = Servant.serveWithContextT (Proxy @AuthAPI) cfg (liftIO . runProcessIO env.os env.process) authSrv
         getSession = \case

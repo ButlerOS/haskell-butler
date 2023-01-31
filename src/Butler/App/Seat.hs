@@ -47,7 +47,7 @@ renderSeat :: Seat -> HtmlT STM ()
 renderSeat seat = do
     let user = seat.client.session.username
         Pid idx = seat.client.process.pid
-    with span_ [id_ ("seat-" <> showT idx)] $ userIcon user
+    with span_ [id_ ("seat-" <> showT idx)] $ userTabIcon user seat.client.tabID
     createSeatCursor user idx
 
 createSeatCursor :: UserName -> Natural -> HtmlT STM ()
@@ -185,7 +185,7 @@ seatApp desktop = do
                         delSoundClient desktop.soundCard client
                         delSeat seats client
                     case seatM of
-                        Just seat -> broadcastMessageT desktop $ removeSeat seat.client
+                        Just seat -> broadcastHtmlT desktop $ removeSeat seat.client
                         Nothing -> pure ()
                 _ -> pure ()
 
