@@ -1,6 +1,4 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-module Butler.App.MineSweeper (mineSweeperApp) where
+module Butler.App.MineSweeper (mineSweeperApp, startMineSweeper) where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as Aeson
@@ -10,10 +8,8 @@ import Data.Text qualified as T
 import Data.Text.Lazy (toStrict)
 import System.Random (randomRIO)
 
-import Butler.Clock
-import Butler.GUI
+import Butler
 import Butler.Prelude
-import Butler.Window
 
 data MSState = MSState
     { board :: MSBoard
@@ -108,32 +104,29 @@ getAdjCellCoords MSCellCoord{..} =
             , MSCellCoord cx (cy + 1)
             ]
 
-renderApp :: MonadIO m => WinID -> TVar MSState -> m (HtmlT STM ())
+renderApp :: WinID -> TVar MSState -> HtmlT STM ()
 renderApp wid state = do
-    panel <- renderPanel wid state
-    board <- renderBoard wid state
-    pure $ div_ [id_ (withWID wid "w"), class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
-        panel
-        board
+    div_ [id_ (withWID wid "w"), class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
+        renderPanel wid state
+        renderBoard wid state
 
-renderPanel :: MonadIO m => WinID -> TVar MSState -> m (HtmlT STM ())
+renderPanel :: WinID -> TVar MSState -> HtmlT STM ()
 renderPanel wid state = do
-    appState <- readTVarIO state
-    pure $ div_ [id_ (withWID wid "MSPanel"), class_ "bg-gray-200 m-1 flex justify-between"] $ do
+    appState <- lift (readTVar state)
+    div_ [id_ (withWID wid "MSPanel"), class_ "bg-gray-200 m-1 flex justify-between"] $ do
         div_ [class_ "w-10"] "9 💣"
         withEvent (withWID wid "play") [mkHxVals [("play", "")]] $ div_ [class_ "bg-gray-300 border-2"] $ case appState.state of
             Play -> "🙂"
             Gameover -> "☹"
         div_ [class_ "w-10 text-right"] "0"
 
-renderBoard :: MonadIO m => WinID -> TVar MSState -> m (HtmlT STM ())
+renderBoard :: WinID -> TVar MSState -> HtmlT STM ()
 renderBoard wid state = do
-    appState <- readTVarIO state
-    pure $
-        div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do
-            mapM_ (renderCell appState.state) $ Map.toList appState.board
+    appState <- lift (readTVar state)
+    div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do
+        mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
-    renderCell :: Monad m => MSGameState -> (MSCellCoord, MSCell) -> HtmlT m ()
+    renderCell :: MSGameState -> (MSCellCoord, MSCell) -> HtmlT STM ()
     renderCell gameState (cellCoords, cellState) =
         let cellId = mkHxVals [("cx", T.pack $ show $ cellCoords.cx), ("cy", T.pack $ show $ cellCoords.cy)]
          in installCellEvent gameState cellId $
@@ -214,14 +207,23 @@ mkHxVals vals =
   where
     hxVals = makeAttribute "hx-vals"
 
-mineSweeperApp :: DisplayClients -> WinID -> ProcessIO GuiApp
-mineSweeperApp clients winID = do
+mineSweeperApp :: App
+mineSweeperApp =
+    App
+        { name = "minesweeper"
+        , tags = fromList ["Game"]
+        , description = "game"
+        , size = Just (240, 351)
+        , triggers = ["showCell", "play"]
+        , start = startMineSweeper
+        }
+
+startMineSweeper :: DisplayClients -> WinID -> ProcessIO AppInstance
+startMineSweeper clients winID = do
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
-    let draw = const $ renderApp winID state
-    size <- newTVarIO (240, 351)
-    newGuiApp "minesweeper" (Just size) draw (scopeTriggers winID ["showCell", "play"]) \app -> forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe app.events)
+    newAppInstance (pureDraw $ renderApp winID state) \events -> forever do
+        res <- atomically =<< waitTransaction 60_000 (readPipe events)
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted ev -> case ( ev.body ^? key "play" . _String
@@ -252,4 +254,4 @@ mineSweeperApp clients winID = do
                 _ -> pure ()
 
         -- print =<< atomically (readTVar state)
-        clientsBroadcast clients =<< renderApp winID state
+        clientsHtmlT clients $ renderApp winID state

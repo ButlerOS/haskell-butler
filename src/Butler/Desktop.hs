@@ -1,8 +1,8 @@
 module Butler.Desktop (
-    AppLauncher,
     Handlers,
     Desktop (..),
     newDesktop,
+    newDesktopIO,
     startDesktop,
     desktopHandler,
     newHandler,
@@ -22,6 +22,7 @@ module Butler.Desktop (
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
+import Butler.App
 import Butler.Clock
 import Butler.Display
 import Butler.Frame
@@ -35,8 +36,6 @@ import Butler.Session
 import Butler.SoundBlaster
 import Butler.WebSocket
 import Butler.Window
-
-type AppLauncher = Desktop -> ProgramName -> WinID -> ProcessIO (Maybe GuiApp)
 
 data Desktop = Desktop
     { env :: ProcessEnv
@@ -70,35 +69,53 @@ newDesktop processEnv display ws wm = do
         <*> newSoundCard
         <*> newBroadcastChan
 
+newDesktopIO :: Display -> Workspace -> ProcessIO Desktop
+newDesktopIO display ws = do
+    processEnv <- ask
+    wm <- newWindowManager
+    atomically (newDesktop processEnv display ws wm)
+
 lookupDataClient :: Desktop -> DisplayClient -> STM (Maybe DisplayClient)
 lookupDataClient desktop client = Map.lookup (client.session.sessionID, client.tabID) <$> readTVar desktop.tabClients
 
-startDesktop :: MVar Desktop -> AppLauncher -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
-startDesktop desktopMVar appLauncher xinit display name = do
-    processEnv <- ask
+deskApp :: (WinID -> HtmlT STM ()) -> App
+deskApp draw =
+    App
+        { name = "welcome"
+        , description = mempty
+        , tags = mempty
+        , triggers = mempty
+        , size = Nothing
+        , start = \_ wid -> pure $ AppInstance (pureDraw $ draw wid) emptyDraw $ \_ev -> do
+            forever do
+                liftIO $ threadDelay maxBound
+        }
 
-    wm <- newWindowManager
-    apps <- atomically $ readMemoryVar wm.apps
+startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
+startDesktop desktopMVar mkAppSet xinit display name = do
+    desktop <- newDesktopIO display name
+    let appSet = mkAppSet desktop
 
-    desktop <- atomically (newDesktop processEnv display name wm)
+    apps <- atomically $ readMemoryVar desktop.wm.apps
+
     chan <- atomically $ newHandler desktop.handlers (const $ tryHandleWinEvent desktop)
     when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
     achan <- atomically $ newHandler desktop.handlers (soundHandler desktop.soundCard)
     when (achan /= audioChannel) (error $ "Default audio channel is wrong: " <> show achan)
 
-    let mkWelcome wid = newGuiApp "welcome" Nothing (const . pure $ welcomeWin wid) [] (const $ pure ())
+    let mkDeskApp draw = startApp (deskApp draw) desktop.hclients
 
     xinit desktop
 
     case Map.toList apps of
         [] -> do
             (wid, _) <- atomically $ newWindow desktop.wm.windows "Welcome"
-            atomically . addWinApp desktop wid =<< mkWelcome wid
+            atomically . addWinApp desktop wid =<< mkDeskApp (welcomeWin appSet) wid
         xs -> forM_ xs $ \(wid, prog) -> do
             mApp <- case prog of
-                "app-welcome" -> Just <$> mkWelcome wid
-                "app-launcher" -> Just <$> newGuiApp (ProgramName "launcher") Nothing (const . pure $ menuWin wid) [] (const $ pure ())
-                _ -> appLauncher desktop prog wid
+                "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
+                "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
+                _ -> launchApp appSet prog desktop.hclients wid
             case mApp of
                 Just app -> atomically $ addApp desktop app
                 Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
@@ -113,7 +130,7 @@ startDesktop desktopMVar appLauncher xinit display name = do
     error "update status crashed?"
 
 broadcastHtmlT :: Desktop -> HtmlT STM () -> ProcessIO ()
-broadcastHtmlT desktop = clientsBroadcast desktop.hclients
+broadcastHtmlT desktop = clientsHtmlT desktop.hclients
 
 broadcastDraw :: Desktop -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 broadcastDraw desktop = clientsDraw desktop.hclients
@@ -192,38 +209,21 @@ desktopHtml windows trayContents menuContents appContents = do
             sequence_ appContents
             renderWindows windows
 
-welcomeWin :: Monad m => WinID -> HtmlT m ()
-welcomeWin (WinID winId) = do
-    with div_ [id_ ("w-" <> showT winId), class_ "grid grid-cols-1 divide-y"] do
+welcomeWin :: Monad m => AppSet -> WinID -> HtmlT m ()
+welcomeWin appSet wid = do
+    with div_ [id_ (withWID wid "w"), class_ "grid grid-cols-1 divide-y"] do
         with div_ [class_ "p-2"] do
             "Welcome to "
             with span_ [class_ "font-bold"] "ButlerOS"
         div_ do
             "Press start!"
         with div_ [class_ "m-2 border border-gray-500 rounded-md"] do
-            menuHtml (WinID winId)
+            appSetHtml wid appSet
 
-menuHtml :: Monad m => WinID -> HtmlT m ()
-menuHtml (WinID winId) = do
-    with ul_ [class_ "list-disc"] do
-        mkLauncher "clock"
-        mkLauncher "chat"
-        mkLauncher "tabletop"
-        mkLauncher "minesweeper"
-        mkLauncher "sound-test"
-        mkLauncher "ps"
-        mkLauncher "log-viewer"
-        mkLauncher "term"
-        mkLauncher "vnc"
-  where
-    mkLauncher :: Text -> _
-    mkLauncher prog =
-        with li_ [id_ "win-swap", encodeVal ["win" .= winId, "prog" .= ("app-" <> prog)], class_ "cursor-pointer", wsSend, hxTrigger_ "click"] (toHtml prog)
-
-menuWin :: Monad m => WinID -> HtmlT m ()
-menuWin (WinID winId) =
-    with div_ [id_ ("w-" <> showT winId)] do
-        menuHtml (WinID winId)
+menuWin :: Monad m => AppSet -> WinID -> HtmlT m ()
+menuWin appSet wid = do
+    with div_ [id_ (withWID wid "w")] do
+        appSetHtml wid appSet
 
 statusHtml :: Monad m => Bool -> HtmlT m ()
 statusHtml s =
@@ -242,8 +242,8 @@ _trayHtml body =
     with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
         body
 
-desktopHandler :: AppLauncher -> Desktop -> DisplayEvent -> ProcessIO ()
-desktopHandler appLauncher desktop event = do
+desktopHandler :: AppSet -> Desktop -> DisplayEvent -> ProcessIO ()
+desktopHandler appSet desktop event = do
     -- update desktop state with display event
     case event of
         UserConnected chan client -> do
@@ -275,7 +275,7 @@ desktopHandler appLauncher desktop event = do
             appContents <- traverse (\app -> app.draw client) (reverse apps)
 
             sendHtml client (desktopHtml desktop.wm.windows trayContents menuContents appContents)
-            handleHtmxClient appLauncher desktop client
+            handleHtmxClient appSet desktop client
         "data" -> do
             spawnPingThread client
 
@@ -310,8 +310,8 @@ handleClientEvents client cb = do
                     Nothing -> logError "event without trigger" ["event" .= v]
             Nothing -> logError "Received unknown websocket data" ["buf" .= BSLog buf]
 
-handleHtmxClient :: _ -> Desktop -> DisplayClient -> ProcessIO ()
-handleHtmxClient appLauncher desktop client = do
+handleHtmxClient :: AppSet -> Desktop -> DisplayClient -> ProcessIO ()
+handleHtmxClient appSet desktop client = do
     -- todo: play starting sound
     sleep 500
 
@@ -328,8 +328,8 @@ handleHtmxClient appLauncher desktop client = do
     handleEvent "win-swap" value = do
         case (value ^? key "prog" . _String, value ^? key "win" . _Integer) of
             (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                guiAppM <- asProcess desktop.env (appLauncher desktop appName winId)
-                case guiAppM of
+                mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.hclients winId)
+                case mGuiApp of
                     Just guiApp -> swapWindow winId guiApp
                     Nothing -> logInfo "unknown win-swap prog" ["v" .= value]
             _ -> logInfo "unknown win-swap" ["v" .= value]
@@ -346,16 +346,15 @@ handleHtmxClient appLauncher desktop client = do
 
     addWindow :: Maybe GuiApp -> ProcessIO ()
     addWindow content = do
-        (winId, script) <- atomically do
+        (wid, script) <- atomically do
             (winId, win) <- newWindow desktop.wm.windows "REPL"
             let script = renderWindow (winId, win)
             pure (winId, script)
 
         guiApp <- case content of
             Just guiApp -> pure guiApp
-            Nothing -> newGuiApp (ProgramName "launcher") Nothing (const . pure $ menuWin winId) [] (const $ pure ())
-
-        atomically $ addWinApp desktop winId guiApp
+            Nothing -> startApp (deskApp $ menuWin appSet) desktop.hclients wid
+        atomically $ addWinApp desktop wid guiApp
 
         broadcastDraw desktop $ \oclient -> do
             c <- guiApp.draw oclient

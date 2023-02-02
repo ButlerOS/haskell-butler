@@ -1,11 +1,8 @@
 module Butler.App.LogViewer where
 
-import Butler.Prelude
-
-import Butler.Desktop
-import Butler.GUI
+import Butler
 import Butler.Logger
-import Butler.Window
+import Butler.Prelude
 
 renderLog :: Event SystemEvent -> HtmlT STM ()
 renderLog se = toHtml (showT se.createdAt <> " " <> showT se.body)
@@ -17,16 +14,21 @@ renderLogs os wid = do
         with ul_ [id_ (withWID wid "logs-list"), class_ "whitespace-nowrap overflow-x-auto"] do
             traverse_ (li_ . renderLog) events
 
-logViewerApp :: Desktop -> WinID -> ProcessIO GuiApp
-logViewerApp desktop wid = do
-    os <- asks os
-    newGuiApp "log-viewer" Nothing (const . pure $ renderLogs os wid) (scopeTriggers wid ["ps-kill", "ps-toggle"]) \app -> do
-        spawnThread_ $ forever do
-            ev <- atomically $ readPipe app.events
-            logError "unknown event" ["ev" .= ev]
-        chan <- atomically (getLogsChan os.logger)
-        forever do
-            sysEvent <- atomically $ readTChan chan
-            broadcastHtmlT desktop do
-                with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
-                    li_ $ renderLog sysEvent
+logViewerApp :: App
+logViewerApp =
+    App
+        { name = "log-viewer"
+        , tags = fromList ["System"]
+        , description = "Read event logs"
+        , size = Nothing
+        , triggers = []
+        , start = \clients wid -> do
+            os <- asks os
+            newAppInstance (pureDraw $ renderLogs os wid) $ const do
+                chan <- atomically (getLogsChan os.logger)
+                forever do
+                    sysEvent <- atomically $ readTChan chan
+                    clientsHtmlT clients do
+                        with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
+                            li_ $ renderLog sysEvent
+        }

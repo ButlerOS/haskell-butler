@@ -4,14 +4,12 @@ import Data.Aeson
 import Data.Text qualified as Text
 import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
-import Butler.Clock
+import Butler
 import Butler.Desktop
 import Butler.Frame
-import Butler.GUI
 import Butler.Logger
 import Butler.NatMap qualified as NM
 import Butler.Prelude
-import Butler.Window
 
 -- The data model
 newtype OID = OID Natural
@@ -132,8 +130,19 @@ instance FromJSON TableEvent where
             (Just oid, Just x) -> TableEventMove oid x <$> obj .: "y"
             _ -> fail "oid or x attribute missing"
 
-tabletopApp :: Desktop -> WinID -> ProcessIO GuiApp
-tabletopApp desktop wid = do
+tabletopApp :: Desktop -> App
+tabletopApp desktop =
+    App
+        { name = "tabletop"
+        , tags = fromList ["Game"]
+        , description = "Free form tabletop"
+        , size = Just (725, 696)
+        , start = const (startTabletopApp desktop)
+        , triggers = mempty
+        }
+
+startTabletopApp :: Desktop -> WinID -> ProcessIO AppInstance
+startTabletopApp desktop wid = do
     tableState <- atomically newTableState
 
     let clientHandler :: ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
@@ -160,9 +169,8 @@ tabletopApp desktop wid = do
     let draw :: DrawHtml
         draw = pure . renderTable tableState wid chan
 
-    size <- newTVarIO (725, 696)
-    newGuiAppWin wid "tabletop" (Just size) draw [] \app -> forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe app.events)
+    newAppInstance draw \events -> forever do
+        res <- atomically =<< waitTransaction 60_000 (readPipe events)
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted _ev -> pure ()

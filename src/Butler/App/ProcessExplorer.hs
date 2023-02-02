@@ -1,22 +1,17 @@
 module Butler.App.ProcessExplorer where
 
-import Butler.Prelude
-
-import Data.Aeson (Value (Number))
-
-import Butler.Clock
+import Butler
 import Butler.Desktop
-import Butler.GUI
 import Butler.Logger
+import Butler.Prelude
 import Butler.Processor
-import Butler.Window
+import Data.Aeson (Value (Number))
 
 data PEState = PEAll | PEScopped Pid
 
-renderPE :: TVar PEState -> WinID -> ProcessIO (HtmlT STM ())
-renderPE stV wid = do
-    os <- asks os
-    st <- readTVarIO stV
+renderPE :: OS -> TVar PEState -> WinID -> HtmlT STM ()
+renderPE os stV wid = do
+    st <- lift (readTVar stV)
     let startingPid = case st of
             PEAll -> Pid 1
             PEScopped p -> p
@@ -34,17 +29,16 @@ renderPE stV wid = do
                     toHtml (show status)
                     childs <- lift (readTVar process.childs)
                     traverse_ renderProcess (reverse childs)
-    pure $
-        with div_ [id_ (withWID wid "w"), class_ "bg-slate-100 truncate h-full relative"] do
-            topRightMenu
-                [ with
-                    div_
-                    [class_ "cursor-pointer bg-grey-200 bg-opacity-90", wsSend, id_ (withWID wid "ps-toggle")]
-                    case st of
-                        PEAll -> "desktop scope"
-                        PEScopped _ -> "show all"
-                ]
-            renderProcessM startingPid
+    with div_ [id_ (withWID wid "w"), class_ "bg-slate-100 truncate h-full relative"] do
+        topRightMenu
+            [ with
+                div_
+                [class_ "cursor-pointer bg-grey-200 bg-opacity-90", wsSend, id_ (withWID wid "ps-toggle")]
+                case st of
+                    PEAll -> "desktop scope"
+                    PEScopped _ -> "show all"
+            ]
+        renderProcessM startingPid
   where
     trigger cls name vals title =
         with
@@ -58,33 +52,43 @@ renderPE stV wid = do
             ]
             mempty
 
-peApp :: Desktop -> WinID -> ProcessIO GuiApp
-peApp desktop wid = do
-    stV <- newTVarIO (PEScopped desktop.env.process.pid)
-    newGuiApp "ps" Nothing (const $ renderPE stV wid) (scopeTriggers wid ["ps-kill", "ps-toggle"]) \app -> do
-        spawnThread_ $ forever do
-            ev <- atomically $ readPipe app.events
-            case ev.body ^? key "pid" . _Integer of
-                Just pid -> do
-                    logInfo "Killing" ["pid" .= pid]
-                    void $ killProcess (Pid (unsafeFrom pid))
-                Nothing -> case withoutWID ev.trigger of
-                    "ps-toggle" -> do
-                        st <- readTVarIO stV
-                        atomically $ writeTVar stV $ case st of
-                            PEAll -> PEScopped desktop.env.process.pid
-                            PEScopped _ -> PEAll
-                        broadcastHtmlT desktop =<< renderPE stV wid
-                    _ -> logError "unknown event" ["ev" .= ev]
-        forever do
+peApp :: Desktop -> App
+peApp desktop =
+    App
+        { name = "ps"
+        , tags = fromList ["System"]
+        , description = "Process Explorer"
+        , size = Nothing
+        , triggers = fromList ["ps-kill", "ps-toggle"]
+        , start = \_ wid -> do
+            stV <- newTVarIO (PEScopped desktop.env.process.pid)
             os <- asks os
-            sysEvent <- atomically =<< (waitLog os.logger 10_000 isProcess)
-            case sysEvent of
-                WaitCompleted{} -> do
-                    broadcastHtmlT desktop =<< renderPE stV wid
-                WaitTimeout{} -> pure ()
-  where
-    isProcess = \case
-        ProcessCreated{} -> True
-        ProcessStopped{} -> True
-        _ -> False
+            let doRender = renderPE os stV wid
+            newAppInstance (pureDraw doRender) \events -> do
+                spawnThread_ $ forever do
+                    ev <- atomically $ readPipe events
+                    case ev.body ^? key "pid" . _Integer of
+                        Just pid -> do
+                            logInfo "Killing" ["pid" .= pid]
+                            void $ killProcess (Pid (unsafeFrom pid))
+                        Nothing -> case withoutWID ev.trigger of
+                            "ps-toggle" -> do
+                                st <- readTVarIO stV
+                                atomically $ writeTVar stV $ case st of
+                                    PEAll -> PEScopped desktop.env.process.pid
+                                    PEScopped _ -> PEAll
+                                broadcastHtmlT desktop doRender
+                            _ -> logError "unknown event" ["ev" .= ev]
+                forever do
+                    sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
+                    case sysEvent of
+                        WaitCompleted{} -> do
+                            broadcastHtmlT desktop doRender
+                        WaitTimeout{} -> pure ()
+        }
+
+isProcess :: SystemEvent -> Bool
+isProcess = \case
+    ProcessCreated{} -> True
+    ProcessStopped{} -> True
+    _ -> False

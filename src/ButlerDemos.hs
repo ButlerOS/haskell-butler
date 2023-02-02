@@ -6,6 +6,7 @@ import Main.Utf8
 import System.Environment (getArgs)
 import System.Process.Typed hiding (Process)
 
+import Butler.App
 import Butler.Desktop
 import Butler.Display
 import Butler.GUI
@@ -18,7 +19,7 @@ import Butler.Auth.Invitation
 import Butler.App.Chat
 import Butler.App.Clock
 import Butler.App.LogViewer
-import Butler.App.MineSweeper (mineSweeperApp)
+import Butler.App.MineSweeper
 import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
 import Butler.App.Seat
@@ -91,14 +92,19 @@ standaloneApp = do
             logInfo "Client connected" ["client" .= client]
             spawnPingThread client
             clients <- atomically $ newDisplayClientsFromClient client
-            msApp <- mineSweeperApp clients (WinID 0)
+
+            msApp <- startMineSweeper clients (WinID 0)
             msHtml <- msApp.draw client
             sendHtml client (with div_ [id_ "display-root"] msHtml)
+
+            events <- atomically newPipe
+            spawnThread_ do
+                msApp.run events
 
             handleClientEvents client $ \trigger value -> do
                 let guiEvent = GuiEvent client trigger value
                 logInfo "got ev" ["ev" .= guiEvent]
-                atomically $ writePipe msApp.events guiEvent
+                atomically $ writePipe events guiEvent
         UserDisconnected _ client -> logInfo "Client disconnected" ["client" .= client]
 
     xfiles = [XStatic.htmx, XStatic.htmxExtWS, XStatic.tailwind]
@@ -157,24 +163,25 @@ multiDesktop = do
             let authApp = invitationAuthApp indexHtml
             desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
                 _ <- superviseProcess "chat-service" $ chatServerProgram chat display
-                lobbyProgram (appLauncher chat) xinit chat display
+                lobbyProgram (mkAppSet chat) xinit chat display
             void $ awaitProcess desktop
 
     xinit desktop = do
         atomically . addApp desktop =<< smApp desktop
         atomically . addApp desktop =<< seatApp desktop
 
-    appLauncher chat desktop name winID = case name of
-        "app-chat" -> Just <$> chatApp desktop.hclients winID chat
-        "app-clock" -> Just <$> clockApp desktop.hclients winID
-        "app-log-viewer" -> Just <$> logViewerApp desktop winID
-        "app-term" -> Just <$> termApp desktop winID
-        "app-sound-test" -> Just <$> soundTestApp desktop winID
-        "app-ps" -> Just <$> peApp desktop winID
-        "app-vnc" -> Just <$> vncApp desktop winID
-        "app-minesweeper" -> Just <$> mineSweeperApp desktop.hclients winID
-        "app-tabletop" -> Just <$> tabletopApp desktop winID
-        _ -> pure Nothing
+    mkAppSet chat desktop =
+        newAppSet
+            [ chatApp chat
+            , clockApp
+            , logViewerApp
+            , termApp desktop
+            , soundTestApp desktop
+            , peApp desktop
+            , vncApp desktop
+            , tabletopApp desktop
+            , mineSweeperApp
+            ]
 
     xfiles', xfiles :: [XStaticFile]
     xfiles =

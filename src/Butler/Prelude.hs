@@ -21,6 +21,7 @@ module Butler.Prelude (
     module GHC.Stack,
     module Data.Char,
     System.Posix.ByteString.RawFilePath,
+    GHC.Exts.fromList,
 
     -- * relude
     Relude.putText,
@@ -192,6 +193,7 @@ import Data.Void qualified
 import Data.Word
 import Debug.Trace
 import Foreign.C.Types
+import GHC.Exts (fromList)
 import GHC.Generics qualified
 import GHC.Records qualified
 import GHC.Stack

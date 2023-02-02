@@ -78,12 +78,13 @@ speedTest();
 speedTestApp :: Desktop -> ProcessIO (GuiApp, ChannelName, DisplayClient -> ProcessIO ())
 speedTestApp desktop = do
     state <- SpeedTestState <$> newTVarIO mempty
-    let onClient client = do
+    let _onClient client = do
             newTest <- SpeedTest <$> getTime <*> newTVarIO 0 <*> newTVarIO 0
             atomically $ modifyTVar' state.tests (Map.insert client.endpoint newTest)
             logInfo "starting speed test" ["endpoint" .= client.endpoint]
             performTest newTest client
             broadcastHtmlT desktop (renderApp state)
+    {-
     (,"speed-test",onClient) <$> newGuiApp "speed-test" Nothing (const $ pure $ renderApp state) ["start-speed-test"] \app -> do
         forever do
             ev <- atomically $ readPipe app.events
@@ -94,3 +95,5 @@ speedTestApp desktop = do
                             "Starting go!"
                             script_ clientScript
                 _ -> logError "unknown ev" ["ev" .= ev]
+    -}
+    error "TODO"

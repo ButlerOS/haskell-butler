@@ -1,11 +1,9 @@
 module Butler.App.NoVnc (vncApp) where
 
+import Butler
+import Butler.Desktop
 import Butler.Prelude
 import Data.Map.Strict qualified as Map
-
-import Butler.Desktop
-import Butler.GUI
-import Butler.Window
 
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
@@ -38,10 +36,21 @@ data VncServer = VncServer
 newVncServer :: Text -> Int -> STM VncServer
 newVncServer h p = VncServer (from h) (show p) <$> newTVar (800, 600)
 
-vncApp :: Desktop -> WinID -> ProcessIO GuiApp
-vncApp desktop wid = do
+vncApp :: Desktop -> App
+vncApp desktop =
+    App
+        { name = "vnc"
+        , tags = fromList ["Graphic", "Development"]
+        , description = "NoVNC client"
+        , size = Nothing
+        , triggers = ["change-quality", "change-res"]
+        , start = const (startVncApp desktop)
+        }
+
+startVncApp :: Desktop -> WinID -> ProcessIO AppInstance
+startVncApp desktop wid = do
     srv <- atomically (newVncServer "localhost" 5900)
-    let tray = pure . renderTray
+    let drawTray = pure . renderTray
 
     let draw :: DisplayClient -> ProcessIO (HtmlT STM ())
         draw _client = pure do
@@ -77,10 +86,14 @@ vncApp desktop wid = do
 
     atomically $ modifyTVar' desktop.channels (Map.insert "novnc" onClient)
 
-    newGuiApp2 "vnc" Nothing emptyDraw tray draw (scopeTriggers wid ["change-quality", "change-res"]) \app -> do
-        forever do
-            ev <- atomically $ readPipe app.events
-            logError "unknown ev" ["ev" .= ev]
+    pure $
+        AppInstance
+            { draw
+            , drawTray
+            , run = \events -> forever do
+                ev <- atomically $ readPipe events
+                logError "unknown ev" ["ev" .= ev]
+            }
 
 vncClient :: WinID -> (Int, Int) -> Text
 vncClient wid (width, height) =

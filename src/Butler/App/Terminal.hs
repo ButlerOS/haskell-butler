@@ -4,11 +4,10 @@ import Butler.Prelude
 
 import System.Posix.Pty qualified as Pty
 
+import Butler
 import Butler.Desktop
-import Butler.GUI
 import Butler.Logger
 import Butler.WebSocket
-import Butler.Window
 
 import System.Process (cleanupProcess)
 import System.Process.Typed qualified
@@ -43,8 +42,19 @@ renderTray server _ = do
             -- https://www.physics.udel.edu/~watson/scen103/ascii.html
             with pre_ [class_ "mx-1 cursor-pointer", onclick_ "socket.send('\\x0e')"] "C-n"
 
-termApp :: Desktop -> WinID -> ProcessIO GuiApp
-termApp desktop wid = do
+termApp :: Desktop -> App
+termApp desktop =
+    App
+        { name = "term"
+        , tags = fromList ["Development"]
+        , description = "XTerm"
+        , size = Nothing
+        , triggers = fromList ["term-resize"]
+        , start = const (startTermApp desktop)
+        }
+
+startTermApp :: Desktop -> WinID -> ProcessIO AppInstance
+startTermApp desktop wid = do
     server <- atomically newXtermServer
     dimChan <- atomically newTChan
 
@@ -116,10 +126,10 @@ termApp desktop wid = do
     let draw = pure . const (renderApp wid (from chan) (from dimChanID) server)
     -- tray = pure . renderTray server
 
-    newGuiApp "term" Nothing draw (scopeTriggers wid ["term-resize"]) \app -> do
+    newAppInstance draw \events -> do
         spawnThread_ supervisor
         forever do
-            ev <- atomically $ readPipe app.events
+            ev <- atomically $ readPipe events
             logError "unknown ev" ["ev" .= ev]
 
 termClient :: WinID -> Natural -> Natural -> Maybe (Int, Int) -> Text

@@ -13,14 +13,12 @@ module Butler.App.Chat (
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
+import Butler
 import Butler.Display
-import Butler.GUI
 import Butler.History
 import Butler.Memory
 import Butler.Prelude
 import Butler.Session
-import Butler.Window
-
 import Butler.User
 
 data ChatServer = ChatServer
@@ -154,17 +152,26 @@ renderChat wid srv client = do
         WinID 0 -> "max-h-44 "
         _ -> "max-h-72 "
 
-chatApp :: DisplayClients -> WinID -> ChatServer -> ProcessIO GuiApp
-chatApp clients wid srv = do
+chatApp :: ChatServer -> App
+chatApp srv =
+    App
+        { name = "chat"
+        , tags = fromList ["Communication"]
+        , description = "Local chat room"
+        , size = Nothing
+        , triggers = ["chat-message"]
+        , start = startChatApp srv
+        }
+
+startChatApp :: ChatServer -> DisplayClients -> WinID -> ProcessIO AppInstance
+startChatApp srv clients wid = do
     chatChan <- atomically (newChatReader srv)
-    let draw :: DrawHtml
-        draw = pure . renderChat wid srv
-    newGuiAppWin wid "chat" Nothing draw ["chat-message"] \app -> do
+    newAppInstance (pure . renderChat wid srv) \events -> do
         spawnThread_ $ forever do
             ev <- atomically (readTChan chatChan)
             clientsDraw clients (\client -> pure $ updateChat wid client ev)
         forever do
-            ev <- atomically $ readPipe app.events
+            ev <- atomically $ readPipe events
             case ev.body ^? key "message" . _String of
                 Just msg -> atomically $ addUserMessage srv (MkMessage ev.client.session.username msg)
                 Nothing -> logError "bad chat ev" ["ev" .= ev]

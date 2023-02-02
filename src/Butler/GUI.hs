@@ -2,8 +2,7 @@
 module Butler.GUI (
     GuiApp (..),
     emptyDraw,
-    newGuiApp,
-    newGuiApp2,
+    pureDraw,
     DrawHtml,
     GuiEvent (..),
     TriggerName (..),
@@ -32,7 +31,6 @@ module Butler.GUI (
 
 import Butler.Prelude
 import Data.Aeson (Value (Number))
-import Data.Set qualified as Set
 import Data.Text qualified as Text
 
 import Lucid
@@ -47,18 +45,11 @@ import Data.Aeson.Types (Pair)
 
 type DrawHtml = DisplayClient -> ProcessIO (HtmlT STM ())
 
+pureDraw :: HtmlT STM () -> DrawHtml
+pureDraw = const . pure
+
 emptyDraw :: DrawHtml
 emptyDraw = const $ pure mempty
-
-newGuiApp :: ProgramName -> Maybe (TVar (Int, Int)) -> DrawHtml -> [TriggerName] -> (GuiApp -> ProcessIO ()) -> ProcessIO GuiApp
-newGuiApp name size = newGuiApp2 name size emptyDraw emptyDraw
-
-newGuiApp2 :: ProgramName -> Maybe (TVar (Int, Int)) -> DrawHtml -> DrawHtml -> DrawHtml -> [TriggerName] -> (GuiApp -> ProcessIO ()) -> ProcessIO GuiApp
-newGuiApp2 name size drawTray drawMenu draw triggerNames cb = do
-    events <- atomically newPipe
-    let triggers = Set.fromList triggerNames
-    let mkGuiApp process = GuiApp{..}
-    mkGuiApp <$> spawnProcess ("app-" <> name) (cb . mkGuiApp =<< getSelfProcess)
 
 data GuiApp = GuiApp
     { process :: Process

@@ -60,16 +60,24 @@ safeSend clients action client body = do
             atomically $ delClient clients client
             logError "send error" ["client" .= client, "err" .= showT err]
 
-clientsBroadcastMessage :: DisplayClients -> ByteString -> ProcessIO ()
-clientsBroadcastMessage clients buf = do
+clientsBinary :: DisplayClients -> ByteString -> ProcessIO ()
+clientsBinary clients buf = do
     xs <- atomically (getClients clients)
     forM_ xs $ \client -> safeSend clients sendMessage client buf
 
-clientsBroadcast :: DisplayClients -> HtmlT STM () -> ProcessIO ()
-clientsBroadcast clients message = do
+clientsHtmlT :: DisplayClients -> HtmlT STM () -> ProcessIO ()
+clientsHtmlT clients message = do
     body <- from <$> atomically (renderBST message)
     xs <- atomically (getClients clients)
     forM_ xs $ \client -> safeSend clients sendTextMessage client body
+
+clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
+clientsDraw clients draw = do
+    xs <- atomically (getClients clients)
+    forM_ xs $ \client -> do
+        htmlT <- draw client
+        body <- from <$> atomically (renderBST htmlT)
+        safeSend clients sendTextMessage client body
 
 newtype Endpoint = Endpoint Text
     deriving newtype (Eq, Ord, Show, IsString)
@@ -97,14 +105,6 @@ addClient (DisplayClients x) = void . NM.add x
 
 delClient :: DisplayClients -> DisplayClient -> STM ()
 delClient (DisplayClients x) client = NM.nmDelete x (\o -> o.endpoint == client.endpoint)
-
-clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
-clientsDraw clients draw = do
-    xs <- atomically (getClients clients)
-    forM_ xs $ \client -> do
-        htmlT <- draw client
-        body <- from <$> atomically (renderBST htmlT)
-        safeSend clients sendTextMessage client body
 
 type HandlerCallback = ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
 

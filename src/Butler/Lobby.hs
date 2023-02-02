@@ -4,6 +4,7 @@ import Data.IntMap.Strict qualified as IM
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 
+import Butler.App (AppSet)
 import Butler.Clock
 import Butler.Desktop
 import Butler.Display
@@ -33,8 +34,8 @@ newLobby = do
     let initialMap = Map.fromList $ map (\name -> (name, DesktopOffline)) savedList
     Lobby <$> newMVar initialMap <*> pure desktopsList
 
-lobbyProgram :: AppLauncher -> Xinit -> ChatServer -> Display -> ProcessIO OnClient
-lobbyProgram appLauncher xinit chat display = do
+lobbyProgram :: (Desktop -> AppSet) -> Xinit -> ChatServer -> Display -> ProcessIO OnClient
+lobbyProgram mkAppSet xinit chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
     dmProcess <- spawnProcess "welcome-desktop" do
@@ -51,7 +52,7 @@ lobbyProgram appLauncher xinit chat display = do
                 os <- asks os
                 desktopStorage <- scopeStorage os.storage (from desktopID)
                 void $ spawnProcess (ProgramName desktopID) $ local (#os . #storage .~ desktopStorage) do
-                    startDesktop desktopMVar appLauncher xinit display name
+                    startDesktop desktopMVar mkAppSet xinit display name
 
                 desktop <- takeMVar desktopMVar
                 when (isNothing mDesktopStatus) do
@@ -62,7 +63,7 @@ lobbyProgram appLauncher xinit chat display = do
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
         name -> do
             desktop <- getDesktop name
-            pure (desktop.env, desktopHandler appLauncher desktop)
+            pure (desktop.env, desktopHandler (mkAppSet desktop) desktop)
 
 chatWin :: WinID
 chatWin = WinID 0

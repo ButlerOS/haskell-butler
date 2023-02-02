@@ -70,7 +70,7 @@ data ProcessStatus
 
 newtype ProgramName = ProgramName Text
     deriving (Show, Generic)
-    deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON)
+    deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON, ToHtml)
 
 instance From Natural ProgramName where
     from = ProgramName . from . show

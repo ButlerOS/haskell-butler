@@ -7,11 +7,13 @@ import Data.UUID qualified as UUID
 
 import Data.Map.Strict qualified as Map
 
+import Butler.App
 import Butler.Desktop
 import Butler.Display
 import Butler.GUI
 import Butler.Memory
 import Butler.Session
+import Butler.Window
 
 newtype SessionManager = SessionManager
     { visible :: TVar Bool
@@ -34,7 +36,7 @@ renderSM sm display = do
         sessions <- Map.elems <$> lift (readMemoryVar display.sessions.sessions)
         clients <- lift (readTVar display.clients)
         invites <- Map.toList <$> lift (readMemoryVar display.sessions.invitations)
-        bodyHtml "absolute bottom-8 pl-1 shadow-inner pt-1 right-0 bg-slate-700 bg-opacity-50 z-50" do
+        bodyHtml "absolute text-black bottom-8 pl-1 shadow-inner pt-1 right-0 bg-slate-700 bg-opacity-50 z-50" do
             with div_ [class_ "bg-stone-200"] do
                 with h2_ [class_ "font-semibold text-center"] "Connections"
                 forM_ (Map.toList clients) \(session, displayClients) -> do
@@ -124,46 +126,64 @@ smApp :: Desktop -> ProcessIO GuiApp
 smApp desktop = do
     let display = desktop.display
     sm <- SessionManager <$> newTVarIO False
-    let triggers = ["new-invite", "delete-invite", "terminate-session", "display-pulse", "close-connection"]
-    newGuiApp "session-manager" Nothing (const $ pure $ renderSM sm display) triggers \app -> forever do
-        ev <- atomically $ readPipe app.events
-        resp <- case ev.trigger of
-            "new-invite" -> do
-                newInvite display.sessions
-                pure $ renderSM sm display
-            "delete-invite" -> case ev.body ^? key "uuid" . _JSON of
-                Just invite -> atomically do
-                    deleteInvite display.sessions invite
+    let
+        handler events = forever do
+            ev <- atomically $ readPipe events
+            resp <- case ev.trigger of
+                "new-invite" -> do
+                    newInvite display.sessions
                     pure $ renderSM sm display
-                Nothing -> pure mempty
-            "terminate-session" -> case ev.body ^? key "uuid" . _JSON of
-                Just session -> do
-                    pids <- atomically do
-                        deleteSession display.sessions session
-                        clients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
-                        pure ((.process.pid) <$> clients)
-                    logInfo "Terminating" ["pids" .= pids]
-                    traverse_ killProcess pids
-                    pure $ renderSM sm display
-                Nothing -> pure mempty
-            "display-pulse" -> atomically do
-                modifyTVar sm.visible not
-                visible <- readTVar sm.visible
-                pure $
-                    if visible
-                        then renderSM sm display
-                        else hideSM
-            "close-connection" -> case (,) <$> ev.body ^? key "client" . _JSON <*> ev.body ^? key "uuid" . _JSON of
-                Just (endpoint, uuid) -> do
-                    clientM <- atomically $ getClient display uuid endpoint
-                    case clientM of
-                        Just client -> void $ killProcess client.process.pid
-                        Nothing -> logError "Unknown client" ["endpoint" .= endpoint]
-                    pure $ renderSM sm display
-                Nothing -> do
-                    logError "close-connection missing client and/or uuid key" ["ev" .= ev]
+                "delete-invite" -> case ev.body ^? key "uuid" . _JSON of
+                    Just invite -> atomically do
+                        deleteInvite display.sessions invite
+                        pure $ renderSM sm display
+                    Nothing -> pure mempty
+                "terminate-session" -> case ev.body ^? key "uuid" . _JSON of
+                    Just session -> do
+                        pids <- atomically do
+                            deleteSession display.sessions session
+                            clients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
+                            pure ((.process.pid) <$> clients)
+                        logInfo "Terminating" ["pids" .= pids]
+                        traverse_ killProcess pids
+                        pure $ renderSM sm display
+                    Nothing -> pure mempty
+                "display-pulse" -> atomically do
+                    modifyTVar sm.visible not
+                    visible <- readTVar sm.visible
+                    pure $
+                        if visible
+                            then renderSM sm display
+                            else hideSM
+                "close-connection" -> case (,) <$> ev.body ^? key "client" . _JSON <*> ev.body ^? key "uuid" . _JSON of
+                    Just (endpoint, uuid) -> do
+                        clientM <- atomically $ getClient display uuid endpoint
+                        case clientM of
+                            Just client -> void $ killProcess client.process.pid
+                            Nothing -> logError "Unknown client" ["endpoint" .= endpoint]
+                        pure $ renderSM sm display
+                    Nothing -> do
+                        logError "close-connection missing client and/or uuid key" ["ev" .= ev]
+                        pure mempty
+                _ -> do
+                    logError "unknown ev" ["ev" .= ev]
                     pure mempty
-            _ -> do
-                logError "unknown ev" ["ev" .= ev]
-                pure mempty
-        sendHtml ev.client resp
+            sendHtml ev.client resp
+
+        appInstance =
+            AppInstance
+                { draw = emptyDraw
+                , drawTray = pureDraw (renderSM sm display)
+                , run = handler
+                }
+        app =
+            App
+                { name = "seat"
+                , tags = mempty
+                , description = mempty
+                , size = Nothing
+                , triggers = ["new-invite", "delete-invite", "terminate-session", "display-pulse", "close-connection"]
+                , start = \_ _ -> pure appInstance
+                }
+
+    startApp app desktop.hclients (WinID 0)

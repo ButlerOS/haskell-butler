@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.App
       Butler.App.Chat
       Butler.App.Clock
       Butler.App.LogViewer

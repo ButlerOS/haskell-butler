@@ -200,10 +200,3 @@ wid_ wid n = id_ (withWID wid n)
 
 scopeTriggers :: WinID -> [TriggerName] -> [TriggerName]
 scopeTriggers winID = map (\(TriggerName tn) -> TriggerName (withWID winID tn))
-
-newGuiAppWin :: WinID -> ProgramName -> Maybe (TVar (Int, Int)) -> DrawHtml -> [TriggerName] -> (GuiApp -> ProcessIO ()) -> ProcessIO GuiApp
-newGuiAppWin wid name size draw triggers = newGuiApp name size newDraw (scopeTriggers wid triggers)
-  where
-    newDraw client = do
-        content <- draw client
-        pure $ with div_ [id_ (withWID wid "w")] content

@@ -1,17 +1,15 @@
-module Butler.App.SoundTest where
+module Butler.App.SoundTest (soundTestApp) where
 
 import Butler.Prelude
 import Codec.EBML qualified as EBML
 import Data.ByteString qualified as BS
 import UnliftIO.Process qualified as Process
 
-import Butler.Clock
+import Butler
 import Butler.Desktop
-import Butler.GUI
 import Butler.Logger
 import Butler.Session
 import Butler.SoundBlaster
-import Butler.Window
 
 data TestState
     = Pending
@@ -91,28 +89,36 @@ soundTestHtml wid sc vState = with div_ [id_ (withWID wid "sound-test")] do
             with button_ [id_ (withWID wid "stop"), wsSend, hxTrigger_ "click", class_ "bg-red-500 hover:bg-red-700 text-white font-bold p-1 rounded"] "stop"
     soundCardInfoHtml sc
 
-soundTestApp :: Desktop -> WinID -> ProcessIO GuiApp
-soundTestApp desktop wid = do
+soundTestApp :: Desktop -> App
+soundTestApp desktop =
+    App
+        { name = "sound-test"
+        , tags = fromList ["Utility", "Sound"]
+        , description = "Test audio stream"
+        , size = Just (200, 164)
+        , triggers = fromList ["stop", "playback-test", "stream-test"]
+        , start = const (startSoundTest desktop)
+        }
+
+startSoundTest :: Desktop -> WinID -> ProcessIO AppInstance
+startSoundTest desktop wid = do
     vState <- newTVarIO Pending
     let setStatus = atomically . writeTVar vState
 
     let render = soundTestHtml wid desktop.soundCard vState
         draw = const $ pure render
-        triggers = ["stop", "playback-test", "stream-test"]
         refreshRate = 160
-
-    size <- newTVarIO (200, 164)
 
     audioEventsChan <- atomically (newReaderChan desktop.soundCard.events)
 
-    newGuiAppWin wid "sound-test" (Just size) draw triggers \app -> do
+    newAppInstance draw \events -> do
         spawnThread_ $ forever do
             _ev <- atomically (readTChan audioEventsChan)
             broadcastHtmlT desktop (soundCardInfoHtml desktop.soundCard)
 
         forever do
             state <- readTVarIO vState
-            waitTransaction refreshRate (readPipe app.events) >>= atomically >>= \case
+            waitTransaction refreshRate (readPipe events) >>= atomically >>= \case
                 WaitTimeout -> pure ()
                 WaitCompleted ev -> case state of
                     Pending -> do
@@ -128,18 +134,18 @@ soundTestApp desktop wid = do
                                 process <- localStream desktop.soundCard wid
                                 setStatus (Streaming process)
                             _ -> logError "unknown trigger" ["ev" .= ev]
-                        clientsBroadcast desktop.hclients render
+                        clientsHtmlT desktop.hclients render
                     DelayPlayback process _client -> case withoutWID ev.trigger of
                         "stop" -> do
                             logInfo "Stopping record" ["ev" .= ev]
                             void $ killProcess process.pid
                             setStatus Pending
-                            clientsBroadcast desktop.hclients render
+                            clientsHtmlT desktop.hclients render
                         _ -> logError "unknown rec trigger" ["ev" .= ev]
                     Streaming process -> case withoutWID ev.trigger of
                         "stop" -> do
                             logInfo "Stopping streamming" ["ev" .= ev]
                             void $ killProcess process.pid
                             setStatus Pending
-                            clientsBroadcast desktop.hclients render
+                            clientsHtmlT desktop.hclients render
                         _ -> logError "unknown rec trigger" ["ev" .= ev]
