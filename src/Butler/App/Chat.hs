@@ -2,7 +2,6 @@ module Butler.App.Chat (
     ChatServer,
     UserMessage (..),
     newChatServer,
-    chatServerProgram,
     newChatReader,
     updateChat,
     addUserMessage,
@@ -14,15 +13,14 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
 import Butler
-import Butler.Display
 import Butler.History
-import Butler.Memory
 import Butler.Prelude
 import Butler.Session
 import Butler.User
 
 data ChatServer = ChatServer
-    { history :: History UserMessage
+    { allClients :: TVar (Map SessionID [DisplayClient])
+    , history :: History UserMessage
     , events :: BroadcastChan UserEvent
     , users :: TVar (Set UserName)
     }
@@ -36,8 +34,8 @@ data UserMessage = MkMessage
 data UserEvent = UserJoined UserName | UserLeft UserName | UserChat UserMessage
     deriving (Generic, ToJSON)
 
-newChatServer :: STM ChatServer
-newChatServer = demoChat =<< (ChatServer <$> newHistory 42 <*> newBroadcastChan <*> newTVar mempty)
+newChatServer :: TVar (Map SessionID [DisplayClient]) -> STM ChatServer
+newChatServer allClients = demoChat =<< (ChatServer allClients <$> newHistory 42 <*> newBroadcastChan <*> newTVar mempty)
 
 newChatReader :: ChatServer -> STM (TChan UserEvent)
 newChatReader srv = newReaderChan srv.events
@@ -48,50 +46,24 @@ demoChat srv = do
     addHistory srv.history (MkMessage "bob" "The quick brown fox jumps over the lazy dog")
     pure srv
 
-handleDisplayEvent :: ChatServer -> Display -> DisplayEvent -> STM (Maybe UserEvent)
-handleDisplayEvent srv display = \case
+handleDisplayEvent :: ChatServer -> DisplayEvent -> STM ()
+handleDisplayEvent srv = \case
     UserConnected _ client -> do
         let user = client.session.username
         added <- stateTVar srv.users $ \users ->
             if Set.member user users
                 then (False, users)
                 else (True, Set.insert user users)
-        if added
-            then do
-                let ev = UserJoined user
-                broadcast srv.events ev
-                pure $ Just ev
-            else pure Nothing
+        when added do
+            let ev = UserJoined user
+            broadcast srv.events ev
     UserDisconnected _ client -> do
         let user = client.session.username
-        removed <- null . fromMaybe [] . Map.lookup client.session.sessionID <$> readTVar display.clients
-        if removed
-            then do
-                let ev = UserLeft user
-                modifyTVar' srv.users (Set.delete user)
-                broadcast srv.events ev
-                pure $ Just ev
-            else pure Nothing
-
-chatServerProgram :: ChatServer -> Display -> ProcessIO Void
-chatServerProgram srv display = do
-    chan <- atomically do
-        chan <- newReaderChan display.events
-
-        -- collect current users
-        currentSessionsID <- Map.keys <$> readTVar display.clients
-        currentSessions <- readMemoryVar display.sessions.sessions
-        let currentUsers = (.username) <$> mapMaybe (`Map.lookup` currentSessions) currentSessionsID
-        writeTVar srv.users (Set.fromList currentUsers)
-
-        pure chan
-
-    forever do
-        ev <- atomically (readTChan chan)
-        res <- atomically (handleDisplayEvent srv display ev)
-        case res of
-            Just uev -> logInfo "chat event" ["ev" .= uev]
-            Nothing -> pure ()
+        removed <- null . fromMaybe [] . Map.lookup client.session.sessionID <$> readTVar srv.allClients
+        when removed do
+            let ev = UserLeft user
+            modifyTVar' srv.users (Set.delete user)
+            broadcast srv.events ev
 
 addUserMessage :: ChatServer -> UserMessage -> STM ()
 addUserMessage srv um = do
@@ -136,7 +108,7 @@ inputHtml =
 
 renderChat :: WinID -> ChatServer -> DisplayClient -> HtmlT STM ()
 renderChat wid srv client = do
-    with div_ [id_ "chat", class_ "border"] do
+    with div_ [id_ (withWID wid "w"), class_ "border"] do
         with div_ [class_ "flex"] do
             with div_ [id_ (withWID wid "chat-history"), class_ $ heightLimit <> "border overflow-auto grow flex flex-col-reverse"] do
                 history <- lift (recentHistory srv.history)
@@ -152,26 +124,38 @@ renderChat wid srv client = do
         WinID 0 -> "max-h-44 "
         _ -> "max-h-72 "
 
-chatApp :: ChatServer -> App
-chatApp srv =
+chatApp :: ChatServer -> WithGuiEvents -> App
+chatApp srv withGuiEvent =
     App
         { name = "chat"
         , tags = fromList ["Communication"]
         , description = "Local chat room"
         , size = Nothing
-        , triggers = ["chat-message"]
-        , start = startChatApp srv
+        , start = withGuiEvent (startChatApp srv)
         }
 
-startChatApp :: ChatServer -> DisplayClients -> WinID -> ProcessIO AppInstance
-startChatApp srv clients wid = do
+startChatApp :: ChatServer -> GuiEvents -> AppStart
+startChatApp srv guiEvents wid pipeDE = do
     chatChan <- atomically (newChatReader srv)
-    newAppInstance (pure . renderChat wid srv) \events -> do
-        spawnThread_ $ forever do
-            ev <- atomically (readTChan chatChan)
-            clientsDraw clients (\client -> pure $ updateChat wid client ev)
-        forever do
-            ev <- atomically $ readPipe events
+    spawnThread_ $ forever do
+        ev <- atomically (readTChan chatChan)
+        logInfo "Gto chat" ["ev" .= ev]
+        clientsDraw guiEvents.clients (\client -> pure $ updateChat wid client ev)
+
+    let handleGuiEvent ev =
             case ev.body ^? key "message" . _String of
                 Just msg -> atomically $ addUserMessage srv (MkMessage ev.client.session.username msg)
                 Nothing -> logError "bad chat ev" ["ev" .= ev]
+
+    forever do
+        ev <- atomically $ readPipe2 pipeDE guiEvents.pipe
+        case ev of
+            Left de -> do
+                case de of
+                    UserConnected "htmx" client -> do
+                        atomically $ sendHtml client (renderChat wid srv client)
+                        atomically (handleDisplayEvent srv de)
+                    UserDisconnected _ _ ->
+                        atomically (handleDisplayEvent srv de)
+                    _ -> pure ()
+            Right ge -> handleGuiEvent ge

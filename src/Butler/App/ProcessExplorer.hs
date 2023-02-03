@@ -59,14 +59,11 @@ peApp desktop =
         , tags = fromList ["System"]
         , description = "Process Explorer"
         , size = Nothing
-        , triggers = fromList ["ps-kill", "ps-toggle"]
-        , start = \_ wid -> do
+        , start = \wid pipeDE -> do
             stV <- newTVarIO (PEScopped desktop.env.process.pid)
             os <- asks os
             let doRender = renderPE os stV wid
-            newAppInstance (pureDraw doRender) \events -> do
-                spawnThread_ $ forever do
-                    ev <- atomically $ readPipe events
+                handleEvent ev =
                     case ev.body ^? key "pid" . _Integer of
                         Just pid -> do
                             logInfo "Killing" ["pid" .= pid]
@@ -79,6 +76,12 @@ peApp desktop =
                                     PEScopped _ -> PEAll
                                 broadcastHtmlT desktop doRender
                             _ -> logError "unknown event" ["ev" .= ev]
+            withGuiHandlers desktop.guiHandlers wid \events -> do
+                spawnThread_ $ forever do
+                    atomically (readPipe2 pipeDE events) >>= \case
+                        Left de -> sendHtmlOnConnect (renderPE os stV wid) de
+                        Right ev -> handleEvent ev
+
                 forever do
                     sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
                     case sysEvent of

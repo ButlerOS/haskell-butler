@@ -207,29 +207,31 @@ mkHxVals vals =
   where
     hxVals = makeAttribute "hx-vals"
 
-mineSweeperApp :: App
-mineSweeperApp =
+mineSweeperApp :: WithGuiEvents -> App
+mineSweeperApp withGuiEvent =
     App
         { name = "minesweeper"
         , tags = fromList ["Game"]
         , description = "game"
         , size = Just (240, 351)
-        , triggers = ["showCell", "play"]
-        , start = startMineSweeper
+        , start = withGuiEvent startMineSweeper
         }
 
-startMineSweeper :: DisplayClients -> WinID -> ProcessIO AppInstance
-startMineSweeper clients winID = do
+startMineSweeper :: GuiEvents -> AppStart
+startMineSweeper guiEvents wid pipeDE = do
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
-    newAppInstance (pureDraw $ renderApp winID state) \events -> forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe events)
+    forever do
+        res <- atomically =<< waitTransaction 60_000 (readPipe2 pipeDE guiEvents.pipe)
         case res of
             WaitTimeout{} -> pure ()
-            WaitCompleted ev -> case ( ev.body ^? key "play" . _String
-                                     , ev.body ^? key "cx" . _String
-                                     , ev.body ^? key "cy" . _String
-                                     ) of
+            WaitCompleted (Left de) -> case de of
+                UserConnected _ client -> atomically $ sendHtml client (renderApp wid state)
+                _ -> pure ()
+            WaitCompleted (Right ev) -> case ( ev.body ^? key "play" . _String
+                                             , ev.body ^? key "cx" . _String
+                                             , ev.body ^? key "cy" . _String
+                                             ) of
                 (Just "", Nothing, Nothing) -> do
                     newBoard <- liftIO initBoard
                     atomically $ writeTVar state (MSState newBoard Play)
@@ -253,5 +255,4 @@ startMineSweeper clients winID = do
                         _ -> pure ()
                 _ -> pure ()
 
-        -- print =<< atomically (readTVar state)
-        clientsHtmlT clients $ renderApp winID state
+        clientsHtmlT guiEvents.clients $ renderApp wid state

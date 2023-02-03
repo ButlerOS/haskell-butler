@@ -30,6 +30,9 @@ module Butler.OS (
     -- * Clock api
     getTime,
 
+    -- * IPC api
+    writePipe,
+
     -- * Helpers
     awaitProcess,
 
@@ -50,6 +53,7 @@ import Butler.Clock qualified as Clock
 import Butler.Events
 import Butler.Logger
 import Butler.Memory
+import Butler.Pipe
 import Butler.Prelude
 import Butler.Process
 import Butler.Processor
@@ -183,6 +187,10 @@ data OS = OS
 
 awaitProcess :: MonadIO m => Process -> m ExitReason
 awaitProcess p = atomically $ await p.thread
+
+writePipe :: HasCallStack => Pipe a -> a -> ProcessIO ()
+writePipe p v = unlessM (atomically (tryWritePipe p v)) do
+    logError "Write pipe failed!" []
 
 withButlerOS :: ProcessIO () -> IO ExitReason
 withButlerOS action = withProcessor \processor -> do

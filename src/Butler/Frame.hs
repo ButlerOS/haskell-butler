@@ -4,20 +4,36 @@
  TODO: integrate the htmx ext/ws.js . Presently the html data is managed by a dedicated websocket
 -}
 module Butler.Frame (
+    -- * channel
     ChannelID,
     newChannel,
+
+    -- * handler
+    DataHandlers,
+    newDataHandlers,
+    newDataHandler,
+    withDataHandler,
+    lookupDataHandler,
+    DataEvent (..),
+
+    -- * helper
     encodeMessage,
+    encodeMessageL,
     decodeMessage,
     clientScript,
     winChannel,
     audioChannel,
 ) where
 
+import Butler.DisplayClient
+import Butler.NatMap qualified as NM
+import Butler.Pipe
 import Butler.Prelude
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 
 newtype ChannelID = ChannelID Word8
-    deriving newtype (Eq, ToJSON, Show)
+    deriving newtype (Eq, Ord, ToJSON, Show)
 
 instance From ChannelID Natural where
     from (ChannelID b) = from b
@@ -34,8 +50,37 @@ newChannel n = case tryFrom n of
     Right b -> ChannelID b
     Left e -> error $ "Run out of channel: " <> show e
 
+newtype DataHandlers = DataHandlers (NM.NatMap (Pipe DataEvent))
+
+newDataHandlers :: STM DataHandlers
+newDataHandlers = DataHandlers <$> NM.newNatMap
+
+lookupDataHandler :: DataHandlers -> ChannelID -> STM (Maybe (Pipe DataEvent))
+lookupDataHandler (DataHandlers nm) chan = NM.lookup nm (from chan)
+
+newDataHandler :: DataHandlers -> STM (ChannelID, Pipe DataEvent)
+newDataHandler (DataHandlers nm) = do
+    pipe <- newPipe
+    chan <- newChannel <$> NM.add nm pipe
+    pure (chan, pipe)
+
+withDataHandler :: MonadUnliftIO m => DataHandlers -> (ChannelID -> Pipe DataEvent -> m a) -> m a
+withDataHandler dh@(DataHandlers nm) cb = do
+    (chan, pipe) <- atomically (newDataHandler dh)
+    cb chan pipe `finally` do
+        atomically (NM.delete nm (from chan))
+
+data DataEvent = DataEvent
+    { client :: DisplayClient
+    , buffer :: ByteString
+    , rawBuffer :: ByteString
+    }
+
 encodeMessage :: ChannelID -> ByteString -> ByteString
 encodeMessage (ChannelID chan) = BS.cons chan
+
+encodeMessageL :: ChannelID -> LByteString -> LByteString
+encodeMessageL (ChannelID chan) = LBS.cons chan
 
 decodeMessage :: ByteString -> Maybe (ChannelID, ByteString)
 decodeMessage buf = decodeChan <$> BS.uncons buf

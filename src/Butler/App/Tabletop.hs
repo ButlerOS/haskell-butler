@@ -5,7 +5,6 @@ import Data.Text qualified as Text
 import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
 import Butler
-import Butler.Desktop
 import Butler.Frame
 import Butler.Logger
 import Butler.NatMap qualified as NM
@@ -85,8 +84,8 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: TableState -> WinID -> ChannelID -> DisplayClient -> HtmlT STM ()
-renderTable ts wid chan _client = do
+renderTable :: TableState -> WinID -> ChannelID -> HtmlT STM ()
+renderTable ts wid chan = with div_ [id_ (withWID wid "w")] do
     void $ with div_ [class_ "flex flex-row"] do
         with div_ [class_ "flex flex-col my-6"] do
             with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
@@ -130,50 +129,45 @@ instance FromJSON TableEvent where
             (Just oid, Just x) -> TableEventMove oid x <$> obj .: "y"
             _ -> fail "oid or x attribute missing"
 
-tabletopApp :: Desktop -> App
-tabletopApp desktop =
+tabletopApp :: WithDataEvents -> WithGuiEvents -> App
+tabletopApp withDE withGE =
     App
         { name = "tabletop"
         , tags = fromList ["Game"]
         , description = "Free form tabletop"
         , size = Just (725, 696)
-        , start = const (startTabletopApp desktop)
-        , triggers = mempty
+        , start = withDE (withGE . startTabletopApp)
         }
 
-startTabletopApp :: Desktop -> WinID -> ProcessIO AppInstance
-startTabletopApp desktop wid = do
+startTabletopApp :: DataEvents -> GuiEvents -> AppStart
+startTabletopApp dataEvents guiEvents wid pipeDE = do
     tableState <- atomically newTableState
 
-    let clientHandler :: ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
-        clientHandler rawMSG chan client bs = case eitherDecode' (from bs) of
+    let clientHandler :: DataEvent -> ProcessIO ()
+        clientHandler de = case eitherDecode' (from de.buffer) of
             Right ev ->
                 case ev of
                     TableEventCreate name -> do
                         newOID <- atomically (newTableObject tableState name)
                         logInfo "obj created" ["oid" .= newOID]
                         let msg = ["pending" .= newOID, "name" .= name]
-                        broadcastDesktopMessage desktop (const True) chan (from $ encodeJSON $ object msg)
+                        sendsBinary dataEvents.clients (encodeMessageL dataEvents.chan (encodeJSON $ object msg))
                     TableEventMove oid x y -> do
                         -- logInfo "obj moved" ["ev" .= ev]
                         atomically $ setTableObject tableState oid (x, y)
-                        broadcastRawDesktopMessage desktop (\o -> o.endpoint /= client.endpoint) rawMSG
+                        sendsBinaryButSelf de.client dataEvents.clients (from de.rawBuffer)
                     TableEventDelete oid -> do
                         -- logInfo "obj removed" ["ev" .= ev]
                         atomically $ delTableObject tableState oid
-                        broadcastRawDesktopMessage desktop (const True) rawMSG
-            Left err -> logError "invalid json" ["ev" .= BSLog bs, "err" .= err]
+                        sendsBinary dataEvents.clients (from de.rawBuffer)
+            Left err -> logError "invalid json" ["ev" .= BSLog de.buffer, "err" .= err]
 
-    chan <- atomically (newHandler desktop.handlers clientHandler)
-
-    let draw :: DrawHtml
-        draw = pure . renderTable tableState wid chan
-
-    newAppInstance draw \events -> forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe events)
-        case res of
-            WaitTimeout{} -> pure ()
-            WaitCompleted _ev -> pure ()
+    forever do
+        ev <- atomically (readPipe3 dataEvents.pipe guiEvents.pipe pipeDE)
+        case ev of
+            Left de -> clientHandler de
+            Right (Left ge) -> logError "Unknown gui event" ["ev" .= ge]
+            Right (Right de) -> sendHtmlOnConnect (renderTable tableState wid dataEvents.chan) de
 
 tabletopClient :: WinID -> ChannelID -> [Text] -> Text
 tabletopClient wid chan startingObjects =

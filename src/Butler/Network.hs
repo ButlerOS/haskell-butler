@@ -39,7 +39,10 @@ getKeys = fst <$> newProcessMemory "tls.key" genKeys
 
 webService :: [XStaticFile] -> Wai.Application -> Port -> WebProtocol -> ProcessIO Void
 webService xs app port = \case
-    Http -> error "TODO"
+    Http -> do
+        logInfo "Running WARP" ["port" .= port, "tls" .= False]
+        liftIO $ Warp.runSettings settings handler
+        error "warp exited?!!"
     Https mKeys -> do
         keys <- maybe getKeys pure mKeys
         logInfo "Running WARP" ["port" .= port, "tls" .= True]

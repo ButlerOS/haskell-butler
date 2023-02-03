@@ -53,31 +53,33 @@ clockContent wid s = do
             ClockEDT -> read "EDT"
     pure $ clockValueHtml wid tz (Data.Time.LocalTime.utcToLocalTime tz now)
 
-clockApp :: App
-clockApp =
+clockApp :: WithGuiEvents -> App
+clockApp withGuiEvent =
     App
         { name = "clock"
         , tags = fromList ["Utility"]
         , description = "Display time"
         , size = Just (164, 164)
-        , triggers = ["clock-tz"]
-        , start = startClockApp
+        , start = withGuiEvent startClockApp
         }
 
-startClockApp :: DisplayClients -> WinID -> ProcessIO AppInstance
-startClockApp clients wid = do
+startClockApp :: GuiEvents -> AppStart
+startClockApp guiEvents wid pipeDE = do
     state <- newTVarIO ClockUTC
-    let draw :: DrawHtml
-        draw = const (clockHtml wid <$> clockContent wid state)
-    newAppInstance draw \events -> forever do
+    let
+        draw = clockHtml wid <$> clockContent wid state
+    forever do
         -- TODO: adjust wait time based until the next minute starting second
-        res <- atomically =<< waitTransaction 60_000 (readPipe events)
+        res <- atomically =<< waitTransaction 60_000 (readPipe2 pipeDE guiEvents.pipe)
         case res of
             WaitTimeout{} -> pure ()
-            WaitCompleted ev -> case ev.body ^? key "v" . _String of
+            WaitCompleted (Left de) -> case de of
+                UserConnected _ client -> atomically . sendHtml client =<< draw
+                _ -> pure ()
+            WaitCompleted (Right ev) -> case ev.body ^? key "v" . _String of
                 Just "UTC" -> atomically $ writeTVar state ClockUTC
                 Just "GMT" -> atomically $ writeTVar state ClockGMT
                 Just "EDT" -> atomically $ writeTVar state ClockEDT
                 _ -> logError "Unknown event" ["ev" .= ev]
         -- print =<< atomically (readTVar state)
-        clientsDraw clients (const $ clockContent wid state)
+        clientsDraw guiEvents.clients (const $ clockContent wid state)

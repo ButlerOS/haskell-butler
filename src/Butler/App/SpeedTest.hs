@@ -1,17 +1,13 @@
 module Butler.App.SpeedTest where
 
-import Butler.Clock hiding (getTime)
-import Butler.Display
-import Butler.GUI
-import Butler.Prelude
-
 import System.Random
 
 import Data.Map.Strict qualified as Map
 import Network.WebSockets qualified as WS
 
+import Butler
 import Butler.Desktop
-import Butler.WebSocket (ChannelName)
+import Butler.Prelude
 
 data SpeedTest = SpeedTest
     { startedAt :: Time
@@ -75,8 +71,8 @@ function speedTest() {
 speedTest();
 |]
 
-speedTestApp :: Desktop -> ProcessIO (GuiApp, ChannelName, DisplayClient -> ProcessIO ())
-speedTestApp desktop = do
+speedTestApp :: Desktop -> AppStart
+speedTestApp desktop _ _ = do
     state <- SpeedTestState <$> newTVarIO mempty
     let _onClient client = do
             newTest <- SpeedTest <$> getTime <*> newTVarIO 0 <*> newTVarIO 0

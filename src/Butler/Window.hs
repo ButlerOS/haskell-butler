@@ -10,9 +10,6 @@ import Butler.Memory
 import Butler.Prelude
 import Butler.Process
 
-newtype WinID = WinID Int
-    deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
-
 data Window = Window
     { position :: (Int, Int)
     , size :: (Int, Int)
@@ -32,7 +29,6 @@ type Windows = MemoryVar WindowsState
 data WindowManager = WindowManager
     { windows :: MemoryVar WindowsState
     , apps :: MemoryVar (Map WinID ProgramName)
-    , running :: TVar (Map WinID GuiApp)
     }
 
 newWindowManager :: ProcessIO WindowManager
@@ -40,21 +36,23 @@ newWindowManager =
     WindowManager
         <$> (snd <$> newProcessMemory "wins.bin" (pure newWindows))
         <*> (snd <$> newProcessMemory "apps.bin" (pure mempty))
-        <*> newTVarIO mempty
+
+getWindowIDs :: Windows -> STM [WinID]
+getWindowIDs ws = do
+    windowsState <- readMemoryVar ws
+    pure $ WinID <$> IM.keys windowsState.windows
 
 newWindows :: WindowsState
 newWindows = WindowsState mempty (WinID 0) Nothing
 
-addWindowApp :: WindowManager -> WinID -> GuiApp -> STM ()
-addWindowApp wm wid app = do
-    modifyTVar' wm.running (Map.insert wid app)
-    modifyMemoryVar wm.apps (Map.insert wid app.process.program)
-    void $ updateWindow wm.windows wid (#title .~ processID app.process)
+addWindowApp :: WindowManager -> WinID -> Process -> STM ()
+addWindowApp wm wid process = do
+    modifyMemoryVar wm.apps (Map.insert wid process.program)
+    void $ updateWindow wm.windows wid (#title .~ processID process)
 
 delWindowApp :: WindowManager -> WinID -> STM ()
 delWindowApp wm wid = do
     deleteWindow wm.windows wid
-    modifyTVar' wm.running (Map.delete wid)
     modifyMemoryVar wm.apps (Map.delete wid)
 
 lookupWindow :: Windows -> WinID -> STM (Maybe Window)
@@ -85,17 +83,14 @@ newWindow ws title = stateMemoryVar ws $ \s ->
                 title
      in ((wid, win), s & (#maxID .~ wid) . (#windows %~ IM.insert next win))
 
-renderWindowsContent :: Windows -> HtmlT STM ()
-renderWindowsContent ws = do
-    wins <- IM.toAscList . (.windows) <$> lift (readMemoryVar ws)
-    forM_ wins $ \(idx, _) ->
-        with div_ [id_ $ "w-" <> showT idx] mempty
-
 renderWindows :: Windows -> HtmlT STM ()
 renderWindows ws = do
     w <- lift (readMemoryVar ws)
-    let createWindows = map (renderWindow . first WinID) (IM.toAscList w.windows)
-    let script = windowScript : createWindows
+    let windows = IM.toAscList w.windows
+        createWindows = map (renderWindow . first WinID) windows
+        script = windowScript : createWindows
+    forM_ (fst <$> windows) \wid ->
+        with div_ [id_ ("w-" <> showT wid)] mempty
     with (script_ $ Text.intercalate ";" script) [type_ "module"]
 
 windowScript :: Text

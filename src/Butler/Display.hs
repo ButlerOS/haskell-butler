@@ -95,9 +95,6 @@ instance Serialise JwkStorage where
 
 connectRoute :: Display -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> TabID -> WS.Connection -> ProcessIO ()
 connectRoute display onClient sockAddr workspaceM channel session tabID connection = do
-    -- TODO: check if the ping thread is necessary
-    -- WS.withPingThread connection 30 (pure ()) do
-
     let clientAddr = from $ show sockAddr
         ChannelName cn = channel
         progName = "client-" <> cn

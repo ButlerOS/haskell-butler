@@ -1,13 +1,16 @@
 module Butler.Desktop (
-    Handlers,
     Desktop (..),
     newDesktop,
     newDesktopIO,
     startDesktop,
     desktopHandler,
-    newHandler,
     handleClientEvents,
     lookupDataClient,
+
+    -- * event handler registering
+    withGuiEvents,
+    withNamedGuiEvents,
+    withDataEvents,
 
     -- * app
     addApp,
@@ -20,7 +23,8 @@ module Butler.Desktop (
 ) where
 
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
+import Data.Text qualified as Text
+import Data.Text.Read qualified as Text
 
 import Butler.App
 import Butler.Clock
@@ -29,7 +33,6 @@ import Butler.Frame
 import Butler.GUI
 import Butler.Logger
 import Butler.Memory
-import Butler.NatMap qualified as NM
 import Butler.Prelude
 import Butler.Processor
 import Butler.Session
@@ -42,11 +45,15 @@ data Desktop = Desktop
     , display :: Display
     , workspace :: Workspace
     , wm :: WindowManager
-    , apps :: TVar (Map Pid GuiApp)
+    , apps :: TVar (Map Pid AppInstance)
+    , sysGuiHandlers :: TVar (Map TriggerName (Pipe GuiEvent))
+    -- ^ system event handler, e.g. for window manager and tray
+    , guiHandlers :: GuiHandlers
+    -- ^ gui app handler, e.g. for htmx trigger
+    , dataHandlers :: DataHandlers
+    -- ^ data handler, e.g. for window manager and xterm
     , channels :: TVar (Map ChannelName (DisplayClient -> ProcessIO ()))
     -- ^ dedicated websocket, e.g. for novnc
-    , handlers :: Handlers
-    -- ^ data channel, e.g. for window manager and xterm
     , clients :: DisplayClients
     -- ^ data clients
     , tabClients :: TVar (Map (SessionID, TabID) DisplayClient)
@@ -54,7 +61,6 @@ data Desktop = Desktop
     , hclients :: DisplayClients
     -- ^ htmx clients
     , soundCard :: SoundCard
-    , desktopEvents :: BroadcastChan DisplayEvent
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
@@ -62,12 +68,32 @@ newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
         <$> newTVar mempty
         <*> newTVar mempty
-        <*> NM.newNatMap
+        <*> newGuiHandlers
+        <*> newDataHandlers
+        <*> newTVar mempty
         <*> newDisplayClients
         <*> newTVar mempty
         <*> newDisplayClients
         <*> newSoundCard
-        <*> newBroadcastChan
+
+withGuiEvents :: Desktop -> WithGuiEvents
+withGuiEvents desktop cb wid pipe = do
+    withGuiHandlers desktop.guiHandlers wid \events -> do
+        cb (GuiEvents desktop.hclients events) wid pipe
+
+withNamedGuiEvents :: Desktop -> WithNamedGuiEvents
+withNamedGuiEvents desktop triggers cb wid pipe = do
+    events <- atomically do
+        gpipe <- newPipe
+        let triggerMap = Map.fromList (map (\t -> (t, gpipe)) triggers)
+        modifyTVar' desktop.sysGuiHandlers (Map.union triggerMap)
+        pure gpipe
+    cb (GuiEvents desktop.hclients events) wid pipe
+
+withDataEvents :: Desktop -> WithDataEvents
+withDataEvents desktop cb wid pipe = do
+    withDataHandler desktop.dataHandlers \chan pipeData -> do
+        cb (DataEvents desktop.clients chan pipeData) wid pipe
 
 newDesktopIO :: Display -> Workspace -> ProcessIO Desktop
 newDesktopIO display ws = do
@@ -84,11 +110,8 @@ deskApp draw =
         { name = "welcome"
         , description = mempty
         , tags = mempty
-        , triggers = mempty
         , size = Nothing
-        , start = \_ wid -> pure $ AppInstance (pureDraw $ draw wid) emptyDraw $ \_ev -> do
-            forever do
-                liftIO $ threadDelay maxBound
+        , start = pureHtmlApp draw
         }
 
 startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
@@ -96,31 +119,45 @@ startDesktop desktopMVar mkAppSet xinit display name = do
     desktop <- newDesktopIO display name
     let appSet = mkAppSet desktop
 
-    apps <- atomically $ readMemoryVar desktop.wm.apps
+    -- TODO: move window manager and sound as dedicated app
+    baton <- newEmptyMVar
+    spawnThread_ $ withDataHandler desktop.dataHandlers \chan pipe -> do
+        putMVar baton ()
+        when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
+        forever do
+            ev <- atomically (readPipe pipe)
+            tryHandleWinEvent desktop chan ev.client ev.buffer
+    takeMVar baton
 
-    chan <- atomically $ newHandler desktop.handlers (const $ tryHandleWinEvent desktop)
-    when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
-    achan <- atomically $ newHandler desktop.handlers (soundHandler desktop.soundCard)
-    when (achan /= audioChannel) (error $ "Default audio channel is wrong: " <> show achan)
+    spawnThread_ $ withDataHandler desktop.dataHandlers \chan pipe -> do
+        putMVar baton ()
+        when (chan /= audioChannel) (error $ "Default audio channel is wrong: " <> show chan)
+        forever do
+            ev <- atomically (readPipe pipe)
+            soundHandler desktop.soundCard ev.client ev.buffer
+    takeMVar baton
 
-    let mkDeskApp draw = startApp (deskApp draw) desktop.hclients
+    let mkDeskApp draw = startApp (deskApp draw)
 
     xinit desktop
 
+    apps <- atomically $ readMemoryVar desktop.wm.apps
     case Map.toList apps of
         [] -> do
             (wid, _) <- atomically $ newWindow desktop.wm.windows "Welcome"
-            atomically . addWinApp desktop wid =<< mkDeskApp (welcomeWin appSet) wid
+            atomically . addWinApp desktop =<< mkDeskApp (welcomeWin appSet) wid
         xs -> forM_ xs $ \(wid, prog) -> do
             mApp <- case prog of
                 "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
                 "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
-                _ -> launchApp appSet prog desktop.hclients wid
+                _ -> launchApp appSet prog wid
             case mApp of
                 Just app -> atomically $ addApp desktop app
                 Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
 
     putMVar desktopMVar desktop
+
+    -- TODO: watch running app and handle crash gracefully
 
     let updateStatus s = do
             broadcastHtmlT desktop $ statusHtml s
@@ -136,47 +173,38 @@ broadcastDraw :: Desktop -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> Proce
 broadcastDraw desktop = clientsDraw desktop.hclients
 
 -- | Register a new gui app without window, e.g. for tray only app.
-addApp :: Desktop -> GuiApp -> STM ()
+addApp :: Desktop -> AppInstance -> STM ()
 addApp desktop app = modifyTVar' desktop.apps (Map.insert app.process.pid app)
 
 -- | Remove a registered gui app
-deleteApp :: Desktop -> Pid -> STM ()
-deleteApp desktop pid = do
-    modifyTVar' desktop.apps (Map.delete pid)
-    void $ stopProcess desktop.env.os.processor pid
+delApp :: Desktop -> AppInstance -> STM ()
+delApp desktop app = do
+    modifyTVar' desktop.apps (Map.delete app.process.pid)
+    void $ stopProcess desktop.env.os.processor app.process.pid
 
 -- | Register a new windowed application.
-addWinApp :: Desktop -> WinID -> GuiApp -> STM ()
-addWinApp desktop wid app = do
+addWinApp :: Desktop -> AppInstance -> STM ()
+addWinApp desktop app = do
     addApp desktop app
-    addWindowApp desktop.wm wid app
+    addWindowApp desktop.wm app.wid app.process
 
-terminateWinApp :: Desktop -> WinID -> STM ()
-terminateWinApp desktop wid = do
-    guiAppM <- Map.lookup wid <$> readTVar desktop.wm.running
-    case guiAppM of
-        Just guiApp -> deleteApp desktop guiApp.process.pid
-        Nothing -> pure ()
+delWinApp :: Desktop -> WinID -> STM ()
+delWinApp desktop wid = do
+    prevApps <- stateTVar desktop.apps \apps ->
+        let (winApps, rest) = Map.partition (\a -> a.wid == wid) apps
+         in (Map.elems winApps, rest)
+    traverse_ (delApp desktop) prevApps
 
-deleteWinApp :: Desktop -> WinID -> STM ()
-deleteWinApp desktop wid = do
-    terminateWinApp desktop wid
-    delWindowApp desktop.wm wid
-
-swapGuiApp :: Desktop -> WinID -> GuiApp -> STM ()
-swapGuiApp desktop wid app = do
-    terminateWinApp desktop wid
-    addWinApp desktop wid app
-
-sendDesktopMessage :: Desktop -> ByteString -> DisplayClient -> ProcessIO ()
-sendDesktopMessage desktop buf client = do
-    safeSend desktop.clients sendMessage client buf
+swapGuiApp :: Desktop -> AppInstance -> STM ()
+swapGuiApp desktop app = do
+    delWinApp desktop app.wid
+    addWinApp desktop app
 
 broadcastRawDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ByteString -> ProcessIO ()
 broadcastRawDesktopMessage desktop fpred bs = do
     -- logTrace "broadcast desktop" ["msg" .= BSLog msg]
     clients <- filter fpred <$> atomically (getClients desktop.clients)
-    traverse_ (sendDesktopMessage desktop bs) clients
+    forM_ clients \client -> atomically $ sendBinary client (from bs)
 
 broadcastDesktopMessage :: Desktop -> (DisplayClient -> Bool) -> ChannelID -> ByteString -> ProcessIO ()
 broadcastDesktopMessage desktop fpred chan bs = do
@@ -185,8 +213,9 @@ broadcastDesktopMessage desktop fpred chan bs = do
 _writeHtml :: MonadIO m => TVar Text -> Html () -> m ()
 _writeHtml t h = atomically $ writeTVar t (from $ renderText h)
 
-desktopHtml :: Windows -> [HtmlT STM ()] -> [HtmlT STM ()] -> [HtmlT STM ()] -> HtmlT STM ()
-desktopHtml windows trayContents menuContents appContents = do
+desktopHtml :: Windows -> HtmlT STM ()
+desktopHtml windows = do
+    wids <- lift (getWindowIDs windows)
     div_ [id_ "display-root", class_ "flex flex-col min-h-full"] do
         script_ clientScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
@@ -197,16 +226,17 @@ desktopHtml windows trayContents menuContents appContents = do
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white shrink sticky bottom-0 z-50"] do
             with' div_ "grow" do
                 with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", id_ "wm-start", wsSend] ">>= start"
-                sequence_ menuContents
+                with span_ [id_ "display-bar"] do
+                    forM_ wids \wid -> with span_ [id_ (withWID wid "bar")] mempty
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
-                    sequence_ trayContents
+                    forM_ wids \wid -> with span_ [id_ (withWID wid "tray")] mempty
+                    with span_ [id_ "tray-0"] mempty
                     statusHtml False
 
         with div_ [id_ "reconnect_script"] mempty
 
         with div_ [id_ "backstore"] do
-            sequence_ appContents
             renderWindows windows
 
 welcomeWin :: Monad m => AppSet -> WinID -> HtmlT m ()
@@ -237,23 +267,24 @@ statusHtml s =
             ]
             mempty
 
-_trayHtml :: Monad m => HtmlT m () -> HtmlT m ()
-_trayHtml body =
-    with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
-        body
-
 desktopHandler :: AppSet -> Desktop -> DisplayEvent -> ProcessIO ()
 desktopHandler appSet desktop event = do
     -- update desktop state with display event
     case event of
         UserConnected chan client -> do
+            spawnSendThread client
+
             atomically do
                 when (chan == "data") do
                     addClient desktop.clients client
                     modifyTVar' desktop.tabClients (Map.insert (client.session.sessionID, client.tabID) client)
                 when (chan == "htmx") do
                     addClient desktop.hclients client
-                broadcast desktop.desktopEvents event
+                    -- Send the desktop body
+                    sendHtml client (desktopHtml desktop.wm.windows)
+
+            -- Notify each apps
+            forwardDisplayEvent event
 
             handleNewUser chan client
         UserDisconnected chan client -> do
@@ -264,24 +295,38 @@ desktopHandler appSet desktop event = do
                     modifyTVar' desktop.tabClients (Map.delete (client.session.sessionID, client.tabID))
                 when (chan == "htmx") do
                     delClient desktop.hclients client
-                broadcast desktop.desktopEvents event
+
+            forwardDisplayEvent event
   where
+    forwardDisplayEvent :: DisplayEvent -> ProcessIO ()
+    forwardDisplayEvent devent = do
+        apps <- readTVarIO desktop.apps
+        forM_ apps \app -> writePipe app.pipeDisplayEvents devent
+
     handleNewUser :: ChannelName -> DisplayClient -> ProcessIO ()
     handleNewUser channel client = case channel of
         "htmx" -> do
-            apps <- Map.elems <$> readTVarIO desktop.apps
-            menuContents <- traverse (\app -> app.drawMenu client) (reverse apps)
-            trayContents <- traverse (\app -> app.drawTray client) (reverse apps)
-            appContents <- traverse (\app -> app.draw client) (reverse apps)
+            -- todo: play starting sound
+            sleep 500
 
-            sendHtml client (desktopHtml desktop.wm.windows trayContents menuContents appContents)
-            handleHtmxClient appSet desktop client
+            atomically $ sendHtml client do
+                with div_ [id_ "reconnect_script"] do
+                    -- After connection, we switch the socket url to the reload endpoint,
+                    -- so that after disconnection, it will receive new instruction, e.g. reload the page.
+                    script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
+
+            -- wait for user events
+            handleClientEvents client \mWinID trigger value -> case mWinID of
+                Nothing ->
+                    atomically (Map.lookup trigger <$> readTVar desktop.sysGuiHandlers) >>= \case
+                        Nothing -> handleDesktopGuiEvent appSet desktop client trigger value
+                        Just p -> writePipe p (GuiEvent client trigger value)
+                Just wid -> do
+                    atomically (lookupGuiHandler desktop.guiHandlers wid) >>= \case
+                        Nothing -> logError "Unknown wid" ["v" .= value]
+                        Just p -> writePipe p (GuiEvent client trigger value)
         "data" -> do
             spawnPingThread client
-
-            spawnThread_ $ forever do
-                dataMessage <- atomically (readTChan client.sendChannel)
-                sendMessage client dataMessage
 
             forever do
                 buf <- recvMessage client
@@ -289,88 +334,87 @@ desktopHandler appSet desktop event = do
                 case decodeMessage buf of
                     Nothing -> logError "invalid data message" ["buf" .= BSLog buf]
                     Just (chan, xs) -> do
-                        handlerM <- atomically $ NM.lookup desktop.handlers (from chan)
-                        case handlerM of
-                            Just handler -> handler buf chan client xs
+                        let dataEvent = DataEvent client xs buf
+                        atomically (lookupDataHandler desktop.dataHandlers chan) >>= \case
                             Nothing -> logError "unknown chan" ["chan" .= chan, "data" .= BSLog buf]
+                            Just p -> writePipe p dataEvent
         _ -> do
             channels <- readTVarIO desktop.channels
             case Map.lookup channel channels of
                 Just cb -> cb client
                 Nothing -> logError "unknown channel" ["channel" .= channel]
 
-handleClientEvents :: DisplayClient -> (TriggerName -> Value -> ProcessIO ()) -> ProcessIO ()
+{- | Remove winID from trigger name
+
+>>> decodeTriggerName "toggle"
+(Nothing,"toggle")
+>>> decodeTriggerName "toggle-1"
+(Just 1,"toggle")
+-}
+decodeTriggerName :: Text -> (Maybe WinID, TriggerName)
+decodeTriggerName txt = (mWinID, TriggerName txtTrigger)
+  where
+    (txtPrefix, txtSuffix) = Text.breakOnEnd "-" txt
+    (mWinID, txtTrigger) = case Text.decimal txtSuffix of
+        Right (wid, "") -> (Just (WinID wid), Text.dropEnd 1 txtPrefix)
+        _ -> (Nothing, txt)
+
+handleClientEvents :: DisplayClient -> (Maybe WinID -> TriggerName -> Value -> ProcessIO ()) -> ProcessIO ()
 handleClientEvents client cb = do
     forever do
         buf <- recvMessage client
         case decode' (from buf) of
             Just v -> do
                 case v ^? key "HEADERS" . key "HX-Trigger" . _String of
-                    Just trigger -> cb (TriggerName trigger) v
+                    Just triggerTxt ->
+                        let (mWinID, trigger) = decodeTriggerName triggerTxt
+                         in cb mWinID trigger v
                     Nothing -> logError "event without trigger" ["event" .= v]
             Nothing -> logError "Received unknown websocket data" ["buf" .= BSLog buf]
 
-handleHtmxClient :: AppSet -> Desktop -> DisplayClient -> ProcessIO ()
-handleHtmxClient appSet desktop client = do
-    -- todo: play starting sound
-    sleep 500
-
-    sendTextMessage client $ encodeUtf8 $ from $ renderText do
-        with div_ [id_ "reconnect_script"] do
-            -- After connection, we switch the socket url to the reload endpoint,
-            -- so that after disconnection, it will receive new instruction, e.g. reload the page.
-            script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
-
-    -- wait for user events
-    handleClientEvents client handleEvent
-  where
-    handleEvent :: TriggerName -> Value -> ProcessIO ()
-    handleEvent "win-swap" value = do
+handleDesktopGuiEvent :: AppSet -> Desktop -> DisplayClient -> TriggerName -> Value -> ProcessIO ()
+handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
+    "win-swap" -> do
         case (value ^? key "prog" . _String, value ^? key "win" . _Integer) of
             (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.hclients winId)
+                mGuiApp <- asProcess desktop.env (launchApp appSet appName winId)
                 case mGuiApp of
                     Just guiApp -> swapWindow winId guiApp
                     Nothing -> logInfo "unknown win-swap prog" ["v" .= value]
             _ -> logInfo "unknown win-swap" ["v" .= value]
-    handleEvent "wm-start" _value = do
-        logInfo "start" []
-        addWindow Nothing
-    handleEvent trigger value =
-        traverse_ triggerApp =<< readTVarIO desktop.apps
-      where
-        triggerApp app
-            | trigger `Set.member` app.triggers = do
-                atomically $ writePipe app.events (GuiEvent client trigger value)
-            | otherwise = pure ()
-
-    addWindow :: Maybe GuiApp -> ProcessIO ()
-    addWindow content = do
+    "wm-start" -> do
+        createNewWindow
+    _otherwise -> logError "Unknown ev" ["v" .= value]
+  where
+    createNewWindow :: ProcessIO ()
+    createNewWindow = do
         (wid, script) <- atomically do
             (winId, win) <- newWindow desktop.wm.windows "REPL"
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- case content of
-            Just guiApp -> pure guiApp
-            Nothing -> startApp (deskApp $ menuWin appSet) desktop.hclients wid
-        atomically $ addWinApp desktop wid guiApp
+        guiApp <- startApp (deskApp $ menuWin appSet) wid
+        atomically $ addWinApp desktop guiApp
 
-        broadcastDraw desktop $ \oclient -> do
-            c <- guiApp.draw oclient
-            pure $ with div_ [id_ "backstore", hxSwapOob_ "beforeend"] do
-                c
+        sendsHtml desktop.hclients do
+            with div_ [id_ "backstore", hxSwapOob_ "beforeend"] do
+                with div_ [id_ (withWID wid "w")] do
+                    welcomeWin appSet wid
                 with (script_ script) [type_ "module"]
+            with div_ [id_ "display-bar", hxSwapOob_ "afterbegin"] do
+                with span_ [id_ (withWID wid "bar")] mempty
+            with div_ [id_ "display-tray", hxSwapOob_ "afterbegin"] do
+                with span_ [id_ (withWID wid "tray")] mempty
 
-    swapWindow :: WinID -> GuiApp -> ProcessIO ()
+    swapWindow :: WinID -> AppInstance -> ProcessIO ()
     swapWindow winId guiApp = do
-        atomically $ swapGuiApp desktop winId guiApp
-        broadcastDraw desktop $ \oclient -> do
-            guiApp.draw oclient
+        clients <- atomically do
+            swapGuiApp desktop guiApp
+            getClients desktop.hclients
+        forM_ clients \client -> writePipe guiApp.pipeDisplayEvents (UserConnected "htmx" client)
         broadcastTitle winId (processID guiApp.process)
-        case guiApp.size of
-            Just sizeTV -> do
-                size <- readTVarIO sizeTV
+        case guiApp.app.size of
+            Just size -> do
                 broadcastSize winId size
                 void $ atomically $ updateWindow desktop.wm.windows winId (#size .~ size)
             Nothing -> pure ()
@@ -405,7 +449,12 @@ handleWinEvent desktop chan client buf ev wid v = do
             ("resize", Just x, Just y) -> do
                 atomically $ updateWindow desktop.wm.windows wid (#size .~ (x, y))
             ("close", Nothing, Nothing) -> do
-                atomically $ deleteWinApp desktop wid
+                atomically do
+                    delWinApp desktop wid
+                    delWindowApp desktop.wm wid
+                sendsHtml desktop.hclients do
+                    with span_ [wid_ wid "bar", hxSwapOob_ "delete"] mempty
+                    with span_ [wid_ wid "tray", hxSwapOob_ "delete"] mempty
                 logInfo "Delete win" ["wid" .= wid]
                 pure True
             ("focus", Nothing, Nothing) -> do

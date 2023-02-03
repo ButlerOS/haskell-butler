@@ -20,8 +20,8 @@ instance From UserName Text where
 
 -- | A TabID represent a single client window.
 newtype TabID = TabID Natural
-    deriving (Ord, Eq, Generic, Show)
-    deriving newtype (Num, ToJSON, FromJSON, FromHttpApiData, Serialise, Hashable)
+    deriving (Ord, Eq, Generic)
+    deriving newtype (Show, Num, ToJSON, FromJSON, FromHttpApiData, Serialise, Hashable)
 
 instance From TabID Text where
     from (TabID tabID) = from (show tabID)

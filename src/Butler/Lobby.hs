@@ -72,16 +72,17 @@ lobbyHandler :: Lobby -> ChatServer -> DisplayEvent -> ProcessIO ()
 lobbyHandler dm chat = \case
     UserConnected "htmx" client -> do
         spawnPingThread client
-        sendHtml client (with div_ [id_ "display-root"] (splashHtml "Loading..."))
+        spawnSendThread client
+        atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Loading..."))
         sleep 100
-        sendHtml client (with div_ [id_ "display-root"] (splashHtml "Getting workspaces..."))
+        atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Getting workspaces..."))
         sleep 60
         wss <- readMVar dm.desktops
         chatChan <- atomically (newChatReader chat)
-        sendHtml client (lobbyHtml wss (renderChat chatWin chat client))
+        atomically $ sendHtml client (lobbyHtml wss (renderChat chatWin chat client))
         spawnThread_ $ forever do
             ev <- atomically (readTChan chatChan)
-            sendHtml client (updateChat chatWin client ev)
+            atomically $ sendHtml client (updateChat chatWin client ev)
         handleClientEvents client $ handleLobbyEvents dm chat client
     _ -> pure ()
 
@@ -162,8 +163,8 @@ lobbyHtml wss chat =
                                 option_ "quay.io/org/toolbox"
                             with (input_ mempty) [type_ "submit", class_ btn, value_ "create"]
 
-handleLobbyEvents :: Lobby -> ChatServer -> DisplayClient -> TriggerName -> Value -> ProcessIO ()
-handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
+handleLobbyEvents :: Lobby -> ChatServer -> DisplayClient -> Maybe WinID -> TriggerName -> Value -> ProcessIO ()
+handleLobbyEvents dm chat client _ trigger ev = case ev ^? key "ws" . _String of
     Just wsTxt -> do
         let ws = Workspace wsTxt
         logInfo "got welcome event" ["ws" .= ws, "trigger" .= trigger]
@@ -174,14 +175,14 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
                         DesktopRunning desktop -> void $ killProcess desktop.env.process.pid
                         DesktopOffline -> pure ()
                     let newWss = Map.delete ws wss
-                    sendHtml client (lobbyWsListHtml newWss)
+                    atomically $ sendHtml client (lobbyWsListHtml newWss)
                     atomically $ modifyMemoryVar dm.desktopsList (filter (/= ws))
                     pure newWss
                 Nothing -> do
                     logError "unknown ws" ["ws" .= ws]
                     pure wss
             "enter-ws" -> do
-                sendHtml client do
+                atomically $ sendHtml client do
                     with div_ [id_ "display-root"] do
                         script_ $ "window.location.pathname = \"/" <> wsTxt <> "\""
             "new-ws" -> do
@@ -189,7 +190,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
                 case cleanWS of
                     "" -> logError "invalid ws" ["ws" .= cleanWS]
                     _ -> do
-                        sendHtml client do
+                        atomically $ sendHtml client do
                             with div_ [id_ "display-root"] do
                                 script_ $ "window.location.pathname = \"/" <> cleanWS <> "\""
             _ -> logError "unknown welcome event" ["ev" .= ev]

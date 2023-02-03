@@ -1,11 +1,20 @@
 -- | GUI toolkit
 module Butler.GUI (
-    GuiApp (..),
     emptyDraw,
     pureDraw,
     DrawHtml,
+    WinID (..),
     GuiEvent (..),
     TriggerName (..),
+
+    -- * handlers
+    GuiHandlers,
+    newGuiHandlers,
+    withGuiHandlers,
+    lookupGuiHandler,
+    SetupGuiHandler,
+
+    -- * helpers
     with',
     hyper_,
     wsSend,
@@ -31,6 +40,7 @@ module Butler.GUI (
 
 import Butler.Prelude
 import Data.Aeson (Value (Number))
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 
 import Lucid
@@ -51,16 +61,6 @@ pureDraw = const . pure
 emptyDraw :: DrawHtml
 emptyDraw = const $ pure mempty
 
-data GuiApp = GuiApp
-    { process :: Process
-    , triggers :: Set TriggerName
-    , draw :: DrawHtml
-    , drawMenu :: DrawHtml
-    , drawTray :: DrawHtml
-    , events :: Pipe GuiEvent
-    , size :: Maybe (TVar (Int, Int))
-    }
-
 data GuiEvent = GuiEvent
     { client :: DisplayClient
     , trigger :: TriggerName
@@ -78,6 +78,27 @@ newtype TriggerName = TriggerName Text
 
 instance From Natural TriggerName where
     from = TriggerName . from . show
+
+newtype WinID = WinID Int
+    deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
+
+newtype GuiHandlers = GuiHandlers (TVar (Map WinID (Pipe GuiEvent)))
+
+newGuiHandlers :: STM GuiHandlers
+newGuiHandlers = GuiHandlers <$> newTVar mempty
+
+withGuiHandlers :: GuiHandlers -> WinID -> (Pipe GuiEvent -> ProcessIO a) -> ProcessIO a
+withGuiHandlers (GuiHandlers tvMap) wid cb = do
+    pipe <- atomically do
+        pipe <- newPipe
+        modifyTVar' tvMap (Map.insert wid pipe)
+        pure pipe
+    cb pipe `finally` atomically (modifyTVar' tvMap (Map.delete wid))
+
+lookupGuiHandler :: GuiHandlers -> WinID -> STM (Maybe (Pipe GuiEvent))
+lookupGuiHandler (GuiHandlers tvMap) wid = Map.lookup wid <$> readTVar tvMap
+
+type SetupGuiHandler = [TriggerName] -> (Pipe GuiEvent -> ProcessIO ()) -> ProcessIO ()
 
 with' :: With a => a -> Text -> a
 with' x n = with x [class_ n]

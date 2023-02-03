@@ -27,9 +27,7 @@ import Butler.App.SessionManager
 import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
-
 import Butler.Clock
-import Butler.Window
 
 import Lucid.XStatic
 import XStatic.Butler as XStatic
@@ -70,8 +68,8 @@ vncServer = do
         runExternalProcess name cmd
         error "process died"
 
-standaloneApp :: IO ()
-standaloneApp = do
+standaloneGuiApp :: IO ()
+standaloneGuiApp = do
     v <- runDemo
     putStrLn $ "The end: " <> show v
   where
@@ -85,27 +83,24 @@ standaloneApp = do
 
             with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
                 with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
-                    with div_ [id_ "display-root", class_ "h-full"] mempty
+                    with div_ [id_ "w-0", class_ "h-full"] mempty
 
-    clientHandler = \case
+    clientHandler clients appInstance pipeGE displayEvent = case displayEvent of
         UserConnected _ client -> do
             logInfo "Client connected" ["client" .= client]
             spawnPingThread client
-            clients <- atomically $ newDisplayClientsFromClient client
+            spawnSendThread client
+            atomically (addClient clients client)
+            writePipe appInstance.pipeDisplayEvents displayEvent
 
-            msApp <- startMineSweeper clients (WinID 0)
-            msHtml <- msApp.draw client
-            sendHtml client (with div_ [id_ "display-root"] msHtml)
-
-            events <- atomically newPipe
-            spawnThread_ do
-                msApp.run events
-
-            handleClientEvents client $ \trigger value -> do
+            handleClientEvents client $ \_ trigger value -> do
                 let guiEvent = GuiEvent client trigger value
                 logInfo "got ev" ["ev" .= guiEvent]
-                atomically $ writePipe events guiEvent
-        UserDisconnected _ client -> logInfo "Client disconnected" ["client" .= client]
+                writePipe pipeGE guiEvent
+        UserDisconnected _ client -> do
+            logInfo "Client disconnected" ["client" .= client]
+            atomically (delClient clients client)
+            writePipe appInstance.pipeDisplayEvents displayEvent
 
     xfiles = [XStatic.htmx, XStatic.htmxExtWS, XStatic.tailwind]
     runDemo =
@@ -115,7 +110,10 @@ standaloneApp = do
                 startDisplay 8085 xfiles (const $ pure $ guestAuthApp htmlMain) $ \_ -> do
                     pure $ \_ws -> do
                         env <- ask
-                        pure (env, clientHandler)
+                        clients <- atomically newDisplayClients
+                        pipeGE <- atomically newPipe
+                        appInstance <- startApp (mineSweeperApp (standaloneGuiEvents clients pipeGE)) (WinID 0)
+                        pure (env, clientHandler clients appInstance pipeGE)
 
             void $ awaitProcess desktop
 
@@ -159,28 +157,28 @@ multiDesktop = do
 
     runDemo =
         withButlerOS do
-            chat <- atomically newChatServer
             let authApp = invitationAuthApp indexHtml
             desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
-                _ <- superviseProcess "chat-service" $ chatServerProgram chat display
+                chat <- atomically (newChatServer display.clients)
                 lobbyProgram (mkAppSet chat) xinit chat display
             void $ awaitProcess desktop
 
     xinit desktop = do
-        atomically . addApp desktop =<< smApp desktop
-        atomically . addApp desktop =<< seatApp desktop
+        let seatApp' = seatApp (withDataEvents desktop) (withNamedGuiEvents desktop)
+        atomically . addApp desktop =<< startApp seatApp' (WinID 0)
 
     mkAppSet chat desktop =
         newAppSet
-            [ chatApp chat
-            , clockApp
-            , logViewerApp
-            , termApp desktop
+            [ chatApp chat (withGuiEvents desktop)
+            , clockApp (withGuiEvents desktop)
+            , logViewerApp desktop.hclients
+            , termApp (from desktop.workspace) (withDataEvents desktop) (withGuiEvents desktop)
             , soundTestApp desktop
             , peApp desktop
             , vncApp desktop
-            , tabletopApp desktop
-            , mineSweeperApp
+            , smApp (withGuiEvents desktop) desktop.display
+            , tabletopApp (withDataEvents desktop) (withGuiEvents desktop)
+            , mineSweeperApp (withGuiEvents desktop)
             ]
 
     xfiles', xfiles :: [XStaticFile]

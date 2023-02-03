@@ -18,6 +18,7 @@ module Butler.Prelude (
 
     -- * base extra
     whenM,
+    unlessM,
     module GHC.Stack,
     module Data.Char,
     System.Posix.ByteString.RawFilePath,
@@ -131,6 +132,7 @@ module Butler.Prelude (
     Data.Aeson.toJSON,
     Data.Aeson.Result (..),
     encodeJSON,
+    decodeJSON,
     Data.Aeson.object,
 
     -- * xstatic
@@ -221,11 +223,19 @@ whenM getCondition action = do
     condition <- getCondition
     Control.Monad.when condition action
 
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM getCondition action = do
+    condition <- getCondition
+    Control.Monad.unless condition action
+
 instance Witch.From CTime Int64 where
     from (CTime c) = c
 
 encodeJSON :: Data.Aeson.ToJSON a => a -> LByteString
 encodeJSON = Data.Aeson.encode
+
+decodeJSON :: Data.Aeson.FromJSON a => LByteString -> Maybe a
+decodeJSON = Data.Aeson.decode
 
 die :: Relude.HasCallStack => MonadIO m => Relude.Text -> m ()
 die = error . Data.Text.unpack

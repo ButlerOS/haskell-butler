@@ -1,11 +1,13 @@
 module Butler.DisplayClient where
 
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.List qualified (find)
+import Data.Text qualified as Text
 import Lucid
 import Network.WebSockets qualified as WS
 
 import Butler.Clock
-import Butler.Frame
 import Butler.NatMap qualified as NM
 import Butler.OS
 import Butler.Prelude
@@ -19,7 +21,7 @@ data DisplayClient = DisplayClient
     , tabID :: TabID
     , recv :: TVar Word64
     , send :: TVar Word64
-    , sendChannel :: TChan ByteString
+    , sendChannel :: TChan WS.DataMessage
     }
 
 newClient :: WS.Connection -> Endpoint -> Process -> Session -> TabID -> STM DisplayClient
@@ -32,52 +34,68 @@ spawnPingThread client = spawnThread_ $ forever do
 
 recvMessage :: MonadIO m => DisplayClient -> m ByteString
 recvMessage client = do
-    buf <- liftIO $ WS.receiveData client.conn
+    buf <- liftIO (WS.receiveData client.conn)
     atomically $ modifyTVar' client.recv (+ unsafeFrom (BS.length buf))
     pure buf
 
-sendMessage :: MonadIO m => DisplayClient -> ByteString -> m ()
-sendMessage client t = liftIO do
-    atomically $ modifyTVar' client.send (+ unsafeFrom (BS.length t))
+spawnSendThread :: DisplayClient -> ProcessIO ()
+spawnSendThread client = spawnThread_ $ forever do
+    dataMessage <- atomically (readTChan client.sendChannel)
+    let messageLBS = case dataMessage of
+            WS.Text lbs _ -> lbs
+            WS.Binary lbs -> lbs
+    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length messageLBS))
+    liftIO $ WS.sendDataMessage client.conn dataMessage
+
+writeBinaryMessage :: MonadIO m => DisplayClient -> LByteString -> m ()
+writeBinaryMessage client t = liftIO do
+    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length t))
     WS.sendBinaryData client.conn t
 
-sendTextMessage :: MonadIO m => DisplayClient -> ByteString -> m ()
-sendTextMessage client t = liftIO do
-    atomically $ modifyTVar' client.send (+ unsafeFrom (BS.length t))
-    WS.sendTextData client.conn t
+writeTextMessage :: MonadIO m => DisplayClient -> Text -> m ()
+writeTextMessage client txt = liftIO do
+    atomically $ modifyTVar' client.send (+ unsafeFrom (Text.length txt))
+    WS.sendTextData client.conn txt
 
-sendHtml :: MonadIO m => DisplayClient -> HtmlT STM () -> m ()
-sendHtml client msg = liftIO do
-    body <- atomically $ renderBST msg
-    sendTextMessage client (from body)
+sendHtml :: DisplayClient -> HtmlT STM () -> STM ()
+sendHtml client htmlT = do
+    body <- renderBST htmlT
+    writeTChan client.sendChannel (WS.Text body Nothing)
 
-safeSend :: DisplayClients -> (DisplayClient -> a -> ProcessIO ()) -> DisplayClient -> a -> ProcessIO ()
-safeSend clients action client body = do
-    res <- try (action client body)
-    case res of
-        Right () -> pure ()
-        Left (err :: WS.ConnectionException) -> do
-            atomically $ delClient clients client
-            logError "send error" ["client" .= client, "err" .= showT err]
+sendsHtml :: DisplayClients -> HtmlT STM () -> ProcessIO ()
+sendsHtml clients htmlT = do
+    body <- atomically $ renderBST htmlT
+    xs <- atomically $ getClients clients
+    forM_ xs \client -> atomically (writeTChan client.sendChannel (WS.Text body Nothing))
 
-clientsBinary :: DisplayClients -> ByteString -> ProcessIO ()
-clientsBinary clients buf = do
-    xs <- atomically (getClients clients)
-    forM_ xs $ \client -> safeSend clients sendMessage client buf
+sendBinary :: DisplayClient -> LByteString -> STM ()
+sendBinary client buf = writeTChan client.sendChannel (WS.Binary buf)
+
+sendsBinary :: DisplayClients -> LByteString -> ProcessIO ()
+sendsBinary clients buf = do
+    xs <- atomically $ getClients clients
+    forM_ xs $ \client -> atomically $ sendBinary client buf
+
+sendsBinaryButSelf :: DisplayClient -> DisplayClients -> LByteString -> ProcessIO ()
+sendsBinaryButSelf self clients buf = do
+    xs <- atomically $ getClients clients
+    forM_ xs $ \client ->
+        when (client.endpoint /= self.endpoint) do
+            atomically $ writeTChan client.sendChannel (WS.Binary buf)
 
 clientsHtmlT :: DisplayClients -> HtmlT STM () -> ProcessIO ()
-clientsHtmlT clients message = do
-    body <- from <$> atomically (renderBST message)
-    xs <- atomically (getClients clients)
-    forM_ xs $ \client -> safeSend clients sendTextMessage client body
+clientsHtmlT clients htmlT = do
+    body <- atomically $ renderBST htmlT
+    xs <- atomically $ getClients clients
+    forM_ xs $ \client -> atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
 clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 clientsDraw clients draw = do
     xs <- atomically (getClients clients)
     forM_ xs $ \client -> do
         htmlT <- draw client
-        body <- from <$> atomically (renderBST htmlT)
-        safeSend clients sendTextMessage client body
+        body <- atomically $ renderBST htmlT
+        atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
 newtype Endpoint = Endpoint Text
     deriving newtype (Eq, Ord, Show, IsString)
@@ -106,10 +124,7 @@ addClient (DisplayClients x) = void . NM.add x
 delClient :: DisplayClients -> DisplayClient -> STM ()
 delClient (DisplayClients x) client = NM.nmDelete x (\o -> o.endpoint == client.endpoint)
 
-type HandlerCallback = ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
-
-type Handlers = NM.NatMap HandlerCallback
-
-newHandler :: Handlers -> HandlerCallback -> STM ChannelID
-newHandler handlers handl = do
-    newChannel <$> NM.add handlers handl
+lookupTabClient :: DisplayClients -> DisplayClient -> STM (Maybe DisplayClient)
+lookupTabClient clients client = Data.List.find sameTab <$> getClients clients
+  where
+    sameTab oclient = oclient.session.sessionID == client.session.sessionID && oclient.tabID == client.tabID

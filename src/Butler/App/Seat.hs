@@ -1,7 +1,6 @@
 module Butler.App.Seat (seatApp) where
 
 import Butler.App
-import Butler.Desktop
 import Butler.Display
 import Butler.Frame
 import Butler.GUI
@@ -11,7 +10,6 @@ import Butler.Process
 import Butler.Session
 import Butler.SoundBlaster
 import Butler.User
-import Butler.Window
 import Data.Aeson
 import Data.Map.Strict qualified as Map
 
@@ -132,11 +130,21 @@ instance FromJSON SeatEvent where
             (Nothing, Just w) -> SeatEventResolution w <$> obj .: "h"
             _ -> fail "x or w attribute missing"
 
-seatApp :: Desktop -> ProcessIO GuiApp
-seatApp desktop = do
+seatApp :: WithDataEvents -> WithNamedGuiEvents -> App
+seatApp withDE withNamedGE =
+    App
+        { name = "seat"
+        , tags = mempty
+        , description = mempty
+        , size = Nothing
+        , start = withDE (withNamedGE ["toggle-cursor", "toggle-audio"] . startSeatApp)
+        }
+
+startSeatApp :: DataEvents -> GuiEvents -> AppStart
+startSeatApp dataEvents guiEvents _wid pipeDE = do
     seats <- atomically newSeats
 
-    let clientHandler _ chan client buf = case eitherDecode' (from buf) of
+    let dataHandler client buf = case eitherDecode' (from buf) of
             Right ev -> do
                 (isNew, seat, action) <- atomically do
                     mSeat <- getSeat seats client
@@ -157,14 +165,11 @@ seatApp desktop = do
                             writeTVar seat.cursor (x, y)
                             pure do
                                 let cbuf = encodeJSON (object ["x" .= x, "y" .= y, "pid" .= client.process.pid])
-                                broadcastDesktopMessage desktop (const True) chan (from cbuf)
+                                sendsBinary dataEvents.clients (encodeMessageL dataEvents.chan cbuf)
                 when isNew do
-                    broadcastHtmlT desktop (appendSeat seat)
+                    clientsHtmlT guiEvents.clients (appendSeat seat)
                 action
             Left err -> logError "invalid json" ["ev" .= BSLog buf, "err" .= err]
-
-    chan <- atomically (newHandler desktop.handlers clientHandler)
-    desktopEvents <- atomically (newReaderChan desktop.desktopEvents)
 
     let removeSeat :: Monad m => DisplayClient -> HtmlT m ()
         removeSeat client = do
@@ -173,52 +178,39 @@ seatApp desktop = do
             with div_ [id_ $ "seat-" <> showT idx, hxSwapOob_ "delete"] mempty
 
     let tray :: DisplayClient -> HtmlT STM ()
-        tray client = renderSeatTray client.session chan audioChannel seats
+        tray client = do
+            with div_ [id_ "tray-0", hxSwapOob_ "beforeend"] do
+                renderSeatTray client.session dataEvents.chan audioChannel seats
 
-    let
-        handler events = do
-            spawnThread_ $ forever do
-                ev <- atomically (readTChan desktopEvents)
-                -- logInfo "got desktop ev" ["ev" .= ev]
-                case ev of
-                    UserDisconnected "data" client -> do
-                        seatM <- atomically do
-                            delSeat seats client
-                        case seatM of
-                            Just seat -> broadcastHtmlT desktop $ removeSeat seat.client
-                            Nothing -> pure ()
-                    _ -> pure ()
+    do
+        spawnThread_ $ forever do
+            ev <- atomically (readPipe pipeDE)
+            case ev of
+                UserDisconnected "data" client -> do
+                    seatM <- atomically do
+                        delSeat seats client
+                    case seatM of
+                        Just seat -> clientsHtmlT guiEvents.clients (removeSeat seat.client)
+                        Nothing -> pure ()
+                UserConnected "htmx" client -> atomically $ sendHtml client (tray client)
+                _ -> pure ()
 
-            forever do
-                ev <- atomically $ readPipe events
-                case ev.trigger of
-                    "toggle-cursor" ->
-                        let running = fromMaybe True (ev.body ^? key "running" . _Bool)
-                            btn = renderCursorToggle ev.client.session.username (not running)
-                         in safeSend desktop.hclients sendHtml ev.client btn
-                    "toggle-audio" ->
-                        let running = fromMaybe True (ev.body ^? key "running" . _Bool)
-                            btn = renderAudioToggle ev.client.session.username (not running)
-                         in safeSend desktop.hclients sendHtml ev.client btn
-                    _ -> logError "Invalid ev" ["ev" .= ev]
+        spawnThread_ $ forever do
+            ev <- atomically $ readPipe dataEvents.pipe
+            dataHandler ev.client ev.buffer
 
-        appInstance =
-            AppInstance
-                { draw = emptyDraw
-                , drawTray = pure . tray
-                , run = handler
-                }
-        app =
-            App
-                { name = "seat"
-                , tags = mempty
-                , description = mempty
-                , size = Nothing
-                , triggers = ["toggle-cursor", "toggle-audio"]
-                , start = \_ _ -> pure appInstance
-                }
-
-    startApp app desktop.hclients (WinID 0)
+        forever do
+            ev <- atomically $ readPipe guiEvents.pipe
+            case ev.trigger of
+                "toggle-cursor" ->
+                    let running = fromMaybe True (ev.body ^? key "running" . _Bool)
+                        btn = renderCursorToggle ev.client.session.username (not running)
+                     in atomically $ sendHtml ev.client btn
+                "toggle-audio" ->
+                    let running = fromMaybe True (ev.body ^? key "running" . _Bool)
+                        btn = renderAudioToggle ev.client.session.username (not running)
+                     in atomically $ sendHtml ev.client btn
+                _ -> logError "Invalid ev" ["ev" .= ev]
 
 seatClient :: ChannelID -> Text
 seatClient chan =

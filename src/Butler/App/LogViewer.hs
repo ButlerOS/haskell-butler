@@ -14,21 +14,23 @@ renderLogs os wid = do
         with ul_ [id_ (withWID wid "logs-list"), class_ "whitespace-nowrap overflow-x-auto"] do
             traverse_ (li_ . renderLog) events
 
-logViewerApp :: App
-logViewerApp =
+logViewerApp :: DisplayClients -> App
+logViewerApp clients =
     App
         { name = "log-viewer"
         , tags = fromList ["System"]
         , description = "Read event logs"
         , size = Nothing
-        , triggers = []
-        , start = \clients wid -> do
+        , start = \wid pipeDE -> do
             os <- asks os
-            newAppInstance (pureDraw $ renderLogs os wid) $ const do
+            do
                 chan <- atomically (getLogsChan os.logger)
                 forever do
-                    sysEvent <- atomically $ readTChan chan
-                    clientsHtmlT clients do
-                        with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
-                            li_ $ renderLog sysEvent
+                    ev <- atomically (Left <$> readTChan chan <|> Right <$> readPipe pipeDE)
+                    case ev of
+                        Right de -> sendHtmlOnConnect (renderLogs os wid) de
+                        Left sysEvent ->
+                            clientsHtmlT clients do
+                                with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
+                                    li_ $ renderLog sysEvent
         }

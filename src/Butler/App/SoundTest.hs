@@ -69,7 +69,7 @@ delayPlayback sc wid client = spawnProcess "delayer" do
             stopSoundReceiver wid client
 
 soundTestHtml :: WinID -> SoundCard -> TVar TestState -> HtmlT STM ()
-soundTestHtml wid sc vState = with div_ [id_ (withWID wid "sound-test")] do
+soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
     lift (readTVar vState) >>= \case
         Pending ->
             ul_ do
@@ -96,22 +96,24 @@ soundTestApp desktop =
         , tags = fromList ["Utility", "Sound"]
         , description = "Test audio stream"
         , size = Just (200, 164)
-        , triggers = fromList ["stop", "playback-test", "stream-test"]
-        , start = const (startSoundTest desktop)
+        , start = startSoundTest desktop
         }
 
-startSoundTest :: Desktop -> WinID -> ProcessIO AppInstance
-startSoundTest desktop wid = do
+startSoundTest :: Desktop -> AppStart
+startSoundTest desktop wid pipeDE = do
     vState <- newTVarIO Pending
     let setStatus = atomically . writeTVar vState
 
     let render = soundTestHtml wid desktop.soundCard vState
-        draw = const $ pure render
         refreshRate = 160
 
     audioEventsChan <- atomically (newReaderChan desktop.soundCard.events)
 
-    newAppInstance draw \events -> do
+    spawnThread_ $ forever do
+        ev <- atomically (readPipe pipeDE)
+        sendHtmlOnConnect render ev
+
+    withGuiHandlers desktop.guiHandlers wid \events -> do
         spawnThread_ $ forever do
             _ev <- atomically (readTChan audioEventsChan)
             broadcastHtmlT desktop (soundCardInfoHtml desktop.soundCard)

@@ -1,72 +1,78 @@
 module Butler.App where
 
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 
+import Butler.Display
+import Butler.Frame
 import Butler.GUI
 import Butler.Prelude
-import Butler.Window
+
+data GuiEvents = GuiEvents
+    { clients :: DisplayClients
+    , pipe :: Pipe GuiEvent
+    }
+type WithGuiEvents = (GuiEvents -> AppStart) -> AppStart
+type WithNamedGuiEvents = [TriggerName] -> WithGuiEvents
+
+data DataEvents = DataEvents
+    { clients :: DisplayClients
+    , chan :: ChannelID
+    , pipe :: Pipe DataEvent
+    }
+type WithDataEvents = (DataEvents -> AppStart) -> AppStart
+
+standaloneGuiEvents :: DisplayClients -> Pipe GuiEvent -> WithGuiEvents
+standaloneGuiEvents clients pipe cb = cb (GuiEvents{clients, pipe})
 
 newtype AppTag = AppTag Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON)
+
+type AppStart = WinID -> Pipe DisplayEvent -> ProcessIO ()
 
 data App = App
     { name :: ProgramName
     , tags :: Set AppTag
     , description :: Text
     , size :: Maybe (Int, Int)
-    , triggers :: [TriggerName]
-    , start :: DisplayClients -> WinID -> ProcessIO AppInstance
+    , start :: AppStart
     }
 
 data AppInstance = AppInstance
-    { draw :: DrawHtml
-    , drawTray :: DrawHtml
-    , run :: Pipe GuiEvent -> ProcessIO Void
+    { app :: App
+    , process :: Process
+    , wid :: WinID
+    , pipeDisplayEvents :: Pipe DisplayEvent
     }
     deriving (Generic)
 
-newAppInstance :: Monad m => DrawHtml -> (Pipe GuiEvent -> ProcessIO Void) -> m AppInstance
-newAppInstance draw run = pure AppInstance{run, draw, drawTray}
-  where
-    drawTray = emptyDraw
-
 newtype AppSet = AppSet (Map ProgramName App)
+
+pureHtmlApp :: (WinID -> HtmlT STM ()) -> AppStart
+pureHtmlApp mkHtml wid pipeDE = forever do
+    atomically (readPipe pipeDE) >>= sendHtmlOnConnect (mkHtml wid)
+
+sendHtmlOnConnect :: HtmlT STM () -> DisplayEvent -> ProcessIO ()
+sendHtmlOnConnect htmlT = \case
+    UserConnected "htmx" client -> atomically $ sendHtml client htmlT
+    _ -> pure ()
 
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
 
-launchApp :: AppSet -> ProgramName -> DisplayClients -> WinID -> ProcessIO (Maybe GuiApp)
-launchApp (AppSet apps) name ctx wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app ctx wid
+launchApp :: AppSet -> ProgramName -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) name wid = case Map.lookup name apps of
+    Just app -> Just <$> startApp app wid
     Nothing -> pure Nothing
 
-startApp :: App -> DisplayClients -> WinID -> ProcessIO GuiApp
-startApp app ctx wid = do
-    events <- atomically newPipe
-
+startApp :: App -> WinID -> ProcessIO AppInstance
+startApp app wid = do
     -- Start app process
-    mvAppInstance <- newEmptyTMVarIO
+    pipeDisplayEvents <- atomically newPipe
     process <- spawnProcess ("app-" <> app.name) do
-        appInstance <- app.start ctx wid
-        atomically $ putTMVar mvAppInstance appInstance
-        void $ appInstance.run events
+        app.start wid pipeDisplayEvents
 
-    appInstance <- atomically (readTMVar mvAppInstance)
-    let triggers
-            | wid == WinID 0 = fromList app.triggers
-            | otherwise = Set.fromList (scopeTriggers wid app.triggers)
-        draw client = do
-            body <- appInstance.draw client
-            pure $ with div_ [id_ (withWID wid "w")] body
-        drawMenu = emptyDraw
-        drawTray = appInstance.drawTray
-    size <- case app.size of
-        Nothing -> pure Nothing
-        Just sz -> Just <$> newTVarIO sz
-
-    pure $ GuiApp{process, triggers, draw, drawMenu, drawTray, events, size}
+    pure $ AppInstance{app, process, wid, pipeDisplayEvents}
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do

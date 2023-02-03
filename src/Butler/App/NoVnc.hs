@@ -8,9 +8,9 @@ import Data.Map.Strict qualified as Map
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
 
-renderTray :: DisplayClient -> HtmlT STM ()
-renderTray _ = do
-    with span_ [id_ "vnc-tray", class_ "inline-block bg-stone-600 mx-1 px-1"] do
+renderTray :: WinID -> HtmlT STM ()
+renderTray wid = do
+    with span_ [id_ (withWID wid "tray"), class_ "inline-block bg-stone-600 mx-1 px-1"] do
         span_ do
             "NoVNC"
         with span_ [class_ "border border-gray-500 ml-2 inline-flex rounded-md"] do
@@ -43,17 +43,15 @@ vncApp desktop =
         , tags = fromList ["Graphic", "Development"]
         , description = "NoVNC client"
         , size = Nothing
-        , triggers = ["change-quality", "change-res"]
-        , start = const (startVncApp desktop)
+        , start = startVncApp desktop
         }
 
-startVncApp :: Desktop -> WinID -> ProcessIO AppInstance
-startVncApp desktop wid = do
+startVncApp :: Desktop -> AppStart
+startVncApp desktop wid pipeDE = do
     srv <- atomically (newVncServer "localhost" 5900)
-    let drawTray = pure . renderTray
 
-    let draw :: DisplayClient -> ProcessIO (HtmlT STM ())
-        draw _client = pure do
+    let draw :: HtmlT STM ()
+        draw = do
             with div_ [wid_ wid "w", class_ "truncate relative overflow-hidden"] do
                 topRightMenu
                     [ with
@@ -68,6 +66,7 @@ startVncApp desktop wid = do
                 with div_ [wid_ wid "vnc", class_ "overflow-hidden"] mempty
                 dim <- lift (readTVar srv.dim)
                 with (script_ $ vncClient wid dim) [type_ "module"]
+            renderTray wid
 
     let onClient client = do
             logInfo "new client" ["client" .= client]
@@ -80,20 +79,13 @@ startVncApp desktop wid = do
 
                 forever do
                     buf <- liftIO (Network.Socket.ByteString.recv skt 65535)
-                    sendMessage client buf
+                    atomically $ sendBinary client (from buf)
 
             error "client exited"
 
     atomically $ modifyTVar' desktop.channels (Map.insert "novnc" onClient)
-
-    pure $
-        AppInstance
-            { draw
-            , drawTray
-            , run = \events -> forever do
-                ev <- atomically $ readPipe events
-                logError "unknown ev" ["ev" .= ev]
-            }
+    forever do
+        atomically (readPipe pipeDE) >>= sendHtmlOnConnect draw
 
 vncClient :: WinID -> (Int, Int) -> Text
 vncClient wid (width, height) =

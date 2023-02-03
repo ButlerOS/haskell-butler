@@ -17,7 +17,6 @@ import Butler.NatMap qualified as NM
 import Butler.Prelude
 import Butler.Session
 import Butler.User
-import Butler.Window
 
 -- Sound Card setup
 data SoundCard = SoundCard
@@ -149,7 +148,7 @@ startSoundChannelClient :: SoundChannel -> DisplayClient -> STM ()
 startSoundChannelClient soundChannel client = do
     setSoundChannelStatus soundChannel SoundClientInitializing client
     let mkChan = mkControlMessage "start" ["chan" .= soundChannel.id, "wid" .= soundChannel.winID]
-    writeTChan client.sendChannel mkChan
+    sendBinary client mkChan
 
 startSoundChannel :: SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
 startSoundChannel sc wid name = do
@@ -167,11 +166,11 @@ stopSoundChannel sc soundChannel = do
     clients <- getClients sc.clients
     let delChan = mkControlMessage "stop" ["chan" .= soundChannel.id]
     forM_ clients $ \client -> do
-        writeTChan client.sendChannel delChan
+        sendBinary client delChan
     broadcast sc.events (SoundChannelEvent soundChannel.id)
 
-mkControlMessage :: Text -> [Pair] -> ByteString
-mkControlMessage op attrs = from $ LBS.cons (from audioChannel) $ LBS.cons 0 buf
+mkControlMessage :: Text -> [Pair] -> LByteString
+mkControlMessage op attrs = LBS.cons (from audioChannel) $ LBS.cons 0 buf
   where
     buf = encodeJSON (KM.fromList $ ["op" .= op] <> attrs)
 
@@ -190,17 +189,17 @@ feedChannel sc soundChannel buf mFrame = do
             Just SoundClientReady
                 | isNothing mFrame -> pure ()
                 | otherwise -> do
-                    writeTChan client.sendChannel (from initBuffer)
+                    sendBinary client (from initBuffer)
                     setSoundChannelStatus soundChannel SoundClientSynchronizing client
                     broadcast sc.events (SoundChannelEvent soundChannel.id)
             Just SoundClientSynchronizing -> do
-                writeTChan client.sendChannel (from arrBuffer)
+                sendBinary client (from arrBuffer)
                 setSoundChannelStatus soundChannel SoundClientSynchronized client
                 broadcast sc.events (SoundChannelEvent soundChannel.id)
             Just SoundClientSynchronized -> do
-                writeTChan client.sendChannel (from arrBuffer)
+                sendBinary client (from arrBuffer)
             Just SoundClientPlaying -> do
-                writeTChan client.sendChannel (from arrBuffer)
+                sendBinary client (from arrBuffer)
             _ -> pure ()
 
 -- Sound Card handler (for recorder)
@@ -247,12 +246,12 @@ soundReceiverHandler sc client buf = do
             atomically $ broadcast sc.events (SoundReceiveEvent client buf mFrame)
 
 startClientRecorder :: WinID -> DisplayClient -> STM ()
-startClientRecorder wid client = writeTChan client.sendChannel msg
+startClientRecorder wid client = sendBinary client msg
   where
     msg = mkControlMessage "start-record" ["wid" .= wid]
 
 stopSoundReceiver :: WinID -> DisplayClient -> STM ()
-stopSoundReceiver wid client = writeTChan client.sendChannel msg
+stopSoundReceiver wid client = sendBinary client msg
   where
     msg = mkControlMessage "stop-record" ["wid" .= wid]
 
@@ -260,8 +259,8 @@ stopSoundReceiver wid client = writeTChan client.sendChannel msg
 -- [0, op] : stop/start message
 -- [0, chan, op] : error/ready/playing message
 -- [data...] : audio data
-soundHandler :: SoundCard -> ByteString -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
-soundHandler sc _rawBS _chan client msg = do
+soundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
+soundHandler sc client msg = do
     case BS.uncons msg of
         Just (0, "\x00") -> do
             logInfo "audio client stopped" ["client" .= client]

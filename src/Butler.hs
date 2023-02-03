@@ -5,6 +5,7 @@ module Butler (
 
     -- * App definition
     module Butler.App,
+    module Butler.Display,
 
     -- * GUI toolkit
     module Butler.GUI,
@@ -13,7 +14,8 @@ module Butler (
 where
 
 import Butler.App
-import Butler.Clock (Milli (..), WaitResult (..), sleep, waitTransaction)
+import Butler.Clock (Milli (..), Time, WaitResult (..), sleep, waitTransaction)
+import Butler.Display
 import Butler.GUI
 import Butler.OS
 import Butler.Window
