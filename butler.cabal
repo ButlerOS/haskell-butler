@@ -31,6 +31,7 @@ library
       Butler.App.Clock
       Butler.App.LogViewer
       Butler.App.MineSweeper
+      Butler.App.Mumbler
       Butler.App.NoVnc
       Butler.App.ProcessExplorer
       Butler.App.REPL

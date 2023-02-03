@@ -20,6 +20,7 @@ import Butler.App.Chat
 import Butler.App.Clock
 import Butler.App.LogViewer
 import Butler.App.MineSweeper
+import Butler.App.Mumbler
 import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
 import Butler.App.Seat
@@ -174,6 +175,7 @@ multiDesktop = do
             , logViewerApp desktop.hclients
             , termApp (from desktop.workspace) (withDataEvents desktop) (withGuiEvents desktop)
             , soundTestApp desktop
+            , mumblerApp (withDataEvents desktop) desktop.hclients desktop.soundCard
             , peApp desktop
             , vncApp desktop
             , smApp (withGuiEvents desktop) desktop.display

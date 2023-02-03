@@ -18,7 +18,9 @@ import Butler.Prelude
 import Butler.Session
 import Butler.User
 
+-------------------------------------------------------------------------------
 -- Sound Card setup
+-------------------------------------------------------------------------------
 data SoundCard = SoundCard
     { clients :: DisplayClients
     , channels :: NM.NatMap SoundChannel
@@ -30,8 +32,8 @@ newSoundCard :: STM SoundCard
 newSoundCard = SoundCard <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
 
 data SoundCardEvent
-    = SoundUserJoined
-    | SoundUserLeft
+    = SoundUserJoined DisplayClient
+    | SoundUserLeft DisplayClient
     | SoundReceiverStarted
     | SoundReceiverStopped
     | SoundChannelEvent SoundChannelID
@@ -43,15 +45,23 @@ addSoundClient sc client = do
 
     -- attach to channels
     soundChannels <- NM.elems sc.channels
-    traverse_ (flip startSoundChannelClient client) soundChannels
+    traverse_ (\soundChannel -> startSoundChannelClient soundChannel False client) soundChannels
 
-    broadcast sc.events SoundUserJoined
+    broadcast sc.events (SoundUserJoined client)
 
 delSoundClient :: SoundCard -> DisplayClient -> STM ()
 delSoundClient sc client = do
     delClient sc.clients client
-    broadcast sc.events SoundUserLeft
 
+    -- remove from channels
+    soundChannels <- NM.elems sc.channels
+    traverse_ (flip delSoundChannelClient client) soundChannels
+
+    broadcast sc.events (SoundUserLeft client)
+
+-------------------------------------------------------------------------------
+-- Sound Card HTML
+-------------------------------------------------------------------------------
 soundCardInfoHtml :: SoundCard -> HtmlT STM ()
 soundCardInfoHtml sc = with div_ [id_ "sc-info"] do
     clients <- lift (getClients sc.clients)
@@ -62,20 +72,21 @@ soundCardInfoHtml sc = with div_ [id_ "sc-info"] do
                 with div_ [class_ "text-sm font-bold"] "Connected: "
                 forM_ clients \client -> do
                     userTabIcon client.session.username client.tabID
-    let
-        drawList :: NM.NatMap a -> HtmlT STM () -> (a -> HtmlT STM ()) -> HtmlT STM ()
-        drawList tv title render =
-            div_ do
-                lift (NM.elems tv) >>= \case
-                    [] -> pure ()
-                    elts -> do
-                        with div_ [class_ "text-sm font-bold"] title
-                        div_ do
-                            with ul_ [class_ "list-disc list-inside"] do
-                                forM_ elts \elt -> do
-                                    li_ (render elt)
+
     drawList sc.channels "Playing:" (soundChannelHtml sc)
     drawList sc.receivers "Receiving:" soundReceiverHtml
+
+drawList :: NM.NatMap a -> HtmlT STM () -> (a -> HtmlT STM ()) -> HtmlT STM ()
+drawList tv title render =
+    div_ do
+        lift (NM.elems tv) >>= \case
+            [] -> pure ()
+            elts -> do
+                with div_ [class_ "text-sm font-bold"] title
+                div_ do
+                    with ul_ [class_ "list-disc list-inside"] do
+                        forM_ elts \elt -> do
+                            li_ (render elt)
 
 soundChannelHtml :: SoundCard -> SoundChannel -> HtmlT STM ()
 soundChannelHtml sc chan = do
@@ -83,7 +94,7 @@ soundChannelHtml sc chan = do
     ": "
     clients <- lift (getClients sc.clients)
     forM_ clients \client -> do
-        mClientStatus <- lift (getSoundChannelStatus chan client)
+        mClientStatus <- lift (getSoundChannelClient chan client)
         forM_ mClientStatus \clientStatus -> do
             with span_ [class_ "mr-2"] do
                 userTabIcon client.session.username client.tabID
@@ -96,11 +107,14 @@ soundReceiverHtml receiver = do
     counter <- lift (readTVar receiver.counter)
     toHtml (show counter)
 
--- Sound Card channel (for player)
+-------------------------------------------------------------------------------
+-- Sound Channel (for player)
+-------------------------------------------------------------------------------
 data SoundChannel = SoundChannel
     { winID :: WinID
     , name :: SoundChannelName
     , id :: SoundChannelID
+    , frameCount :: TVar Natural
     , statuses :: NM.NatMap SoundClientStatus
     }
 
@@ -117,47 +131,50 @@ instance From SoundChannelID Word8 where
     from (SoundChannelID chan) = from chan
 
 data SoundClientStatus
-    = SoundClientInitializing
-    | SoundClientReady
-    | SoundClientSynchronizing
-    | SoundClientSynchronized
+    = SoundClientInitializing Bool
     | SoundClientPlaying
+    | SoundClientMuted
     | SoundClientError Text
 
 clientStatusHtml :: SoundClientStatus -> HtmlT STM ()
 clientStatusHtml = \case
-    SoundClientInitializing -> tooltip "(i)" "initializing..."
-    SoundClientReady -> tooltip "(w)" "waiting for data..."
-    SoundClientSynchronizing -> tooltip "..." "waiting for stream header..."
-    SoundClientSynchronized -> tooltip "ooo" "waiting for play event"
+    SoundClientInitializing False -> tooltip "(w)" "waiting for data..."
+    SoundClientInitializing True -> tooltip "(r)" "ready..."
     SoundClientPlaying -> ""
+    SoundClientMuted -> tooltip "(m)" "muted"
     SoundClientError e -> "[E: " <> toHtml e <> "]"
   where
     tooltip n title = with span_ [title_ title] n
 
 newSoundChannel :: WinID -> SoundChannelName -> Natural -> STM SoundChannel
-newSoundChannel wid name k = SoundChannel wid name (SoundChannelID $ newChannel k) <$> NM.newNatMap
+newSoundChannel wid name k = SoundChannel wid name (SoundChannelID $ newChannel k) <$> newTVar 0 <*> NM.newNatMap
 
-setSoundChannelStatus :: SoundChannel -> SoundClientStatus -> DisplayClient -> STM ()
-setSoundChannelStatus soundChannel status client = NM.insert soundChannel.statuses (from client.process.pid) status
+delSoundChannelClient :: SoundChannel -> DisplayClient -> STM ()
+delSoundChannelClient soundChannel client = NM.delete soundChannel.statuses (from client.process.pid)
 
-getSoundChannelStatus :: SoundChannel -> DisplayClient -> STM (Maybe SoundClientStatus)
-getSoundChannelStatus soundChannel client = NM.lookup soundChannel.statuses (from client.process.pid)
+setSoundChannelClient :: SoundChannel -> SoundClientStatus -> DisplayClient -> STM ()
+setSoundChannelClient soundChannel status client = NM.insert soundChannel.statuses (from client.process.pid) status
 
-startSoundChannelClient :: SoundChannel -> DisplayClient -> STM ()
-startSoundChannelClient soundChannel client = do
-    setSoundChannelStatus soundChannel SoundClientInitializing client
+getSoundChannelClient :: SoundChannel -> DisplayClient -> STM (Maybe SoundClientStatus)
+getSoundChannelClient soundChannel client = NM.lookup soundChannel.statuses (from client.process.pid)
+
+startSoundChannelClient :: SoundChannel -> Bool -> DisplayClient -> STM ()
+startSoundChannelClient soundChannel synchronized client = do
+    setSoundChannelClient soundChannel (SoundClientInitializing synchronized) client
     let mkChan = mkControlMessage "start" ["chan" .= soundChannel.id, "wid" .= soundChannel.winID]
     sendBinary client mkChan
 
-startSoundChannel :: SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
-startSoundChannel sc wid name = do
+startSoundChannelKeep :: (DisplayClient -> Bool) -> SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
+startSoundChannelKeep p sc wid name = do
     soundChannel <- NM.addWithKey sc.channels (newSoundChannel wid name)
     -- initialize clients already connected
     clients <- getClients sc.clients
-    traverse_ (startSoundChannelClient soundChannel) clients
+    traverse_ (startSoundChannelClient soundChannel True) (filter p clients)
     broadcast sc.events (SoundChannelEvent soundChannel.id)
     pure soundChannel
+
+startSoundChannel :: SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
+startSoundChannel = startSoundChannelKeep (const True)
 
 stopSoundChannel :: SoundCard -> SoundChannel -> STM ()
 stopSoundChannel sc soundChannel = do
@@ -183,26 +200,45 @@ feedChannel sc soundChannel buf mFrame = do
         mkBuffer = LBS.cons (from audioChannel) . LBS.cons (from soundChannel.id)
         initBuffer = mkBuffer initSegments
         arrBuffer = mkBuffer (from buf)
+
+    isRunning <- stateTVar soundChannel.frameCount \c -> (c > 0, c + 1)
+    let sendData client isSynced
+            | -- If the stream just started, or if the client is already synced
+              not isRunning || isSynced =
+                sendBinary client arrBuffer >> pure True
+            | -- A new frame is available
+              isJust mFrame =
+                sendBinary client initBuffer >> pure True
+            | otherwise = pure False
+
     clients <- getClients sc.clients
     forM_ clients \client -> do
-        getSoundChannelStatus soundChannel client >>= \case
-            Just SoundClientReady
-                | isNothing mFrame -> pure ()
-                | otherwise -> do
-                    sendBinary client (from initBuffer)
-                    setSoundChannelStatus soundChannel SoundClientSynchronizing client
-                    broadcast sc.events (SoundChannelEvent soundChannel.id)
-            Just SoundClientSynchronizing -> do
-                sendBinary client (from arrBuffer)
-                setSoundChannelStatus soundChannel SoundClientSynchronized client
-                broadcast sc.events (SoundChannelEvent soundChannel.id)
-            Just SoundClientSynchronized -> do
-                sendBinary client (from arrBuffer)
-            Just SoundClientPlaying -> do
-                sendBinary client (from arrBuffer)
+        getSoundChannelClient soundChannel client >>= \case
+            Nothing -> do
+                let isSynced = not isRunning || isJust mFrame
+                startSoundChannelClient soundChannel isSynced client
+                void $ sendData client False
+            Just (SoundClientInitializing isSynced) -> do
+                newIsSynced <- sendData client isSynced
+                when (newIsSynced /= isSynced) do
+                    setSoundChannelClient soundChannel (SoundClientInitializing newIsSynced) client
+            Just SoundClientPlaying -> sendBinary client arrBuffer
             _ -> pure ()
 
--- Sound Card handler (for recorder)
+pauseChannel :: SoundCard -> SoundChannel -> STM ()
+pauseChannel sc soundChannel = do
+    writeTVar soundChannel.frameCount 0
+    clients <- getClients sc.clients
+    forM_ clients \client -> do
+        getSoundChannelClient soundChannel client >>= \case
+            Just SoundClientPlaying -> do
+                sendBinary client (mkControlMessage "pause" ["chan" .= soundChannel.id])
+            Just SoundClientMuted -> pure ()
+            _ -> delSoundChannelClient soundChannel client
+
+-------------------------------------------------------------------------------
+-- Sound Receiver (for recorder)
+-------------------------------------------------------------------------------
 data SoundReceiver = SoundReceiver
     { client :: DisplayClient
     , stream :: TVar EBML.StreamReader
@@ -261,6 +297,7 @@ stopSoundReceiver wid client = sendBinary client msg
 -- [data...] : audio data
 soundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
 soundHandler sc client msg = do
+    -- logTrace "Received audio data" ["client" .= client, "length" .= BS.length msg, "buf" .= BSLog (BS.take 5 msg)]
     case BS.uncons msg of
         Just (0, "\x00") -> do
             logInfo "audio client stopped" ["client" .= client]
@@ -285,20 +322,36 @@ soundHandler sc client msg = do
             Nothing -> logError "the impossible has happened" ["ev" .= BSLog bs]
         _ -> soundReceiverHandler sc client msg
   where
-    soundChannelHandler soundChannel ev = do
+    soundChannelHandler soundChannel ev = atomically do
         newStatus <- case ev of
             "\x00" -> pure (SoundClientError "Stopped")
-            "\x01" -> pure SoundClientReady
-            "\x02" -> pure SoundClientPlaying
+            "\x01" -> pure SoundClientPlaying
             _ -> pure (SoundClientError "Unknown event received")
-        atomically do
-            setSoundChannelStatus soundChannel newStatus client
-            broadcast sc.events (SoundChannelEvent soundChannel.id)
+        setSoundChannelClient soundChannel newStatus client
+        broadcast sc.events (SoundChannelEvent soundChannel.id)
 
+-------------------------------------------------------------------------------
+-- Client payload
+-------------------------------------------------------------------------------
 soundClient :: ChannelID -> Text
 soundClient chan =
     [raw|
 function setupSoundClient(chan) {
+  // protocol helpers
+  const sendPlaying = (achan) => butlerDataSocketSend(new Uint8Array([chan, 0, achan, 1]))
+  const sendStopped = (achan) => butlerDataSocketSend(new Uint8Array([chan, 0, achan, 0]))
+  const sendStoppedRec = () =>   butlerDataSocketSend(new Uint8Array([chan, 0, 3]))
+  const sendRecording = () =>    butlerDataSocketSend(new Uint8Array([chan, 0, 2]))
+  const sendConnected = () =>    butlerDataSocketSend(new Uint8Array([chan, 0, 1]))
+  const sendDisconnected = () => butlerDataSocketSend(new Uint8Array([chan, 0, 0]))
+  const sendAudioBuffer = (arr) => {
+    let msg = new Uint8Array(1 + arr.length);
+    msg[0] = chan;
+    msg.set(arr, 1);
+    butlerDataSocket.send(msg);
+  }
+
+  // display helpers
   const setHighlight = (elt) => {
     if (elt.classList.contains("bg-stone-400")) {
       elt.classList.remove("bg-stone-400");
@@ -314,11 +367,15 @@ function setupSoundClient(chan) {
   const systemElt = document.getElementById("toggle-audio");
 
   const addWindowPlayingIcon = (player, wid) => {
-    const winControlElt = document.querySelector("#win-" + wid + " div.wb-control")
-    player.icon = document.createElement("i")
-    player.icon.classList.add("ri-volume-up-line", "relative", "bottom-2")
-    player.icon.onclick = () => player.stop()
-    winControlElt.prepend(player.icon)
+    if (player.icon) {
+      player.icon.classList.remove("hidden")
+    } else {
+      const winControlElt = document.querySelector("#win-" + wid + " div.wb-control")
+      player.icon = document.createElement("i")
+      player.icon.classList.add("ri-volume-up-line", "relative", "bottom-2")
+      player.icon.onclick = () => player.stop()
+      winControlElt.prepend(player.icon)
+    }
   }
 
   const addWindowRecordingIcon = (wid) => {
@@ -341,7 +398,8 @@ function setupSoundClient(chan) {
       if (player.chunks.length > 0) {
         if (!player.playing) {
           player.playing = true
-          butlerDataSocketSend(new Uint8Array([chan, 0, achan, 2]))
+          audio.play()
+          sendPlaying(achan)
           playerWatchdog()
           addWindowPlayingIcon(player, wid)
         }
@@ -353,11 +411,16 @@ function setupSoundClient(chan) {
       }
     }
 
+    const onAudioError = err => {
+      console.error("audio error", err)
+      player.stop()
+    }
+
     const audio = document.createElement("audio")
     audio.autoplay = true
-    audio.onerror = e => console.error("audio error", {player, e, achan})
+    audio.onerror = onAudioError
     audio.onplay = ev => {
-      butlerDataSocketSend(new Uint8Array([chan, 0, achan, 1]))
+      console.log("audio play", ev)
     }
 
     const askAutoPlay = err => {
@@ -375,7 +438,7 @@ function setupSoundClient(chan) {
     const playerWatchdog = () => {
       // Check that auto play is actually working, when stream is corrupted the player may get stuck
       setTimeout(() => {
-        if (!player.stopped && audio.currentTime < 1) {
+        if (player.playing && !player.stopped && audio.currentTime < 1) {
           console.error("Audio failed to start", audio)
           player.stop()
         }
@@ -384,11 +447,12 @@ function setupSoundClient(chan) {
 
     // Create the media source.
     const mediaSource = new MediaSource()
+
     mediaSource.onsourceopen = () => {
       // Create the source buffer.
       player.dst = mediaSource.addSourceBuffer("audio/webm; codecs=opus")
       player.dst.mode = "sequence"
-      player.dst.onerror = ev => console.error("source buffer error", {player, ev})
+      player.dst.onerror = onAudioError
 
       // If the buffer ends, flush any cached chunks.
       player.dst.onupdateend = appendChunks
@@ -397,18 +461,45 @@ function setupSoundClient(chan) {
     }
     audio.src = URL.createObjectURL(mediaSource)
 
-    player.stop = () => {
+    player.doStop = () => {
       player.stopped = true
       audio.pause()
       audio.currentTime = 0
-      butlerDataSocketSend(new Uint8Array([chan, 0, achan, 0]))
-      player.icon.remove()
+      if (player.icon) {
+        player.icon.remove()
+      }
+    }
+
+    player.stop = () => {
+      sendStopped(achan)
+      player.doStop()
+    }
+
+    player.pause = () => {
+      // audio.pause()
+      player.playing = false
+      if (player.icon) {
+        player.icon.classList.add("hidden")
+      }
+      setTimeout(() => {
+        if (!player.playing) {
+          audio.pause()
+        }
+      }, 500)
+      player.dst.abort()
+      player.dst.changeType("audio/webm; codecs=opus")
+      player.chunks = []
+      console.log("Paused player", player)
     }
 
     player.feed = arr => {
       player.chunks.push(arr)
       if (player.dst && !player.dst.updating) {
-        appendChunks()
+        try {
+          appendChunks()
+        } catch (error) {
+          onAudioError({reason: "Append failed", error})
+        }
       }
     }
 
@@ -424,13 +515,16 @@ function setupSoundClient(chan) {
       case "start":
         if (butlerPlayers[achan]) {
           console.error("Player already exists", achan, butlerPlayers)
-          butlerPlayers[achan].stop()
+          butlerPlayers[achan].doStop()
         }
         butlerPlayers[achan] = createPlayer(achan, ev["wid"])
         break
       case "stop":
         butlerPlayers[achan].stop()
         delete butlerPlayers[achan]
+        break
+      case "pause":
+        butlerPlayers[achan].pause()
         break
       case "start-record":
         startRecord(ev["wid"])
@@ -454,23 +548,17 @@ function setupSoundClient(chan) {
     }
   }
 
-  const sendAudioBuffer = (arr) => {
-    let msg = new Uint8Array(1 + arr.length);
-    msg[0] = chan;
-    msg.set(arr, 1);
-    butlerDataSocket.send(msg);
-  }
-
-  globalThis.butlerRecorder = { wins: {} }
+  globalThis.butlerRecorder = { wins: {}, stopped: true }
   const isRecording = () => (Object.keys(butlerRecorder.wins).length > 0)
   const startRecord = (wid) => {
+    butlerRecorder.stopped = false
     if (!isRecording()) {
-      startRecorder()
+      startRecorder(wid)
     }
     butlerRecorder.wins[wid] = addWindowRecordingIcon(wid)
   }
 
-  const startRecorder = () => {
+  const startRecorder = (wid) => {
     if (!navigator.mediaDevices.getUserMedia) {
       alert("navigator.mediaDevices.getUserMedia not available");
       return;
@@ -478,54 +566,70 @@ function setupSoundClient(chan) {
     const onSuccess = (stream) => {
       const mediaRecorder = new MediaRecorder(stream, {mimeType: "audio/webm; codecs=opus"});
       mediaRecorder.ondataavailable = (e) => {
-        // console.log("Got samples", e);
-        if (isRecording() && e.data.size > 0) {
+        // console.log("Recorder got samples", e);
+        if (!butlerRecorder.stopped && e.data.size > 0) {
           e.data.arrayBuffer().then((buf) => {
             sendAudioBuffer(new Uint8Array(buf));
+            // This may be the last frame of a stopped record
+            stopRecordIfNeeded()
           })
         }
       }
 
-      mediaRecorder.onError = (e) => { console.error("media recorder", e); }
+      mediaRecorder.onerror = onRecError
       mediaRecorder.start(250);
       butlerRecorder.mediaRecorder = mediaRecorder
       butlerRecorder.stream = stream
-      butlerDataSocketSend(new Uint8Array([chan, 0, 2]))
+      sendRecording()
     }
-    const onError = (err) => {
+    const onRecError = (err) => {
+      butlerRecorder.wins[wid].remove()
+      sendStoppedRec()
       console.error('recordAudio error', err);
     }
-    navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(onSuccess, onError);
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(onSuccess, onRecError);
+  }
+
+  const stopRecordIfNeeded = () => {
+    if (!isRecording() && !butlerRecorder.stopped) {
+      butlerRecorder.stopped = true
+      sendStoppedRec()
+    }
   }
   const stopRecord = (wid) => {
     butlerRecorder.wins[wid].remove()
     delete butlerRecorder.wins[wid]
     if (!isRecording()) {
-      butlerRecorder.mediaRecorder.stop();
-      butlerRecorder.stream.getTracks().forEach(function(track) {
-        track.stop();
-      });
-      butlerDataSocketSend(new Uint8Array([chan, 0, 3]))
+      if (butlerRecorder.mediaRecorder) {
+        butlerRecorder.mediaRecorder.stop();
+        butlerRecorder.stream.getTracks().forEach(function(track) {
+          track.stop();
+        });
+      }
+      setTimeout(stopRecordIfNeeded, 1000)
     }
   }
 
   globalThis.stopAudio = () => {
-    butlerDataSocketSend(new Uint8Array([chan, 0, 0]))
     for (const [achan, player] of Object.entries(butlerPlayers)) {
       player.stop()
       delete butlerPlayers[achan]
     }
+    for (const wid of Object.keys(butlerRecorder.wins)) {
+      stopRecord(wid)
+    }
+    sendDisconnected()
   }
-  globalThis.startAudio = () => {
-    butlerDataSocketSend(new Uint8Array([chan, 0, 1]))
-  }
+  globalThis.startAudio = sendConnected
 }
   |]
         <> "\nsetupSoundClient("
         <> showT chan
         <> ");"
 
--- helper
+-------------------------------------------------------------------------------
+-- Helpers
+-------------------------------------------------------------------------------
 testSound :: ByteString
 testSound = encodeSampleList $ generateTone (round sampleRate) 440
 
