@@ -16,6 +16,24 @@
           rev = "aff25512b52e48e92d77cd59019a0291a8b43bf4";
           sha256 = "sha256-U2Mo83gr7dLm+rRKOLzS9LZUaZ90ECO6Zjbv6maflyc=";
         }) { };
+        # https://github.com/yesodweb/wai/pull/923
+        warp-tls = let
+          src = pkgs.fetchFromGitHub {
+            owner = "TristanCacqueray";
+            repo = "wai";
+            rev = "4bc9365d9cbe0317459d0fd378ee667dc5ad95ee";
+            sha256 = "sha256-IFt8/talF7jRwODMUpNT/N6GEf4zBxL3dOc1y2hSxLc=";
+          };
+        in hpPrev.callCabal2nix "warp-tls" "${src}/warp-tls" { };
+        posix-pty = let
+          src = pkgs.fetchFromGitHub {
+            owner = "TristanCacqueray";
+            repo = "posix-pty";
+            rev = "a5dff4cf9ab47ebd1d7c754fc6ed4d5367653779";
+            sha256 = "sha256-jbuJaeD7JpYK6nevyxGUq4FYqTmA6qgfloIvfNW3YY4=";
+          };
+        in pkgs.haskell.lib.dontCheck
+        (hpPrev.callCabal2nix "posix-pty" src { });
       };
       hsPkgs = pkgs.hspkgs.extend haskellExtend;
 
