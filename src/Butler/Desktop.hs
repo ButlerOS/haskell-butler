@@ -119,23 +119,8 @@ startDesktop desktopMVar mkAppSet xinit display name = do
     desktop <- newDesktopIO display name
     let appSet = mkAppSet desktop
 
-    -- TODO: move window manager and sound as dedicated app
-    baton <- newEmptyMVar
-    spawnThread_ $ withDataHandler desktop.dataHandlers \chan pipe -> do
-        putMVar baton ()
-        when (chan /= winChannel) (error $ "Default win channel is wrong: " <> show chan)
-        forever do
-            ev <- atomically (readPipe pipe)
-            tryHandleWinEvent desktop chan ev.client ev.buffer
-    takeMVar baton
-
-    spawnThread_ $ withDataHandler desktop.dataHandlers \chan pipe -> do
-        putMVar baton ()
-        when (chan /= audioChannel) (error $ "Default audio channel is wrong: " <> show chan)
-        forever do
-            ev <- atomically (readPipe pipe)
-            soundHandler desktop.soundCard ev.client ev.buffer
-    takeMVar baton
+    -- Reserve data chan for soundcard and winmanager
+    atomically (reserveDataHandlers desktop.dataHandlers 2)
 
     let mkDeskApp draw = startApp (deskApp draw)
 
@@ -333,11 +318,13 @@ desktopHandler appSet desktop event = do
 
                 case decodeMessage buf of
                     Nothing -> logError "invalid data message" ["buf" .= BSLog buf]
-                    Just (chan, xs) -> do
-                        let dataEvent = DataEvent client xs buf
-                        atomically (lookupDataHandler desktop.dataHandlers chan) >>= \case
-                            Nothing -> logError "unknown chan" ["chan" .= chan, "data" .= BSLog buf]
-                            Just p -> writePipe p dataEvent
+                    Just (chan, bs)
+                        | chan == audioChannel -> soundHandler desktop.soundCard client bs
+                        | chan == winChannel -> tryHandleWinEvent desktop client bs
+                        | otherwise -> do
+                            atomically (lookupDataHandler desktop.dataHandlers chan) >>= \case
+                                Nothing -> logError "unknown chan" ["chan" .= chan, "data" .= BSLog buf]
+                                Just p -> writePipe p (DataEvent client bs buf)
         _ -> do
             channels <- readTVarIO desktop.channels
             case Map.lookup channel channels of
@@ -393,7 +380,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- startApp (deskApp $ menuWin appSet) wid
+        guiApp <- asProcess desktop.env (startApp (deskApp $ menuWin appSet) wid)
         atomically $ addWinApp desktop guiApp
 
         sendsHtml desktop.hclients do
@@ -429,16 +416,16 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
         let body = ["w" .= wid, "ev" .= ("title" :: Text), "title" .= title]
          in broadcastDesktopMessage desktop (const True) winChannel $ from $ encodeJSON $ object body
 
-tryHandleWinEvent :: Desktop -> ChannelID -> DisplayClient -> ByteString -> ProcessIO ()
-tryHandleWinEvent desktop chan client buf = case decode' (from buf) of
+tryHandleWinEvent :: Desktop -> DisplayClient -> ByteString -> ProcessIO ()
+tryHandleWinEvent desktop client buf = case decode' (from buf) of
     Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _Integer) of
         (Just winEvent, Just (WinID . unsafeFrom -> winId)) -> do
-            handleWinEvent desktop chan client buf winEvent winId obj
+            handleWinEvent desktop client buf winEvent winId obj
         _ -> logError "invalid win event" ["buf" .= BSLog buf]
     Nothing -> logError "unknown win event" ["buf" .= BSLog buf]
 
-handleWinEvent :: Desktop -> ChannelID -> DisplayClient -> ByteString -> Text -> WinID -> Value -> ProcessIO ()
-handleWinEvent desktop chan client buf ev wid v = do
+handleWinEvent :: Desktop -> DisplayClient -> ByteString -> Text -> WinID -> Value -> ProcessIO ()
+handleWinEvent desktop client buf ev wid v = do
     doBroadcast <-
         case ( ev
              , unsafeFrom <$> (v ^? key "x" . _Integer)
@@ -463,4 +450,4 @@ handleWinEvent desktop chan client buf ev wid v = do
                 logError "invalid win-event" ["v" .= v]
                 pure False
     when doBroadcast do
-        broadcastDesktopMessage desktop (\o -> o.endpoint /= client.endpoint) chan buf
+        broadcastDesktopMessage desktop (\o -> o.endpoint /= client.endpoint) winChannel buf

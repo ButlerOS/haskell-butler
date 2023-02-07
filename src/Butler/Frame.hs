@@ -12,6 +12,7 @@ module Butler.Frame (
     DataHandlers,
     newDataHandlers,
     newDataHandler,
+    reserveDataHandlers,
     withDataHandler,
     lookupDataHandler,
     DataEvent (..),
@@ -51,6 +52,17 @@ newChannel n = case tryFrom n of
     Left e -> error $ "Run out of channel: " <> show e
 
 newtype DataHandlers = DataHandlers (NM.NatMap (Pipe DataEvent))
+
+-- | DataHandlers channel starts at 1
+reserveDataHandlers :: DataHandlers -> Natural -> STM ()
+reserveDataHandlers (DataHandlers nm) = go
+  where
+    go 0 = error "First handler (0) is always reserved"
+    go 1 = pure ()
+    go n = do
+        -- Increase natmap key counter
+        void $ NM.newKey nm
+        go (n - 1)
 
 newDataHandlers :: STM DataHandlers
 newDataHandlers = DataHandlers <$> NM.newNatMap
@@ -106,11 +118,8 @@ globalThis.windows = {}
 globalThis.onWindowResize = {}
 
 globalThis.butlerDataSocket = new WebSocket(wsUrl("data"));
-globalThis.butlerDataHandlers = {
-  // 0 is getWindowSize()
-  0: (() => butlerDataSocket.send(encodeDataMessage(0, {w: window.innerWidth, h: window.innerHeight})))
-  // 1 is window manager
-}
+globalThis.butlerDataHandlers = {}
+
 butlerDataSocket.binaryType = 'arraybuffer';
 globalThis.debounceData = (delay, handler) => {
   let timer;
@@ -162,4 +171,4 @@ globalThis.concatBuffers = (xs) => {
 -- | The channel for window and audio data are reserved
 winChannel, audioChannel :: ChannelID
 winChannel = ChannelID 1
-audioChannel = ChannelID 2
+audioChannel = ChannelID 0

@@ -38,5 +38,5 @@ tryWritePipe :: Pipe a -> a -> STM Bool
 tryWritePipe pipe v = doWrite <|> pure False
   where
     doWrite = do
-      writeTBQueue pipe.content v
-      pure True
+        writeTBQueue pipe.content v
+        pure True
