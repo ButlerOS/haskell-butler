@@ -50,3 +50,9 @@ Container usage:
 ```ShellSession
 podman run -p 8080:8080 -v butler-data:/var/lib/butler ghcr.io/tristancacqueray/haskell-butler:term-latest
 ```
+
+## Hack on haskell-butler
+
+First you can configure the project [cachix](https://cachix.org) binary cache with this command: `nix shell nixpkgs#cachix --command cachix use change-metrics`.
+
+Then, enter a dev shell via Nix with: `nix develop`.
