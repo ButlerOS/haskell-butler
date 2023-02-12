@@ -8,6 +8,7 @@
   outputs = { self, hspkgs }:
     let
       pkgs = hspkgs.pkgs;
+
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
@@ -95,6 +96,15 @@
           };
         } extra-config);
 
+      baseTools = with pkgs; [
+        hpack
+        cabal-install
+        hlint
+        tasty-discover
+        fourmolu
+        hsPkgs.doctest
+      ];
+
     in {
       packages."x86_64-linux".default = pkg-exe;
 
@@ -116,19 +126,15 @@
         program = builtins.toString script;
       };
 
+      devShells."x86_64-linux".ci = hsPkgs.shellFor {
+        packages = p: [ p.butler ];
+        buildInputs = baseTools;
+      };
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
         buildInputs = with pkgs;
-          [
-            hpack
-            cabal-install
-            ghcid
-            haskell-language-server
-            fourmolu
-            hsPkgs.doctest
-            pkgs.gst_all_1.gstreamer
-            pkgs.tasty-discover
-          ] ++ desktop;
+          [ ghcid haskell-language-server pkgs.gst_all_1.gstreamer ] ++ desktop
+          ++ baseTools;
         GST_PLUGIN_PATH =
           "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
       };
