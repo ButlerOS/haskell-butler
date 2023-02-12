@@ -13,6 +13,6 @@ jobs:
       - uses: "cachix/cachix-action@v10"
         with:
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-          name: change-metrics
+          name: haskell-platform
       - name: Run Test
         run: "nix develop --command ./bin/run-tests"
