@@ -14,5 +14,6 @@ jobs:
         with:
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
           name: haskell-platform
+      - run: cabal update
       - name: Run Test
-        run: "nix develop --command ./bin/run-tests"
+        run: "nix develop .#ci --command ./bin/run-tests"
