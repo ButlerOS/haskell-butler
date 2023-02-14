@@ -6,7 +6,6 @@ import Data.ByteString qualified as BS
 import UnliftIO.Process qualified as Process
 
 import Butler
-import Butler.Desktop
 import Butler.Logger
 import Butler.Session
 import Butler.SoundBlaster
@@ -60,13 +59,13 @@ delayPlayback sc wid client = spawnProcess "delayer" do
                     atomically $ feedChannel sc playbackChannel buf mFrame
                 _ -> pure ()
 
-    atomically (startClientRecorder wid client)
+    atomically (startClientRecorder sc wid client)
 
     readStream `finally` do
         logInfo "Stopping delayer!" []
         atomically do
             stopSoundChannel sc playbackChannel
-            stopSoundReceiver wid client
+            stopSoundReceiver sc wid client
 
 soundTestHtml :: WinID -> SoundCard -> TVar TestState -> HtmlT STM ()
 soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
@@ -89,65 +88,58 @@ soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
             with button_ [id_ (withWID wid "stop"), wsSend, hxTrigger_ "click", class_ "bg-red-500 hover:bg-red-700 text-white font-bold p-1 rounded"] "stop"
     soundCardInfoHtml sc
 
-soundTestApp :: Desktop -> App
-soundTestApp desktop =
+soundTestApp :: SoundCard -> App
+soundTestApp sc =
     App
         { name = "sound-test"
         , tags = fromList ["Utility", "Sound"]
         , description = "Test audio stream"
         , size = Just (200, 164)
-        , start = startSoundTest desktop
+        , start = startSoundTest sc
         }
 
-startSoundTest :: Desktop -> AppStart
-startSoundTest desktop wid pipeDE = do
+startSoundTest :: SoundCard -> AppStart
+startSoundTest soundCard clients wid pipeAE = do
     vState <- newTVarIO Pending
     let setStatus = atomically . writeTVar vState
 
-    let render = soundTestHtml wid desktop.soundCard vState
-        refreshRate = 160
+    let render = soundTestHtml wid soundCard vState
 
-    audioEventsChan <- atomically (newReaderChan desktop.soundCard.events)
+    audioEventsChan <- atomically (newReaderChan soundCard.events)
 
     spawnThread_ $ forever do
-        ev <- atomically (readPipe pipeDE)
-        sendHtmlOnConnect render ev
+        _ev <- atomically (readTChan audioEventsChan)
+        sendsHtml clients (soundCardInfoHtml soundCard)
 
-    withGuiHandlers desktop.guiHandlers wid \events -> do
-        spawnThread_ $ forever do
-            _ev <- atomically (readTChan audioEventsChan)
-            broadcastHtmlT desktop (soundCardInfoHtml desktop.soundCard)
-
-        forever do
-            state <- readTVarIO vState
-            waitTransaction refreshRate (readPipe events) >>= atomically >>= \case
-                WaitTimeout -> pure ()
-                WaitCompleted ev -> case state of
-                    Pending -> do
-                        logInfo "got ev" ["ev" .= ev]
-                        case withoutWID ev.trigger of
-                            "playback-test" -> do
-                                atomically (lookupDataClient desktop ev.client) >>= \case
-                                    Nothing -> logError "Couldn't find data client" ["client" .= ev.client]
-                                    Just client -> do
-                                        process <- delayPlayback desktop.soundCard wid client
-                                        setStatus (DelayPlayback process client)
-                            "stream-test" -> do
-                                process <- localStream desktop.soundCard wid
-                                setStatus (Streaming process)
-                            _ -> logError "unknown trigger" ["ev" .= ev]
-                        clientsHtmlT desktop.hclients render
-                    DelayPlayback process _client -> case withoutWID ev.trigger of
-                        "stop" -> do
-                            logInfo "Stopping record" ["ev" .= ev]
-                            void $ killProcess process.pid
-                            setStatus Pending
-                            clientsHtmlT desktop.hclients render
-                        _ -> logError "unknown rec trigger" ["ev" .= ev]
-                    Streaming process -> case withoutWID ev.trigger of
-                        "stop" -> do
-                            logInfo "Stopping streamming" ["ev" .= ev]
-                            void $ killProcess process.pid
-                            setStatus Pending
-                            clientsHtmlT desktop.hclients render
-                        _ -> logError "unknown rec trigger" ["ev" .= ev]
+    forever do
+        ae <- atomically (readPipe pipeAE)
+        state <- readTVarIO vState
+        case ae of
+            AppDisplay _ -> sendHtmlOnConnect render ae
+            AppTrigger ev -> case state of
+                Pending -> do
+                    logInfo "got ev" ["ev" .= ev]
+                    case withoutWID ev.trigger of
+                        "playback-test" -> do
+                            process <- delayPlayback soundCard wid ev.client
+                            setStatus (DelayPlayback process ev.client)
+                        "stream-test" -> do
+                            process <- localStream soundCard wid
+                            setStatus (Streaming process)
+                        _ -> logError "unknown trigger" ["ev" .= ev]
+                    sendsHtml clients render
+                DelayPlayback process _client -> case withoutWID ev.trigger of
+                    "stop" -> do
+                        logInfo "Stopping record" ["ev" .= ev]
+                        void $ killProcess process.pid
+                        setStatus Pending
+                        sendsHtml clients render
+                    _ -> logError "unknown rec trigger" ["ev" .= ev]
+                Streaming process -> case withoutWID ev.trigger of
+                    "stop" -> do
+                        logInfo "Stopping streamming" ["ev" .= ev]
+                        void $ killProcess process.pid
+                        setStatus Pending
+                        sendsHtml clients render
+                    _ -> logError "unknown rec trigger" ["ev" .= ev]
+            _ -> pure ()

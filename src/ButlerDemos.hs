@@ -11,6 +11,7 @@ import Butler.Desktop
 import Butler.Display
 import Butler.GUI
 import Butler.Lobby
+import Butler.Logger
 import Butler.Prelude
 
 import Butler.Auth.Guest
@@ -30,10 +31,10 @@ import Butler.App.Tabletop
 import Butler.App.Terminal
 import Butler.Clock
 
+import Butler.Session (Sessions)
 import Lucid.XStatic
 import XStatic.Butler as XStatic
 import XStatic.Htmx qualified as XStatic
-import XStatic.Hyperscript qualified as XStatic
 import XStatic.NoVNC qualified as XStatic
 import XStatic.PcmPlayer qualified as XStatic
 import XStatic.Remixicon qualified as XStatic
@@ -69,54 +70,62 @@ vncServer = do
         runExternalProcess name cmd
         error "process died"
 
-standaloneGuiApp :: IO ()
-standaloneGuiApp = do
-    v <- runDemo
-    putStrLn $ "The end: " <> show v
+standaloneGuiApp :: ProcessIO ()
+standaloneGuiApp = serveAppPerClient defaultXFiles auth mineSweeperApp
   where
-    htmlMain = do
-        doctypehtml_ do
-            head_ do
-                title_ "My GUI"
-                meta_ [charset_ "utf-8"]
-                meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
-                xstaticScripts xfiles
+    auth = const . pure . guestAuthApp $ htmlMain defaultXFiles "Standalone GUI" Nothing
 
-            with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
-                with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
-                    with div_ [id_ "w-0", class_ "h-full"] mempty
+htmlMain :: [XStaticFile] -> Text -> Maybe (Html ()) -> Html ()
+htmlMain xfiles title mHtml = do
+    doctypehtml_ do
+        head_ do
+            title_ (toHtml title)
+            meta_ [charset_ "utf-8"]
+            meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
+            xstaticScripts xfiles
 
-    clientHandler clients appInstance pipeGE displayEvent = case displayEvent of
-        UserConnected _ client -> do
+        with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
+            with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
+                with div_ [id_ "w-0", class_ "h-full"] mempty
+                forM_ mHtml id
+
+serveAppPerClient :: [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> App -> ProcessIO ()
+serveAppPerClient xfiles mkAuth app = do
+    desktop <- superviseProcess "gui" $
+        startDisplay 8085 xfiles mkAuth $ \_ -> do
+            pure $ \_ws -> do
+                env <- ask
+                -- The list of clients and the app instance is re-created per client
+                clients <- atomically newDisplayClients
+                appInstance <- startApp app clients (WinID 0)
+                pure (env, clientHandler clients appInstance)
+
+    void $ awaitProcess desktop
+  where
+    clientHandler :: DisplayClients -> AppInstance -> DisplayEvent -> ProcessIO ()
+    clientHandler clients appInstance displayEvent = case displayEvent of
+        UserConnected "htmx" client -> do
             logInfo "Client connected" ["client" .= client]
-            spawnPingThread client
-            spawnSendThread client
-            atomically (addClient clients client)
-            writePipe appInstance.pipeDisplayEvents displayEvent
-
-            handleClientEvents client $ \_ trigger value -> do
-                let guiEvent = GuiEvent client trigger value
-                logInfo "got ev" ["ev" .= guiEvent]
-                writePipe pipeGE guiEvent
-        UserDisconnected _ client -> do
+            spawnThread_ (pingThread client)
+            spawnThread_ (sendThread client)
+            atomically do
+                addClient clients client
+            writePipe appInstance.pipeAE (AppDisplay displayEvent)
+            forever do
+                dataMessage <- recvData client
+                case eventFromMessage client dataMessage of
+                    Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
+                    Just (_wid, ae) -> writePipe appInstance.pipeAE ae
+        UserDisconnected "htmx" client -> do
             logInfo "Client disconnected" ["client" .= client]
-            atomically (delClient clients client)
-            writePipe appInstance.pipeDisplayEvents displayEvent
+            atomically do
+                addClient clients client
+            writePipe appInstance.pipeAE (AppDisplay displayEvent)
+            void $ killProcess appInstance.process.pid
+        _ -> logError "Unknown event" ["ev" .= displayEvent]
 
-    xfiles = [XStatic.htmx, XStatic.htmxExtWS, XStatic.tailwind]
-    runDemo =
-        withButlerOS do
-            logInfo "Starting..." []
-            desktop <- superviseProcess "gui" $
-                startDisplay 8085 xfiles (const $ pure $ guestAuthApp htmlMain) $ \_ -> do
-                    pure $ \_ws -> do
-                        env <- ask
-                        clients <- atomically newDisplayClients
-                        pipeGE <- atomically newPipe
-                        appInstance <- startApp (mineSweeperApp (standaloneGuiEvents clients pipeGE)) (WinID 0)
-                        pure (env, clientHandler clients appInstance pipeGE)
-
-            void $ awaitProcess desktop
+defaultXFiles :: [XStaticFile]
+defaultXFiles = [XStatic.htmx, XStatic.butlerWS, XStatic.tailwind]
 
 multiDesktop :: IO ()
 multiDesktop = do
@@ -165,41 +174,41 @@ multiDesktop = do
             void $ awaitProcess desktop
 
     xinit desktop = do
-        let seatApp' = seatApp (withDataEvents desktop) (withNamedGuiEvents desktop)
-        atomically . addApp desktop =<< startApp seatApp' (WinID 0)
+        let seatApp' = seatApp desktop.soundCard
+        atomically . addDesktopApp desktop =<< startApp seatApp' desktop.clients (WinID 2)
 
     mkAppSet chat desktop =
         newAppSet
-            [ chatApp chat (withGuiEvents desktop)
-            , clockApp (withGuiEvents desktop)
-            , logViewerApp desktop.hclients
-            , termApp (from desktop.workspace) (withDataEvents desktop) (withGuiEvents desktop)
-            , soundTestApp desktop
-            , mumblerApp (withDataEvents desktop) desktop.hclients desktop.soundCard
+            [ chatApp chat
+            , clockApp
+            , logViewerApp
+            , termApp "xterm"
+            , soundTestApp desktop.soundCard
+            , mumblerApp desktop.soundCard
             , peApp desktop
-            , vncApp desktop
-            , smApp (withGuiEvents desktop) desktop.display
-            , tabletopApp (withDataEvents desktop) (withGuiEvents desktop)
-            , mineSweeperApp (withGuiEvents desktop)
+            , vncApp
+            , smApp desktop.display
+            , tabletopApp
+            , mineSweeperApp
             ]
 
     xfiles', xfiles :: [XStaticFile]
     xfiles =
-        [ XStatic.sweetAlert2
-        , XStatic.hyperscript
-        , XStatic.htmx
-        , XStatic.htmxExtWS
-        , XStatic.tailwind
-        , XStatic.remixiconCss
-        , XStatic.remixiconWoff2
-        , XStatic.logo
-        , XStatic.xtermFitAddonJs
-        , XStatic.xtermFitAddonJsMap
-        , XStatic.winboxCss
-        ]
+        defaultXFiles
+            <> [ XStatic.sweetAlert2
+               , XStatic.remixiconCss
+               , XStatic.remixiconWoff2
+               , XStatic.logo
+               , XStatic.xtermFitAddonJs
+               , XStatic.xtermFitAddonJsMap
+               , XStatic.winboxCss
+               ]
             <> XStatic.xterm
             <> XStatic.pcmPlayer
     xfiles' = XStatic.noVNC <> XStatic.winbox <> xfiles
+
+run :: ProcessIO _ -> IO ()
+run action = withButlerOS action >>= print
 
 main :: IO ()
 main = Main.Utf8.withUtf8 do
@@ -209,5 +218,6 @@ main = Main.Utf8.withUtf8 do
     -- make rts aware of the cgroup capabilities
     Control.Concurrent.CGroup.initRTSThreads
     getArgs >>= \case
-        ["vnc"] -> print =<< withButlerOS vncServer
+        ["vnc"] -> run vncServer
+        ["ms"] -> run standaloneGuiApp
         _ -> multiDesktop

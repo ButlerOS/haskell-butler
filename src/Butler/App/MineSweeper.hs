@@ -207,31 +207,31 @@ mkHxVals vals =
   where
     hxVals = makeAttribute "hx-vals"
 
-mineSweeperApp :: WithGuiEvents -> App
-mineSweeperApp withGuiEvent =
+mineSweeperApp :: App
+mineSweeperApp =
     App
         { name = "minesweeper"
         , tags = fromList ["Game"]
         , description = "game"
         , size = Just (240, 351)
-        , start = withGuiEvent startMineSweeper
+        , start = startMineSweeper
         }
 
-startMineSweeper :: GuiEvents -> AppStart
-startMineSweeper guiEvents wid pipeDE = do
+startMineSweeper :: AppStart
+startMineSweeper clients wid pipeAE = do
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
     forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe2 pipeDE guiEvents.pipe)
+        res <- atomically =<< waitTransaction 60_000 (readPipe pipeAE)
         case res of
             WaitTimeout{} -> pure ()
-            WaitCompleted (Left de) -> case de of
+            WaitCompleted (AppDisplay de) -> case de of
                 UserConnected _ client -> atomically $ sendHtml client (renderApp wid state)
                 _ -> pure ()
-            WaitCompleted (Right ev) -> case ( ev.body ^? key "play" . _String
-                                             , ev.body ^? key "cx" . _String
-                                             , ev.body ^? key "cy" . _String
-                                             ) of
+            WaitCompleted (AppTrigger ev) -> case ( ev.body ^? key "play" . _String
+                                                  , ev.body ^? key "cx" . _String
+                                                  , ev.body ^? key "cy" . _String
+                                                  ) of
                 (Just "", Nothing, Nothing) -> do
                     newBoard <- liftIO initBoard
                     atomically $ writeTVar state (MSState newBoard Play)
@@ -254,5 +254,5 @@ startMineSweeper guiEvents wid pipeDE = do
                                     atomically $ writeTVar state (MSState gs2 Play)
                         _ -> pure ()
                 _ -> pure ()
-
-        clientsHtmlT guiEvents.clients $ renderApp wid state
+            WaitCompleted _ -> pure ()
+        clientsHtmlT clients $ renderApp wid state

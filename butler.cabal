@@ -100,19 +100,12 @@ library
       PartialTypeSignatures
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods
   build-depends:
-      HsOpenSSL
-    , PyF
-    , SHA
+      PyF
     , aeson
-    , auto-update
     , base <5
     , binary
     , bytestring
-    , case-insensitive
-    , cborg
-    , cborg-json
     , cgroup-rts-threads
-    , chart-svg
     , containers
     , directory
     , ebml
@@ -123,7 +116,6 @@ library
     , http-types
     , jose
     , ki
-    , ki-effectful
     , ki-unlifted
     , lens
     , lens-aeson
@@ -149,19 +141,15 @@ library
     , servant-lucid
     , servant-server
     , servant-websockets
-    , servant-xstatic
     , stm
-    , tagged
     , text
     , time
-    , transformers
     , typed-process
     , unix
     , unix-time
     , unliftio
     , uuid
     , wai
-    , wai-extra
     , warp
     , warp-tls
     , websockets
@@ -169,11 +157,9 @@ library
     , with-utf8
     , xstatic
     , xstatic-htmx
-    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon
-    , xstatic-sakura
     , xstatic-sweetalert2
     , xstatic-tailwind
     , xstatic-th
@@ -212,20 +198,13 @@ executable butler
       PartialTypeSignatures
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
   build-depends:
-      HsOpenSSL
-    , PyF
-    , SHA
+      PyF
     , aeson
-    , auto-update
     , base <5
     , binary
     , butler
     , bytestring
-    , case-insensitive
-    , cborg
-    , cborg-json
     , cgroup-rts-threads
-    , chart-svg
     , containers
     , directory
     , ebml
@@ -236,7 +215,6 @@ executable butler
     , http-types
     , jose
     , ki
-    , ki-effectful
     , ki-unlifted
     , lens
     , lens-aeson
@@ -262,19 +240,15 @@ executable butler
     , servant-lucid
     , servant-server
     , servant-websockets
-    , servant-xstatic
     , stm
-    , tagged
     , text
     , time
-    , transformers
     , typed-process
     , unix
     , unix-time
     , unliftio
     , uuid
     , wai
-    , wai-extra
     , warp
     , warp-tls
     , websockets
@@ -282,11 +256,9 @@ executable butler
     , with-utf8
     , xstatic
     , xstatic-htmx
-    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon
-    , xstatic-sakura
     , xstatic-sweetalert2
     , xstatic-tailwind
     , xstatic-th
@@ -333,20 +305,13 @@ test-suite spec
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
-      HsOpenSSL
-    , PyF
-    , SHA
+      PyF
     , aeson
-    , auto-update
     , base <5
     , binary
     , butler
     , bytestring
-    , case-insensitive
-    , cborg
-    , cborg-json
     , cgroup-rts-threads
-    , chart-svg
     , containers
     , directory
     , ebml
@@ -358,7 +323,6 @@ test-suite spec
     , http-types
     , jose
     , ki
-    , ki-effectful
     , ki-unlifted
     , lens
     , lens-aeson
@@ -384,21 +348,17 @@ test-suite spec
     , servant-lucid
     , servant-server
     , servant-websockets
-    , servant-xstatic
     , stm
-    , tagged
     , tasty
     , tasty-hunit
     , text
     , time
-    , transformers
     , typed-process
     , unix
     , unix-time
     , unliftio
     , uuid
     , wai
-    , wai-extra
     , warp
     , warp-tls
     , websockets
@@ -406,11 +366,9 @@ test-suite spec
     , with-utf8
     , xstatic
     , xstatic-htmx
-    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon
-    , xstatic-sakura
     , xstatic-sweetalert2
     , xstatic-tailwind
     , xstatic-th

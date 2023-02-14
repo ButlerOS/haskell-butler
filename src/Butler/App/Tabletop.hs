@@ -84,8 +84,8 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: TableState -> WinID -> ChannelID -> HtmlT STM ()
-renderTable ts wid chan = with div_ [id_ (withWID wid "w")] do
+renderTable :: TableState -> WinID -> HtmlT STM ()
+renderTable ts wid = with div_ [id_ (withWID wid "w")] do
     void $ with div_ [class_ "flex flex-row"] do
         with div_ [class_ "flex flex-col my-6"] do
             with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
@@ -107,7 +107,7 @@ renderTable ts wid chan = with div_ [id_ (withWID wid "w")] do
             (OName name) -> error $ "Unknown object " <> show name
 
     startingObjects <- lift (traverse tableObjectJS tableObjects)
-    script_ (tabletopClient wid chan startingObjects)
+    script_ (tabletopClient wid startingObjects)
   where
     -- This need to be kept in sync with the below js implementation 'mkElementID'
     objID (OID oid) = withWID wid ("oid-" <> showT oid)
@@ -129,18 +129,18 @@ instance FromJSON TableEvent where
             (Just oid, Just x) -> TableEventMove oid x <$> obj .: "y"
             _ -> fail "oid or x attribute missing"
 
-tabletopApp :: WithDataEvents -> WithGuiEvents -> App
-tabletopApp withDE withGE =
+tabletopApp :: App
+tabletopApp =
     App
         { name = "tabletop"
         , tags = fromList ["Game"]
         , description = "Free form tabletop"
         , size = Just (725, 696)
-        , start = withDE (withGE . startTabletopApp)
+        , start = startTabletopApp
         }
 
-startTabletopApp :: DataEvents -> GuiEvents -> AppStart
-startTabletopApp dataEvents guiEvents wid pipeDE = do
+startTabletopApp :: AppStart
+startTabletopApp clients wid pipeAE = do
     tableState <- atomically newTableState
 
     let clientHandler :: DataEvent -> ProcessIO ()
@@ -151,28 +151,28 @@ startTabletopApp dataEvents guiEvents wid pipeDE = do
                         newOID <- atomically (newTableObject tableState name)
                         logInfo "obj created" ["oid" .= newOID]
                         let msg = ["pending" .= newOID, "name" .= name]
-                        sendsBinary dataEvents.clients (encodeMessageL dataEvents.chan (encodeJSON $ object msg))
+                        sendsBinary clients (encodeMessageL (from wid) (encodeJSON $ object msg))
                     TableEventMove oid x y -> do
                         -- logInfo "obj moved" ["ev" .= ev]
                         atomically $ setTableObject tableState oid (x, y)
-                        sendsBinaryButSelf de.client dataEvents.clients (from de.rawBuffer)
+                        sendsBinaryButSelf de.client clients (from de.rawBuffer)
                     TableEventDelete oid -> do
                         -- logInfo "obj removed" ["ev" .= ev]
                         atomically $ delTableObject tableState oid
-                        sendsBinary dataEvents.clients (from de.rawBuffer)
+                        sendsBinary clients (from de.rawBuffer)
             Left err -> logError "invalid json" ["ev" .= BSLog de.buffer, "err" .= err]
 
     forever do
-        ev <- atomically (readPipe3 dataEvents.pipe guiEvents.pipe pipeDE)
+        ev <- atomically (readPipe pipeAE)
         case ev of
-            Left de -> clientHandler de
-            Right (Left ge) -> logError "Unknown gui event" ["ev" .= ge]
-            Right (Right de) -> sendHtmlOnConnect (renderTable tableState wid dataEvents.chan) de
+            AppData de -> clientHandler de
+            AppTrigger ge -> logError "Unknown gui event" ["ev" .= ge]
+            AppDisplay _ -> sendHtmlOnConnect (renderTable tableState wid) ev
 
-tabletopClient :: WinID -> ChannelID -> [Text] -> Text
-tabletopClient wid chan startingObjects =
+tabletopClient :: WinID -> [Text] -> Text
+tabletopClient wid startingObjects =
     [raw|
-function startTabletop(wid, chan, initialObjects, startingObjects) {
+function startTabletop(wid, initialObjects, startingObjects) {
   // internal state
   const glButlerTT = { };
 
@@ -221,7 +221,7 @@ function startTabletop(wid, chan, initialObjects, startingObjects) {
   }
 
   // Handlers for event received by the server
-  butlerDataHandlers[chan] = buf => {
+  butlerDataHandlers[wid] = buf => {
     const body = decodeJSON(buf)
     console.log("Got server event", body);
     if (body.pending) {
@@ -244,7 +244,7 @@ function startTabletop(wid, chan, initialObjects, startingObjects) {
   }
 
   const debounce = debounceData(100, ev =>
-      encodeDataMessage(chan, ev)
+      encodeDataMessage(wid, ev)
   );
 
   // setupObject enables moving an element
@@ -255,7 +255,7 @@ function startTabletop(wid, chan, initialObjects, startingObjects) {
     }
     const clientDelete = () => {
       console.log("deleted", elt);
-      butlerDataSocket.send(encodeDataMessage(chan, {oid: elt.butlerOID}))
+      butlerDataSocket.send(encodeDataMessage(wid, {oid: elt.butlerOID}))
     }
 
     const handler_mousedown = (event) => {
@@ -265,7 +265,7 @@ function startTabletop(wid, chan, initialObjects, startingObjects) {
       }
 
       if (initialObjects.includes(elt.dataset.name)) {
-        butlerDataSocket.send(encodeDataMessage(chan, {new: elt.dataset.name}));
+        butlerDataSocket.send(encodeDataMessage(wid, {new: elt.dataset.name}));
       }
       setFocus(elt);
 
@@ -339,7 +339,6 @@ function startTabletop(wid, chan, initialObjects, startingObjects) {
   where
     initTableArgs =
         [ showT wid
-        , showT chan
         , showT @[Text] ["white-stone", "black-stone"]
         , "[" <> Text.intercalate ", " startingObjects <> "]"
         ]

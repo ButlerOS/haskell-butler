@@ -124,23 +124,23 @@ renderChat wid srv client = do
         WinID 0 -> "max-h-44 "
         _ -> "max-h-72 "
 
-chatApp :: ChatServer -> WithGuiEvents -> App
-chatApp srv withGuiEvent =
+chatApp :: ChatServer -> App
+chatApp srv =
     App
         { name = "chat"
         , tags = fromList ["Communication"]
         , description = "Local chat room"
         , size = Nothing
-        , start = withGuiEvent (startChatApp srv)
+        , start = startChatApp srv
         }
 
-startChatApp :: ChatServer -> GuiEvents -> AppStart
-startChatApp srv guiEvents wid pipeDE = do
+startChatApp :: ChatServer -> AppStart
+startChatApp srv clients wid pipeAE = do
     chatChan <- atomically (newChatReader srv)
     spawnThread_ $ forever do
         ev <- atomically (readTChan chatChan)
-        logInfo "Gto chat" ["ev" .= ev]
-        clientsDraw guiEvents.clients (\client -> pure $ updateChat wid client ev)
+        logInfo "Got chat" ["ev" .= ev]
+        clientsDraw clients (\client -> pure $ updateChat wid client ev)
 
     let handleGuiEvent ev =
             case ev.body ^? key "message" . _String of
@@ -148,14 +148,12 @@ startChatApp srv guiEvents wid pipeDE = do
                 Nothing -> logError "bad chat ev" ["ev" .= ev]
 
     forever do
-        ev <- atomically $ readPipe2 pipeDE guiEvents.pipe
+        ev <- atomically $ readPipe pipeAE
         case ev of
-            Left de -> do
-                case de of
-                    UserConnected "htmx" client -> do
-                        atomically $ sendHtml client (renderChat wid srv client)
-                        atomically (handleDisplayEvent srv de)
-                    UserDisconnected _ _ ->
-                        atomically (handleDisplayEvent srv de)
-                    _ -> pure ()
-            Right ge -> handleGuiEvent ge
+            AppDisplay de@(UserConnected "htmx" client) -> do
+                atomically $ sendHtml client (renderChat wid srv client)
+                atomically (handleDisplayEvent srv de)
+            AppDisplay de@(UserDisconnected _ _) ->
+                atomically (handleDisplayEvent srv de)
+            AppTrigger ge -> handleGuiEvent ge
+            _ -> pure ()

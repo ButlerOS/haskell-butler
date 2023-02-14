@@ -104,18 +104,18 @@ renderSM display wid = do
                 ]
                 mempty
 
-smApp :: WithGuiEvents -> Display -> App
-smApp withGE display =
+smApp :: Display -> App
+smApp display =
     App
         { name = "user-manager"
         , tags = fromList ["System"]
         , description = "Manage sessions"
         , size = Nothing
-        , start = withGE (startSMApp display)
+        , start = startSMApp display
         }
 
-startSMApp :: Display -> GuiEvents -> AppStart
-startSMApp display guiEvents wid pipeDE = do
+startSMApp :: Display -> AppStart
+startSMApp display clients wid pipeAE = do
     let handleGuiEvent ev = do
             resp <- case ev.trigger of
                 "new-invite" -> do
@@ -130,8 +130,8 @@ startSMApp display guiEvents wid pipeDE = do
                     Just session -> do
                         pids <- atomically do
                             deleteSession display.sessions session
-                            clients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
-                            pure ((.process.pid) <$> clients)
+                            allClients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
+                            pure ((.process.pid) <$> allClients)
                         logInfo "Terminating" ["pids" .= pids]
                         traverse_ killProcess pids
                         pure $ renderSM display wid
@@ -149,8 +149,9 @@ startSMApp display guiEvents wid pipeDE = do
                 _ -> do
                     logError "unknown ev" ["ev" .= ev]
                     pure mempty
-            atomically $ sendHtml ev.client resp
+            sendsHtml clients resp
     forever do
-        atomically (readPipe2 pipeDE guiEvents.pipe) >>= \case
-            Left de -> sendHtmlOnConnect (renderSM display wid) de
-            Right ge -> handleGuiEvent ge
+        atomically (readPipe pipeAE) >>= \case
+            ae@(AppDisplay _) -> sendHtmlOnConnect (renderSM display wid) ae
+            AppTrigger ge -> handleGuiEvent ge
+            _ -> pure ()

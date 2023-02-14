@@ -14,14 +14,14 @@ renderLogs os wid = do
         with ul_ [id_ (withWID wid "logs-list"), class_ "whitespace-nowrap overflow-x-auto"] do
             traverse_ (li_ . renderLog) events
 
-logViewerApp :: DisplayClients -> App
-logViewerApp clients =
+logViewerApp :: App
+logViewerApp =
     App
         { name = "log-viewer"
         , tags = fromList ["System"]
         , description = "Read event logs"
         , size = Nothing
-        , start = \wid pipeDE -> do
+        , start = \clients wid pipeDE -> do
             os <- asks os
             do
                 chan <- atomically (getLogsChan os.logger)

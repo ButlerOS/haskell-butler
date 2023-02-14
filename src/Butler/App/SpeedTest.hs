@@ -6,7 +6,6 @@ import Data.Map.Strict qualified as Map
 import Network.WebSockets qualified as WS
 
 import Butler
-import Butler.Desktop
 import Butler.Prelude
 
 data SpeedTest = SpeedTest
@@ -71,15 +70,15 @@ function speedTest() {
 speedTest();
 |]
 
-speedTestApp :: Desktop -> AppStart
-speedTestApp desktop _ _ = do
+speedTestApp :: AppStart
+speedTestApp clients _ _ = do
     state <- SpeedTestState <$> newTVarIO mempty
     let _onClient client = do
             newTest <- SpeedTest <$> getTime <*> newTVarIO 0 <*> newTVarIO 0
             atomically $ modifyTVar' state.tests (Map.insert client.endpoint newTest)
             logInfo "starting speed test" ["endpoint" .= client.endpoint]
             performTest newTest client
-            broadcastHtmlT desktop (renderApp state)
+            sendsHtml clients (renderApp state)
     {-
     (,"speed-test",onClient) <$> newGuiApp "speed-test" Nothing (const $ pure $ renderApp state) ["start-speed-test"] \app -> do
         forever do

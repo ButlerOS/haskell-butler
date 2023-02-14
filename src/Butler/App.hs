@@ -1,34 +1,36 @@
 module Butler.App where
 
 import Data.Map.Strict qualified as Map
+import Network.WebSockets qualified as WS
 
 import Butler.Display
 import Butler.Frame
 import Butler.GUI
 import Butler.Prelude
-
-data GuiEvents = GuiEvents
-    { clients :: DisplayClients
-    , pipe :: Pipe GuiEvent
-    }
-type WithGuiEvents = (GuiEvents -> AppStart) -> AppStart
-type WithNamedGuiEvents = [TriggerName] -> WithGuiEvents
-
-data DataEvents = DataEvents
-    { clients :: DisplayClients
-    , chan :: ChannelID
-    , pipe :: Pipe DataEvent
-    }
-type WithDataEvents = (DataEvents -> AppStart) -> AppStart
-
-standaloneGuiEvents :: DisplayClients -> Pipe GuiEvent -> WithGuiEvents
-standaloneGuiEvents clients pipe cb = cb (GuiEvents{clients, pipe})
+import Butler.Window
 
 newtype AppTag = AppTag Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON)
 
-type AppStart = WinID -> Pipe DisplayEvent -> ProcessIO ()
+data AppEvent
+    = AppDisplay DisplayEvent
+    | AppTrigger GuiEvent
+    | AppData DataEvent
+    deriving (Generic, ToJSON)
+
+eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
+eventFromMessage client = \case
+    WS.Text lbs _ -> do
+        htmxEvent <- decodeJSON @HtmxEvent lbs
+        (wid, trigger) <- decodeTriggerName htmxEvent.trigger
+        pure (wid, AppTrigger (GuiEvent client trigger htmxEvent.body))
+    WS.Binary lbs -> do
+        let rawBuf = from lbs
+        (wid, buf) <- decodeMessage rawBuf
+        pure (wid, AppData (DataEvent client buf rawBuf))
+
+type AppStart = DisplayClients -> WinID -> Pipe AppEvent -> ProcessIO ()
 
 data App = App
     { name :: ProgramName
@@ -42,37 +44,33 @@ data AppInstance = AppInstance
     { app :: App
     , process :: Process
     , wid :: WinID
-    , pipeDisplayEvents :: Pipe DisplayEvent
+    , pipeAE :: Pipe AppEvent
     }
     deriving (Generic)
 
 newtype AppSet = AppSet (Map ProgramName App)
 
-pureHtmlApp :: (WinID -> HtmlT STM ()) -> AppStart
-pureHtmlApp mkHtml wid pipeDE = forever do
-    atomically (readPipe pipeDE) >>= sendHtmlOnConnect (mkHtml wid)
-
-sendHtmlOnConnect :: HtmlT STM () -> DisplayEvent -> ProcessIO ()
+sendHtmlOnConnect :: HtmlT STM () -> AppEvent -> ProcessIO ()
 sendHtmlOnConnect htmlT = \case
-    UserConnected "htmx" client -> atomically $ sendHtml client htmlT
+    AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client htmlT
     _ -> pure ()
 
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
 
-launchApp :: AppSet -> ProgramName -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) name wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app wid
+launchApp :: AppSet -> ProgramName -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) name clients wid = case Map.lookup name apps of
+    Just app -> Just <$> startApp app clients wid
     Nothing -> pure Nothing
 
-startApp :: App -> WinID -> ProcessIO AppInstance
-startApp app wid = do
+startApp :: App -> DisplayClients -> WinID -> ProcessIO AppInstance
+startApp app clients wid = do
     -- Start app process
-    pipeDisplayEvents <- atomically newPipe
+    pipeAE <- atomically newPipe
     process <- spawnProcess ("app-" <> app.name) do
-        app.start wid pipeDisplayEvents
+        app.start clients wid pipeAE
 
-    pure $ AppInstance{app, process, wid, pipeDisplayEvents}
+    pure $ AppInstance{app, process, wid, pipeAE}
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
@@ -83,7 +81,7 @@ appSetHtml wid (AppSet apps) = do
     mkLauncher prog =
         with
             li_
-            [ id_ "win-swap"
+            [ wid_ wid "win-swap"
             , encodeVal ["win" .= wid, "prog" .= ("app-" <> prog)]
             , class_ "cursor-pointer"
             , wsSend

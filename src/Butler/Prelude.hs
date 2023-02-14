@@ -203,6 +203,7 @@ import GHC.TypeLits qualified
 import Ki
 import Lucid
 import Network.Wai.Handler.Warp qualified as Warp
+import Network.WebSockets qualified as WS
 import Numeric.Natural qualified
 import Options.Applicative.Types qualified
 import PyF
@@ -244,3 +245,8 @@ showT :: Show a => a -> Data.Text.Text
 showT = Witch.from . show
 
 instance Data.Aeson.ToJSON ProcessTyped.ExitCode
+
+instance Witch.From WS.DataMessage LByteString where
+    from = \case
+        WS.Binary lbs -> lbs
+        WS.Text lbs _ -> lbs

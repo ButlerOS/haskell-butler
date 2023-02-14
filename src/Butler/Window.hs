@@ -31,10 +31,10 @@ data WindowManager = WindowManager
     , apps :: MemoryVar (Map WinID ProgramName)
     }
 
-newWindowManager :: ProcessIO WindowManager
-newWindowManager =
+newWindowManager :: WinID -> ProcessIO WindowManager
+newWindowManager minWID =
     WindowManager
-        <$> (snd <$> newProcessMemory "wins.bin" (pure newWindows))
+        <$> (snd <$> newProcessMemory "wins.bin" (pure (newWindows minWID)))
         <*> (snd <$> newProcessMemory "apps.bin" (pure mempty))
 
 getWindowIDs :: Windows -> STM [WinID]
@@ -42,8 +42,8 @@ getWindowIDs ws = do
     windowsState <- readMemoryVar ws
     pure $ WinID <$> IM.keys windowsState.windows
 
-newWindows :: WindowsState
-newWindows = WindowsState mempty (WinID 0) Nothing
+newWindows :: WinID -> WindowsState
+newWindows minWID = WindowsState mempty minWID Nothing
 
 addWindowApp :: WindowManager -> WinID -> Process -> STM ()
 addWindowApp wm wid process = do
@@ -83,80 +83,85 @@ newWindow ws title = stateMemoryVar ws $ \s ->
                 title
      in ((wid, win), s & (#maxID .~ wid) . (#windows %~ IM.insert next win))
 
-renderWindows :: Windows -> HtmlT STM ()
-renderWindows ws = do
+renderWindows :: WinID -> Windows -> HtmlT STM ()
+renderWindows controlWID ws = do
     w <- lift (readMemoryVar ws)
     let windows = IM.toAscList w.windows
         createWindows = map (renderWindow . first WinID) windows
-        script = windowScript : createWindows
+        script = windowScript controlWID : createWindows
     forM_ (fst <$> windows) \wid ->
         with div_ [id_ ("w-" <> showT wid)] mempty
     with (script_ $ Text.intercalate ";" script) [type_ "module"]
 
-windowScript :: Text
-windowScript =
+windowScript :: WinID -> Text
+windowScript wid =
     [raw|
 import WinBox from '/xstatic/winbox.js'
-globalThis.WinBox = WinBox
+function setupWindowManager(chan) {
+  globalThis.WinBox = WinBox
 
-// WinBox event handler, called by the js client, forwarded to the server.
-globalThis.onWinEvent = (ev, w) => debounceData(500, (x, y) => {
-  if (ev == "resize" && onWindowResize[w] !== undefined) {
-    onWindowResize[w]()
-  }
-  return encodeDataMessage(1, {ev: ev, w: w, x: x, y: y})
-})
+  // WinBox event handler, called by the js client, forwarded to the server.
+  globalThis.onWinEvent = (ev, w) => debounceData(500, (x, y) => {
+    if (ev == "resize" && onWindowResize[w] !== undefined) {
+      onWindowResize[w]()
+    }
+    return encodeDataMessage(chan, {ev: ev, w: w, x: x, y: y})
+  })
 
-// Special handler for close event by the js client.
-globalThis.onWinClose = (w) => (force) => {
-  let doDelete = force
-  if (!force && confirm("Close window?")) {
-    butlerDataSocket.send(encodeDataMessage(1, {ev: "close", w: w}))
-    doDelete = true
+  // Special handler for close event by the js client.
+  globalThis.onWinClose = (w) => (force) => {
+    let doDelete = force
+    if (!force && confirm("Close window?")) {
+      butlerDataSocket.send(encodeDataMessage(chan, {ev: "close", w: w}))
+      doDelete = true
+    }
+    if (doDelete) {
+      let div = document.getElementById("w-" + w);
+      if (div) { div.remove(); }
+      return false;
+    }
+    return true
   }
-  if (doDelete) {
-    let div = document.getElementById("w-" + w);
-    if (div) { div.remove(); }
-    return false;
-  }
-  return true
-}
 
-// Servent event handler.
-butlerDataHandlers[1] = buf => {
-  let body = decodeJSON(buf)
-  let win = windows[body.w]
-  let withoutHandler = (name, cb) => {
-    // disable the handler to avoid bouncing loop effect
-    let handler = win[name]
-    win[name] = undefined
-    cb()
-    win[name] = handler
-  }
-  switch (body.ev) {
-    case "move":
-      withoutHandler("onmove", () => win.move(body.x, body.y))
-      break
-    case "resize":
-      withoutHandler("onresize", () => {
-        if (onWindowResize[body.w] !== undefined) {
-          onWindowResize[body.w](body.x, body.y)
-        }
-        win.resize(body.x, body.y)
-      })
-      break
-    case "focus":
-      withoutHandler("onfocus", () => win.focus(true))
-      break
-    case "close":
-      win.close(true)
-      break
-    case "title":
-      win.setTitle(body.title)
-      break
+  // Servent event handler.
+  butlerDataHandlers[chan] = buf => {
+    let body = decodeJSON(buf)
+    let win = windows[body.w]
+    let withoutHandler = (name, cb) => {
+      // disable the handler to avoid bouncing loop effect
+      let handler = win[name]
+      win[name] = undefined
+      cb()
+      win[name] = handler
+    }
+    switch (body.ev) {
+      case "move":
+        withoutHandler("onmove", () => win.move(body.x, body.y))
+        break
+      case "resize":
+        withoutHandler("onresize", () => {
+          if (onWindowResize[body.w] !== undefined) {
+            onWindowResize[body.w](body.x, body.y)
+          }
+          win.resize(body.x, body.y)
+        })
+        break
+      case "focus":
+        withoutHandler("onfocus", () => win.focus(true))
+        break
+      case "close":
+        win.close(true)
+        break
+      case "title":
+        win.setTitle(body.title)
+        break
+    }
   }
 }
 |]
+        <> "\nsetupWindowManager("
+        <> showT wid
+        <> ");"
 
 renderWindow :: (WinID, Window) -> Text
 renderWindow (WinID idx, Window (x, y) (w, h) title) = do

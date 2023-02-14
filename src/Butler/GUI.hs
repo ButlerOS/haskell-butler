@@ -6,13 +6,8 @@ module Butler.GUI (
     WinID (..),
     GuiEvent (..),
     TriggerName (..),
-
-    -- * handlers
-    GuiHandlers,
-    newGuiHandlers,
-    withGuiHandlers,
-    lookupGuiHandler,
-    SetupGuiHandler,
+    HtmxEvent (..),
+    decodeTriggerName,
 
     -- * helpers
     with',
@@ -39,8 +34,7 @@ module Butler.GUI (
 ) where
 
 import Butler.Prelude
-import Data.Aeson (Value (Number))
-import Data.Map.Strict qualified as Map
+import Data.Aeson (FromJSON (parseJSON), Value (Number), withObject, (.:))
 import Data.Text qualified as Text
 
 import Lucid
@@ -52,6 +46,32 @@ import Butler.OS
 import Butler.Pipe
 import Butler.Session
 import Data.Aeson.Types (Pair)
+import Data.Text.Read qualified as Text
+
+data HtmxEvent = HtmxEvent
+    { trigger :: Text
+    , body :: Value
+    }
+
+instance FromJSON HtmxEvent where
+    parseJSON = withObject "HtmxEvent" $ \obj -> do
+        headers <- obj .: "HEADERS"
+        trigger <- headers .: "HX-Trigger"
+        pure (HtmxEvent trigger (Object obj))
+
+{- | Remove winID from trigger name
+
+>>> decodeTriggerName "toggle"
+Nothing
+>>> decodeTriggerName "toggle-1"
+Just (1,"toggle")
+-}
+decodeTriggerName :: Text -> Maybe (WinID, TriggerName)
+decodeTriggerName txt = case Text.decimal txtSuffix of
+    Right (wid, "") -> Just (WinID wid, TriggerName (Text.dropEnd 1 txtPrefix))
+    _ -> Nothing
+  where
+    (txtPrefix, txtSuffix) = Text.breakOnEnd "-" txt
 
 type DrawHtml = DisplayClient -> ProcessIO (HtmlT STM ())
 
@@ -81,24 +101,6 @@ instance From Natural TriggerName where
 
 newtype WinID = WinID Int
     deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
-
-newtype GuiHandlers = GuiHandlers (TVar (Map WinID (Pipe GuiEvent)))
-
-newGuiHandlers :: STM GuiHandlers
-newGuiHandlers = GuiHandlers <$> newTVar mempty
-
-withGuiHandlers :: GuiHandlers -> WinID -> (Pipe GuiEvent -> ProcessIO a) -> ProcessIO a
-withGuiHandlers (GuiHandlers tvMap) wid cb = do
-    pipe <- atomically do
-        pipe <- newPipe
-        modifyTVar' tvMap (Map.insert wid pipe)
-        pure pipe
-    cb pipe `finally` atomically (modifyTVar' tvMap (Map.delete wid))
-
-lookupGuiHandler :: GuiHandlers -> WinID -> STM (Maybe (Pipe GuiEvent))
-lookupGuiHandler (GuiHandlers tvMap) wid = Map.lookup wid <$> readTVar tvMap
-
-type SetupGuiHandler = [TriggerName] -> (Pipe GuiEvent -> ProcessIO ()) -> ProcessIO ()
 
 with' :: With a => a -> Text -> a
 with' x n = with x [class_ n]

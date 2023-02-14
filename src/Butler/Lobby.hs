@@ -9,6 +9,7 @@ import Butler.Clock
 import Butler.Desktop
 import Butler.Display
 import Butler.GUI
+import Butler.Logger
 import Butler.Memory
 import Butler.Prelude
 import Butler.Session
@@ -71,8 +72,8 @@ chatWin = WinID 0
 lobbyHandler :: Lobby -> ChatServer -> DisplayEvent -> ProcessIO ()
 lobbyHandler dm chat = \case
     UserConnected "htmx" client -> do
-        spawnPingThread client
-        spawnSendThread client
+        spawnThread_ (pingThread client)
+        spawnThread_ (sendThread client)
         atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Loading..."))
         sleep 100
         atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Getting workspaces..."))
@@ -83,7 +84,11 @@ lobbyHandler dm chat = \case
         spawnThread_ $ forever do
             ev <- atomically (readTChan chatChan)
             atomically $ sendHtml client (updateChat chatWin client ev)
-        handleClientEvents client $ handleLobbyEvents dm chat client
+        forever do
+            lbs <- into <$> recvData client
+            case decodeJSON @HtmxEvent lbs of
+                Nothing -> logError "Unknown ev" ["ev" .= LBSLog lbs]
+                Just htmxEvent -> handleLobbyEvents dm chat client (TriggerName htmxEvent.trigger) htmxEvent.body
     _ -> pure ()
 
 lobbyWsListHtml :: Map Workspace DesktopStatus -> HtmlT STM ()
@@ -163,8 +168,8 @@ lobbyHtml wss chat =
                                 option_ "quay.io/org/toolbox"
                             with (input_ mempty) [type_ "submit", class_ btn, value_ "create"]
 
-handleLobbyEvents :: Lobby -> ChatServer -> DisplayClient -> Maybe WinID -> TriggerName -> Value -> ProcessIO ()
-handleLobbyEvents dm chat client _ trigger ev = case ev ^? key "ws" . _String of
+handleLobbyEvents :: Lobby -> ChatServer -> DisplayClient -> TriggerName -> Value -> ProcessIO ()
+handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
     Just wsTxt -> do
         let ws = Workspace wsTxt
         logInfo "got welcome event" ["ws" .= ws, "trigger" .= trigger]

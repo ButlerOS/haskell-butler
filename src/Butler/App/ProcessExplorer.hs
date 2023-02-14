@@ -59,7 +59,7 @@ peApp desktop =
         , tags = fromList ["System"]
         , description = "Process Explorer"
         , size = Nothing
-        , start = \wid pipeDE -> do
+        , start = \clients wid pipeAE -> do
             stV <- newTVarIO (PEScopped desktop.env.process.pid)
             os <- asks os
             let doRender = renderPE os stV wid
@@ -74,20 +74,19 @@ peApp desktop =
                                 atomically $ writeTVar stV $ case st of
                                     PEAll -> PEScopped desktop.env.process.pid
                                     PEScopped _ -> PEAll
-                                broadcastHtmlT desktop doRender
+                                sendsHtml clients doRender
                             _ -> logError "unknown event" ["ev" .= ev]
-            withGuiHandlers desktop.guiHandlers wid \events -> do
-                spawnThread_ $ forever do
-                    atomically (readPipe2 pipeDE events) >>= \case
-                        Left de -> sendHtmlOnConnect (renderPE os stV wid) de
-                        Right ev -> handleEvent ev
+            spawnThread_ $ forever do
+                atomically (readPipe pipeAE) >>= \case
+                    de@(AppDisplay _) -> sendHtmlOnConnect (renderPE os stV wid) de
+                    AppTrigger ev -> handleEvent ev
+                    _ -> pure ()
 
-                forever do
-                    sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
-                    case sysEvent of
-                        WaitCompleted{} -> do
-                            broadcastHtmlT desktop doRender
-                        WaitTimeout{} -> pure ()
+            forever do
+                sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
+                case sysEvent of
+                    WaitCompleted{} -> sendsHtml clients doRender
+                    WaitTimeout{} -> pure ()
         }
 
 isProcess :: SystemEvent -> Bool

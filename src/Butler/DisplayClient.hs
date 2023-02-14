@@ -27,10 +27,16 @@ data DisplayClient = DisplayClient
 newClient :: WS.Connection -> Endpoint -> Process -> Session -> TabID -> STM DisplayClient
 newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
-spawnPingThread :: DisplayClient -> ProcessIO ()
-spawnPingThread client = spawnThread_ $ forever do
+pingThread :: DisplayClient -> ProcessIO Void
+pingThread client = forever do
     sleep 30_000
     liftIO (WS.sendPing client.conn ("ping" :: ByteString))
+
+recvData :: MonadIO m => DisplayClient -> m WS.DataMessage
+recvData client = do
+    dataMessage <- liftIO (WS.receiveDataMessage client.conn)
+    atomically $ modifyTVar' client.recv (+ unsafeFrom (LBS.length (from dataMessage)))
+    pure dataMessage
 
 recvMessage :: MonadIO m => DisplayClient -> m ByteString
 recvMessage client = do
@@ -38,13 +44,10 @@ recvMessage client = do
     atomically $ modifyTVar' client.recv (+ unsafeFrom (BS.length buf))
     pure buf
 
-spawnSendThread :: DisplayClient -> ProcessIO ()
-spawnSendThread client = spawnThread_ $ forever do
+sendThread :: DisplayClient -> ProcessIO Void
+sendThread client = forever do
     dataMessage <- atomically (readTChan client.sendChannel)
-    let messageLBS = case dataMessage of
-            WS.Text lbs _ -> lbs
-            WS.Binary lbs -> lbs
-    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length messageLBS))
+    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length (from dataMessage)))
     liftIO $ WS.sendDataMessage client.conn dataMessage
 
 writeBinaryMessage :: MonadIO m => DisplayClient -> LByteString -> m ()
@@ -67,6 +70,14 @@ sendsHtml clients htmlT = do
     body <- atomically $ renderBST htmlT
     xs <- atomically $ getClients clients
     forM_ xs \client -> atomically (writeTChan client.sendChannel (WS.Text body Nothing))
+
+sendsHtmlButSelf :: DisplayClient -> DisplayClients -> HtmlT STM () -> ProcessIO ()
+sendsHtmlButSelf self clients htmlT = do
+    body <- atomically $ renderBST htmlT
+    xs <- atomically $ getClients clients
+    forM_ xs $ \client ->
+        when (client.endpoint /= self.endpoint) do
+            atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
 sendBinary :: DisplayClient -> LByteString -> STM ()
 sendBinary client buf = writeTChan client.sendChannel (WS.Binary buf)

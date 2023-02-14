@@ -8,6 +8,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import GHC.Float (int2Float)
 
+import Butler.App
 import Butler.Clock
 import Butler.Display
 import Butler.Frame
@@ -22,14 +23,15 @@ import Butler.User
 -- Sound Card setup
 -------------------------------------------------------------------------------
 data SoundCard = SoundCard
-    { clients :: DisplayClients
+    { wid :: WinID
+    , clients :: DisplayClients
     , channels :: NM.NatMap SoundChannel
     , receivers :: NM.NatMap SoundReceiver
     , events :: BroadcastChan SoundCardEvent
     }
 
-newSoundCard :: STM SoundCard
-newSoundCard = SoundCard <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
+newSoundCard :: WinID -> STM SoundCard
+newSoundCard wid = SoundCard wid <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
 
 data SoundCardEvent
     = SoundUserJoined DisplayClient
@@ -45,7 +47,7 @@ addSoundClient sc client = do
 
     -- attach to channels
     soundChannels <- NM.elems sc.channels
-    traverse_ (\soundChannel -> startSoundChannelClient soundChannel False client) soundChannels
+    traverse_ (\soundChannel -> startSoundChannelClient sc soundChannel False client) soundChannels
 
     broadcast sc.events (SoundUserJoined client)
 
@@ -122,13 +124,16 @@ newtype SoundChannelName = SoundChannelName Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON, ToHtml)
 
-newtype SoundChannelID = SoundChannelID ChannelID deriving newtype (Show, ToJSON)
+newtype SoundChannelID = SoundChannelID Natural deriving newtype (Show, ToJSON)
 
 instance From SoundChannelID Natural where
-    from (SoundChannelID chan) = from chan
+    from (SoundChannelID chan) = chan
 
-instance From SoundChannelID Word8 where
-    from (SoundChannelID chan) = from chan
+instance From WinID SoundChannelID where
+    from (WinID wid) = SoundChannelID (unsafeFrom wid)
+
+instance From SoundChannelID WinID where
+    from (SoundChannelID chan) = WinID (unsafeFrom chan)
 
 data SoundClientStatus
     = SoundClientInitializing Bool
@@ -147,7 +152,7 @@ clientStatusHtml = \case
     tooltip n title = with span_ [title_ title] n
 
 newSoundChannel :: WinID -> SoundChannelName -> Natural -> STM SoundChannel
-newSoundChannel wid name k = SoundChannel wid name (SoundChannelID $ newChannel k) <$> newTVar 0 <*> NM.newNatMap
+newSoundChannel wid name k = SoundChannel wid name (SoundChannelID k) <$> newTVar 0 <*> NM.newNatMap
 
 delSoundChannelClient :: SoundChannel -> DisplayClient -> STM ()
 delSoundChannelClient soundChannel client = NM.delete soundChannel.statuses (from client.process.pid)
@@ -158,10 +163,10 @@ setSoundChannelClient soundChannel status client = NM.insert soundChannel.status
 getSoundChannelClient :: SoundChannel -> DisplayClient -> STM (Maybe SoundClientStatus)
 getSoundChannelClient soundChannel client = NM.lookup soundChannel.statuses (from client.process.pid)
 
-startSoundChannelClient :: SoundChannel -> Bool -> DisplayClient -> STM ()
-startSoundChannelClient soundChannel synchronized client = do
+startSoundChannelClient :: SoundCard -> SoundChannel -> Bool -> DisplayClient -> STM ()
+startSoundChannelClient sc soundChannel synchronized client = do
     setSoundChannelClient soundChannel (SoundClientInitializing synchronized) client
-    let mkChan = mkControlMessage "start" ["chan" .= soundChannel.id, "wid" .= soundChannel.winID]
+    let mkChan = mkControlMessage sc "start" ["chan" .= soundChannel.id, "wid" .= soundChannel.winID]
     sendBinary client mkChan
 
 startSoundChannelKeep :: (DisplayClient -> Bool) -> SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
@@ -169,7 +174,7 @@ startSoundChannelKeep p sc wid name = do
     soundChannel <- NM.addWithKey sc.channels (newSoundChannel wid name)
     -- initialize clients already connected
     clients <- getClients sc.clients
-    traverse_ (startSoundChannelClient soundChannel True) (filter p clients)
+    traverse_ (startSoundChannelClient sc soundChannel True) (filter p clients)
     broadcast sc.events (SoundChannelEvent soundChannel.id)
     pure soundChannel
 
@@ -181,23 +186,23 @@ stopSoundChannel sc soundChannel = do
     NM.delete sc.channels (from soundChannel.id)
     -- destroy the channel on the clients' side
     clients <- getClients sc.clients
-    let delChan = mkControlMessage "stop" ["chan" .= soundChannel.id]
+    let delChan = mkControlMessage sc "stop" ["chan" .= soundChannel.id]
     forM_ clients $ \client -> do
         sendBinary client delChan
     broadcast sc.events (SoundChannelEvent soundChannel.id)
 
-mkControlMessage :: Text -> [Pair] -> LByteString
-mkControlMessage op attrs = LBS.cons (from audioChannel) $ LBS.cons 0 buf
+mkControlMessage :: SoundCard -> Text -> [Pair] -> LByteString
+mkControlMessage sc op attrs = encodeMessageL sc.wid $ LBS.cons 0 buf
   where
     buf = encodeJSON (KM.fromList $ ["op" .= op] <> attrs)
 
 lookupSoundChannel :: SoundCard -> SoundChannelID -> STM (Maybe SoundChannel)
-lookupSoundChannel sc (SoundChannelID k) = NM.lookup sc.channels (from k)
+lookupSoundChannel sc k = NM.lookup sc.channels (from k)
 
 feedChannel :: SoundCard -> SoundChannel -> ByteString -> Maybe EBML.StreamFrame -> STM ()
 feedChannel sc soundChannel buf mFrame = do
     let initSegments = from $ maybe mempty (\frame -> frame.initialization <> frame.media) mFrame
-        mkBuffer = LBS.cons (from audioChannel) . LBS.cons (from soundChannel.id)
+        mkBuffer = encodeMessageL sc.wid . encodeMessageL (from soundChannel.id)
         initBuffer = mkBuffer initSegments
         arrBuffer = mkBuffer (from buf)
 
@@ -216,7 +221,7 @@ feedChannel sc soundChannel buf mFrame = do
         getSoundChannelClient soundChannel client >>= \case
             Nothing -> do
                 let isSynced = not isRunning || isJust mFrame
-                startSoundChannelClient soundChannel isSynced client
+                startSoundChannelClient sc soundChannel isSynced client
                 void $ sendData client False
             Just (SoundClientInitializing isSynced) -> do
                 newIsSynced <- sendData client isSynced
@@ -232,7 +237,7 @@ pauseChannel sc soundChannel = do
     forM_ clients \client -> do
         getSoundChannelClient soundChannel client >>= \case
             Just SoundClientPlaying -> do
-                sendBinary client (mkControlMessage "pause" ["chan" .= soundChannel.id])
+                sendBinary client (mkControlMessage sc "pause" ["chan" .= soundChannel.id])
             Just SoundClientMuted -> pure ()
             _ -> delSoundChannelClient soundChannel client
 
@@ -281,22 +286,27 @@ soundReceiverHandler sc client buf = do
                 modifyTVar' receiver.counter (+ 1)
             atomically $ broadcast sc.events (SoundReceiveEvent client buf mFrame)
 
-startClientRecorder :: WinID -> DisplayClient -> STM ()
-startClientRecorder wid client = sendBinary client msg
+startClientRecorder :: SoundCard -> WinID -> DisplayClient -> STM ()
+startClientRecorder sc wid client = sendBinary client msg
   where
-    msg = mkControlMessage "start-record" ["wid" .= wid]
+    msg = mkControlMessage sc "start-record" ["wid" .= wid]
 
-stopSoundReceiver :: WinID -> DisplayClient -> STM ()
-stopSoundReceiver wid client = sendBinary client msg
+stopSoundReceiver :: SoundCard -> WinID -> DisplayClient -> STM ()
+stopSoundReceiver sc wid client = sendBinary client msg
   where
-    msg = mkControlMessage "stop-record" ["wid" .= wid]
+    msg = mkControlMessage sc "stop-record" ["wid" .= wid]
+
+soundHandler :: SoundCard -> AppEvent -> ProcessIO ()
+soundHandler sc = \case
+    AppData de -> doSoundHandler sc de.client de.buffer
+    ev -> logError "Unknown ev" ["ev" .= ev]
 
 -- Simple binary protocol:
 -- [0, op] : stop/start message
 -- [0, chan, op] : error/ready/playing message
 -- [data...] : audio data
-soundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
-soundHandler sc client msg = do
+doSoundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
+doSoundHandler sc client msg = do
     -- logTrace "Received audio data" ["client" .= client, "length" .= BS.length msg, "buf" .= BSLog (BS.take 5 msg)]
     case BS.uncons msg of
         Just (0, "\x00") -> do
@@ -311,8 +321,8 @@ soundHandler sc client msg = do
         Just (0, "\x03") -> do
             logInfo "audio receiver stopped" ["client" .= client]
             atomically $ delSoundReceiver sc client
-        Just (0, bs) | BS.length bs == 2 -> case BS.uncons bs of
-            Just (SoundChannelID . from -> channelID, ev) -> do
+        Just (0, bs) | BS.length bs == 2 -> case decodeMessage bs of
+            Just (from -> channelID, ev) -> do
                 mSoundChannel <- atomically (lookupSoundChannel sc channelID)
                 case mSoundChannel of
                     Just soundChannel -> soundChannelHandler soundChannel ev
@@ -333,8 +343,8 @@ soundHandler sc client msg = do
 -------------------------------------------------------------------------------
 -- Client payload
 -------------------------------------------------------------------------------
-soundClient :: ChannelID -> Text
-soundClient chan =
+soundClient :: WinID -> Text
+soundClient wid =
     [raw|
 function setupSoundClient(chan) {
   // protocol helpers
@@ -624,7 +634,7 @@ function setupSoundClient(chan) {
 }
   |]
         <> "\nsetupSoundClient("
-        <> showT chan
+        <> showT wid
         <> ");"
 
 -------------------------------------------------------------------------------

@@ -51,7 +51,6 @@ dependencies:
   - random
   - mtl
   - optparse-applicative
-  - transformers
   - unliftio
   - PyF
   - posix-pty
@@ -74,74 +73,47 @@ dependencies:
   - unix-time
   - network
   - network-run
-  - SHA
 
   - generic-lens
   - lens
   - lens-aeson
 
   - relude
-  #- name: relude
-  #  mixin:
-  #    - (Relude as Prelude)
-  #- name: base
-  #  mixin:
-  #    - hiding (Prelude)
-
-  # - list-transformer
 
   - ki
   - ki-unlifted
-  - ki-effectful
   - stm
-  # - stm-chans
 
   - serialise
-  - cborg
-  - cborg-json
 
-  # - effectful
-  # - effectful-core
-  # - effectful-th
   - servant-websockets
-
   - websockets
   - servant
   - servant-server
   - servant-auth
   - servant-auth-server
   - http-api-data
-  - wai-extra
   - jose
 
   - retry
-  - auto-update
 
   - wai
   - warp
   - warp-tls
-  - HsOpenSSL
 
   - lucid
   - lucid-htmx
   - lucid-svg
   - http-types
   - servant-lucid
-  - tagged
-  - case-insensitive
-
-  - chart-svg
 
   - xstatic
   - xstatic-th
-  - servant-xstatic
   - lucid-xstatic
 
   - ebml
   - xstatic-htmx
-  - xstatic-hyperscript
   - xstatic-tailwind
-  - xstatic-sakura
   - xstatic-sweetalert2
   - xstatic-remixicon
   - xstatic-xterm

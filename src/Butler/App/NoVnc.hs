@@ -1,9 +1,8 @@
 module Butler.App.NoVnc (vncApp) where
 
 import Butler
-import Butler.Desktop
 import Butler.Prelude
-import Data.Map.Strict qualified as Map
+import Ki.Unlifted qualified as Ki
 
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
@@ -36,18 +35,18 @@ data VncServer = VncServer
 newVncServer :: Text -> Int -> STM VncServer
 newVncServer h p = VncServer (from h) (show p) <$> newTVar (800, 600)
 
-vncApp :: Desktop -> App
-vncApp desktop =
+vncApp :: App
+vncApp =
     App
         { name = "vnc"
         , tags = fromList ["Graphic", "Development"]
         , description = "NoVNC client"
         , size = Nothing
-        , start = startVncApp desktop
+        , start = startVncApp
         }
 
-startVncApp :: Desktop -> AppStart
-startVncApp desktop wid pipeDE = do
+startVncApp :: AppStart
+startVncApp _clients wid pipeAE = do
     srv <- atomically (newVncServer "localhost" 5900)
 
     let draw :: HtmlT STM ()
@@ -70,9 +69,7 @@ startVncApp desktop wid pipeDE = do
 
     let onClient client = do
             logInfo "new client" ["client" .= client]
-            spawnPingThread client
-
-            void $ withRunInIO \runInIO -> runTCPClient srv.host srv.port $ \skt -> runInIO do
+            withRunInIO \runInIO -> runTCPClient srv.host srv.port $ \skt -> runInIO do
                 spawnThread_ $ forever do
                     buf <- recvMessage client
                     liftIO (Network.Socket.ByteString.sendAll skt buf)
@@ -81,11 +78,11 @@ startVncApp desktop wid pipeDE = do
                     buf <- liftIO (Network.Socket.ByteString.recv skt 65535)
                     atomically $ sendBinary client (from buf)
 
-            error "client exited"
-
-    atomically $ modifyTVar' desktop.channels (Map.insert "novnc" onClient)
     forever do
-        atomically (readPipe pipeDE) >>= sendHtmlOnConnect draw
+        atomically (readPipe pipeAE) >>= \case
+            AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client draw)
+            AppDisplay (UserConnected "novnc" client) -> client.process.scope `Ki.fork_` onClient client
+            _ -> pure ()
 
 vncClient :: WinID -> (Int, Int) -> Text
 vncClient wid (width, height) =

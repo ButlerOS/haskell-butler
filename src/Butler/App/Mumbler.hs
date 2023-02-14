@@ -11,14 +11,14 @@ import Butler.Session
 import Butler.SoundBlaster
 import Butler.User
 
-mumblerApp :: WithDataEvents -> DisplayClients -> SoundCard -> App
-mumblerApp withDE clients soundCard =
+mumblerApp :: SoundCard -> App
+mumblerApp soundCard =
     App
         { name = "mumbler"
         , tags = fromList ["Communication", "Sound"]
         , description = "Voice chat"
         , size = Nothing
-        , start = withDE (startMumbler clients soundCard)
+        , start = startMumbler soundCard
         }
 
 ----
@@ -107,13 +107,13 @@ appStateHtml wid (AppState nm) = do
 ----
 -- App implementation
 ----
-startMumbler :: DisplayClients -> SoundCard -> DataEvents -> AppStart
-startMumbler clients soundCard dataEvents wid pipeDE = do
+startMumbler :: SoundCard -> AppStart
+startMumbler soundCard clients wid pipeAE = do
     (state, soundEvents) <- atomically do
         (,) <$> newAppState soundCard.clients <*> newReaderChan soundCard.events
 
     let
-        sendEv (ev :: Word8) = "butlerDataSocketSend(new Uint8Array([" <> showT dataEvents.chan <> ", " <> showT ev <> "]))"
+        sendEv (ev :: Word8) = "butlerDataSocketSend(new Uint8Array([" <> showT wid <> ", " <> showT ev <> "]))"
         pressedColor = "bg-red-500 px-10"
         readyColor = "bg-blue-500 hover:bg-blue-700"
         btn color (title :: Text) =
@@ -174,7 +174,7 @@ startMumbler clients soundCard dataEvents wid pipeDE = do
                 updateUI dataClient s
                 case s of
                     Muted -> do
-                        atomically (stopSoundReceiver wid dataClient)
+                        atomically (stopSoundReceiver soundCard wid dataClient)
                         -- wait for the very last frame before pausing the channel
                         void $ spawnThread do
                             sleep 500
@@ -186,7 +186,7 @@ startMumbler clients soundCard dataEvents wid pipeDE = do
                                         pauseChannel soundCard sc
                                     _ -> pure ()
                     PushedToTalk _ -> atomically do
-                        startClientRecorder wid dataClient
+                        startClientRecorder soundCard wid dataClient
                     _ -> pure ()
             MaybeMuting -> void $ spawnThread do
                 -- wait for mouseup event
@@ -196,7 +196,7 @@ startMumbler clients soundCard dataEvents wid pipeDE = do
                         -- user didn't double click for continuous mode
                         atomically do
                             writeTVar ms.status Muted
-                            stopSoundReceiver wid dataClient
+                            stopSoundReceiver soundCard wid dataClient
                         updateUI dataClient Muted
                     _ -> pure ()
 
@@ -234,10 +234,10 @@ startMumbler clients soundCard dataEvents wid pipeDE = do
                 atomically (feedChannel soundCard soundChannel buf mFrame)
 
         handleEvent = forever do
-            ev <- atomically (Left <$> readPipe2 pipeDE dataEvents.pipe <|> Right <$> readTChan soundEvents)
+            ev <- atomically (Left <$> readPipe pipeAE <|> Right <$> readTChan soundEvents)
             case ev of
-                Left (Left (UserConnected "htmx" client)) -> atomically $ sendHtml client mountUI
-                Left (Right de) -> do
+                Left (AppDisplay (UserConnected "htmx" client)) -> atomically $ sendHtml client mountUI
+                Left (AppData de) -> do
                     case BS.uncons de.buffer of
                         Just (0, "") -> updateMumbler de.client False
                         Just (1, "") -> updateMumbler de.client True
