@@ -17,6 +17,15 @@
           rev = "aff25512b52e48e92d77cd59019a0291a8b43bf4";
           sha256 = "sha256-U2Mo83gr7dLm+rRKOLzS9LZUaZ90ECO6Zjbv6maflyc=";
         }) { };
+        # https://github.com/awkward-squad/ki/issues/19
+        ki = let
+          src = pkgs.fetchFromGitHub {
+            owner = "awkward-squad";
+            repo = "ki";
+            rev = "f439a7dda99c2f71fb1d288cccb7a19ac436ce6d";
+            sha256 = "sha256-HTS+0hAExe3wrFgqHx35mMyTZ823AhbXHLlxATx5ExM=";
+          };
+        in hpPrev.callCabal2nix "ki" "${src}/ki" { };
         # https://github.com/yesodweb/wai/pull/923
         warp-tls = let
           src = pkgs.fetchFromGitHub {

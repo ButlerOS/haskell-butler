@@ -4,8 +4,8 @@ module Butler.Processor (
     awaitProcessor,
     Process (..),
     ProcessAction (..),
-    getProcesses,
-    getProcess,
+    lookupChildProcess,
+    lookupProcess,
     startProcess,
     stopProcess,
 
@@ -22,7 +22,8 @@ import Butler.Process
 
 data Processor = Processor
     { scope :: Scope
-    , processes :: NatMap Process
+    , nextPID :: NatCounter
+    , rootProcesses :: TVar [Process]
     }
 
 awaitProcessor :: Processor -> STM ()
@@ -34,25 +35,33 @@ withProcessor cb = scoped \scope -> do
     cb processor
 
 newProcessor :: Scope -> STM Processor
-newProcessor scope = Processor scope <$> newNatMap
-
-getProcesses :: Processor -> STM [Process]
-getProcesses processor = NM.elems processor.processes
-
-getProcess :: Processor -> Pid -> STM (Maybe Process)
-getProcess processor (Pid pid) = NM.lookup processor.processes pid
+newProcessor scope = Processor scope <$> newNatCounter <*> newTVar []
 
 newtype ProcessAction = ProcessAction (Process -> IO ())
 
-stopProcess :: Processor -> Pid -> STM (Maybe Process)
-stopProcess processor (Pid pid) = do
-    processM <- NM.lookup processor.processes pid
-    case processM of
-        Nothing -> pure Nothing
-        Just process -> do
-            putTMVar process.doneVar ()
-            NM.delete processor.processes pid
-            pure $ Just process
+lookupProcess :: Processor -> Pid -> STM (Maybe Process)
+lookupProcess processor pid =
+    traverseChilds =<< readTVar processor.rootProcesses
+  where
+    traverseChilds [] = pure Nothing
+    traverseChilds (x : xs) =
+        lookupChildProcess x pid >>= \case
+            Just p -> pure (Just p)
+            Nothing -> traverseChilds xs
+
+lookupChildProcess :: Process -> Pid -> STM (Maybe Process)
+lookupChildProcess process pid
+    | process.pid == pid = pure (Just process)
+    | otherwise = traverseChilds =<< readTVar process.childs
+  where
+    traverseChilds [] = pure Nothing
+    traverseChilds (x : xs) =
+        lookupChildProcess x pid >>= \case
+            Just p -> pure (Just p)
+            Nothing -> traverseChilds xs
+
+stopProcess :: Process -> STM Bool
+stopProcess process = tryPutTMVar process.doneVar ()
 
 startProcess ::
     Clock ->
@@ -72,18 +81,21 @@ startProcess clock logger processor parent program (ProcessAction action) = do
             Just parentProcess -> parentProcess.scope
             Nothing -> processor.scope
 
+    let parentChilds = case parent of
+            Just parentProcess -> parentProcess.childs
+            Nothing -> processor.rootProcesses
+
     let createProcess :: Scope -> ThreadId -> STM Process
         createProcess scope threadId = do
-            pid <- Pid <$> newKey processor.processes
+            pid <- Pid <$> incr processor.nextPID
             status <- newTVar Running
             thread <- readTMVar mthread
             childs <- newTVar []
 
             let process = Process{..}
-            NM.insert processor.processes (coerce pid) process
-            case parent of
-                Just parentProcess -> modifyTVar' (parentProcess.childs) (process :)
-                Nothing -> pure ()
+
+            modifyTVar' parentChilds (process :)
+
             putTMVar mprocess process
             pure process
 
@@ -97,6 +109,8 @@ startProcess clock logger processor parent program (ProcessAction action) = do
             process <- readTMVar mprocess
             writeTVar process.status $ Stopped (now, exitReason)
             addEvent logger now EventInfo (ProcessStopped process exitReason)
+            modifyTVar' parentChilds (filter (\p -> p.pid /= process.pid))
+
             pure exitReason
 
     -- Create a new scope

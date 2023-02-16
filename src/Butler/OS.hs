@@ -171,10 +171,14 @@ spawnThread action = do
     process <- asks process
     process.scope `Ki.fork` action
 
-killProcess :: Pid -> ProcessIO (Maybe Process)
+killProcess :: Pid -> ProcessIO Bool
 killProcess pid = do
     os <- asks os
-    atomically $ stopProcess os.processor pid
+    atomically (lookupProcess os.processor pid) >>= \case
+        Nothing -> do
+            logError "Unknown pid" ["pid" .= pid]
+            pure False
+        Just p -> atomically (stopProcess p)
 
 data OS = OS
     { processor :: Processor

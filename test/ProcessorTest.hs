@@ -1,6 +1,5 @@
 module ProcessorTest where
 
-import Test.Hspec.Expectations
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -32,23 +31,26 @@ test_processor =
                 waiter <- waitLog logger 500 sleeperStarted
                 p <- startProcess' (ProgramName "sleeper") sleepAction
                 WaitCompleted _ <- atomically waiter
-                processor `assertProcessLists` ["<1>sleeper"]
+                let lookupProcessIO = atomically . lookupProcess processor
+                Just _ <- lookupProcessIO p.pid
 
                 p2 <- startProcess' (ProgramName "sleeper") sleepAction
                 -- A process must start in less than 10ms
                 sleep 10
-                processor `assertProcessLists` ["<1>sleeper", "<2>sleeper"]
+                Just _ <- lookupProcessIO p2.pid
+                Just _ <- lookupProcessIO p.pid
 
                 -- kill the first task
-                Just _ <- atomically $ stopProcess processor p.pid
+                True <- atomically $ stopProcess p
                 exitReason <- atomically $ await p.thread
                 exitReason @?= Killed
-                processor `assertProcessLists` ["<2>sleeper"]
-                Nothing <- atomically $ stopProcess processor p.pid
+                Nothing <- lookupProcessIO p.pid
+                Just _ <- lookupProcessIO p2.pid
 
                 -- kill the second task, otherwise the awaitProcessor would last more than 100ms
-                Just _ <- atomically $ stopProcess processor p2.pid
+                True <- atomically $ stopProcess p2
                 WaitCompleted _ <- atomically =<< waitTransaction 100 (awaitProcessor processor)
+                Nothing <- lookupProcessIO p2.pid
                 pure ()
         ]
   where
@@ -61,8 +63,3 @@ test_processor =
     sleeperStarted = \case
         ProcessCreated p | p.program == ProgramName "sleeper" -> True
         _ -> False
-
-assertProcessLists :: HasCallStack => Processor -> [String] -> Assertion
-assertProcessLists processor xs = do
-    procs <- fmap show <$> atomically (getProcesses processor)
-    procs @?= xs

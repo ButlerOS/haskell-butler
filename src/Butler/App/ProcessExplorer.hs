@@ -16,9 +16,9 @@ renderPE os stV wid = do
             PEAll -> Pid 1
             PEScopped p -> p
     let renderProcessM pid = do
-            processM <- lift (getProcess os.processor pid)
+            mProcess <- lift (lookupProcess os.processor pid)
             li_ do
-                maybe "ghost" renderProcess processM
+                maybe "ghost" renderProcess mProcess
         renderProcess process = do
             status <- lift (readTVar process.status)
             with ul_ [class_ "pl-2 border-solid rounded border-l-2 border-slate-500"] do

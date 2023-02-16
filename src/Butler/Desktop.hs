@@ -140,7 +140,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
 delApp :: Desktop -> AppInstance -> STM ()
 delApp desktop app = do
     modifyTVar' desktop.apps (Map.delete app.wid)
-    void $ stopProcess desktop.env.os.processor app.process.pid
+    void $ stopProcess app.process
 
 -- | Register a new windowed application.
 addApp :: Desktop -> AppInstance -> STM ()
