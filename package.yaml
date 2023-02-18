@@ -9,6 +9,7 @@ language: GHC2021
 category: Development
 extra-source-files:
   - CHANGELOG.md
+  - data/*
 
 ghc-options:
   - -Wall
