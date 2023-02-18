@@ -18,6 +18,8 @@ license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     CHANGELOG.md
+    data/haskell-butler-logo.svg
+    data/ws.js
 
 source-repository head
   type: git
