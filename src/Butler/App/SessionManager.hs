@@ -1,18 +1,13 @@
 module Butler.App.SessionManager where
 
-import Butler.Prelude
-
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.UUID qualified as UUID
 
-import Data.Map.Strict qualified as Map
-
 import Butler
+import Butler.Display
 import Butler.Memory
 import Butler.Session
-
-bodyHtml :: Monad m => Text -> HtmlT m () -> HtmlT m ()
-bodyHtml cls = with div_ [id_ "sm-list", class_ cls]
 
 renderSM :: Display -> WinID -> HtmlT STM ()
 renderSM display wid = do

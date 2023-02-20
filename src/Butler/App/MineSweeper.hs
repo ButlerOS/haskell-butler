@@ -9,7 +9,6 @@ import Data.Text.Lazy (toStrict)
 import System.Random (randomRIO)
 
 import Butler
-import Butler.Prelude
 
 data MSState = MSState
     { board :: MSBoard
@@ -255,4 +254,4 @@ startMineSweeper clients wid pipeAE = do
                         _ -> pure ()
                 _ -> pure ()
             WaitCompleted _ -> pure ()
-        clientsHtmlT clients $ renderApp wid state
+        sendsHtml clients $ renderApp wid state

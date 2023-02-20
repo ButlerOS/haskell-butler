@@ -17,6 +17,7 @@ newtype Pid = Pid Natural
 instance From Pid Natural where
     from (Pid n) = n
 
+-- | A process is a killable thread.
 data Process = Process
     { pid :: Pid
     -- ^ the process id

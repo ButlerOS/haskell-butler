@@ -7,6 +7,7 @@ import Lucid
 
 import Butler.GUI
 import Butler.Memory
+import Butler.OS
 import Butler.Prelude
 import Butler.Process
 
@@ -197,6 +198,3 @@ withoutWID (TriggerName n) = TriggerName $ Text.dropWhileEnd (== '-') . Text.dro
 
 wid_ :: WinID -> Text -> _
 wid_ wid n = id_ (withWID wid n)
-
-scopeTriggers :: WinID -> [TriggerName] -> [TriggerName]
-scopeTriggers winID = map (\(TriggerName tn) -> TriggerName (withWID winID tn))

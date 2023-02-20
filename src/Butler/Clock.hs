@@ -1,11 +1,11 @@
 -- | Clock provides timing facility
 module Butler.Clock (
-    Clock (..),
+    Clock,
     newClock,
 
     -- * Read time
     Time,
-    toEpoch,
+    getClockTime,
 
     -- * Duration
     Milli (..),
@@ -19,23 +19,22 @@ module Butler.Clock (
 import Butler.Prelude
 import Data.UnixTime
 
-data Clock = Clock
-    { createdAt :: UnixTime
-    , getTime :: IO Time
-    }
+newtype Clock = Clock (IO Time)
+
+getClockTime :: MonadIO m => Clock -> m Time
+getClockTime (Clock action) = liftIO action
 
 newClock :: MonadIO m => m Clock
 newClock = liftIO do
     start <- getUnixTime
-    let readTime = do
-            now <- getUnixTime
-            let elapsed = now `diffUnixTime` start
-                milli :: Int64
-                milli =
-                    from (elapsed.udtSeconds) * 1_000
-                        + from (elapsed.udtMicroSeconds) `div` 1_000
-            pure $ Time (unsafeFrom milli)
-    pure $ Clock start readTime
+    pure $ Clock do
+        now <- getUnixTime
+        let elapsed = now `diffUnixTime` start
+            milli :: Int64
+            milli =
+                from (elapsed.udtSeconds) * 1_000
+                    + from (elapsed.udtMicroSeconds) `div` 1_000
+        pure $ Time (unsafeFrom milli)
 
 -- | The number of milli secondes since the clock started.
 newtype Time = Time Natural
@@ -63,9 +62,7 @@ instance From Natural Time where
 instance From Time Text where
     from (Time t) = from (show t) <> "ms"
 
-toEpoch :: Clock -> Time -> UTCTime
-toEpoch = error "TODO: add time duration to the starting date"
-
+-- | Pause the execution.
 sleep :: MonadIO m => Milli -> m ()
 sleep (Milli x) = liftIO $ threadDelay (unsafeFrom x * 1_000)
 
@@ -77,6 +74,7 @@ instance ToJSON result => ToJSON (WaitResult result) where
         WaitCompleted res -> toJSON res
         WaitTimeout -> "timeout"
 
+-- | Wait for a transaction with a timeout.
 waitTransaction :: MonadIO m => Milli -> STM result -> m (STM (WaitResult result))
 waitTransaction (Milli x) action = liftIO do
     delay <- registerDelay (unsafeFrom x * 1_000)

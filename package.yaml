@@ -44,75 +44,81 @@ default-extensions:
   - PartialTypeSignatures
 
 dependencies:
-  - aeson
+  # The libraries that come with GHC.
   - base < 5
-  - one-line-aeson-text
-  - mmorph
   - binary
-  - random
-  - mtl
-  - optparse-applicative
-  - unliftio
-  - PyF
-  - posix-pty
-  - process
-  - typed-process
-  - with-utf8
-  - cgroup-rts-threads
-
-  - witch
-
-  - containers
   - bytestring
+  - containers
   - directory
   - filepath
-  - hashable
+  - mtl
+  - process
+  - stm
   - text
   - time
-  - uuid
   - unix
-  - unix-time
-  - network
-  - network-run
 
-  - generic-lens
-  - lens
-  - lens-aeson
+  # CLI
+  - with-utf8
+  - optparse-applicative
 
-  - relude
+  # A modern prelude
+  - unliftio
+  - random
+  - typed-process
 
   - ki
   - ki-unlifted
-  - stm
+  - witch
 
-  - serialise
+  # Lens
+  - generic-lens
+  - lens
 
-  - servant-websockets
-  - websockets
-  - servant
-  - servant-server
-  - servant-auth
-  - servant-auth-server
+  # JSON
+  - aeson
+  - lens-aeson
+  - one-line-aeson-text
+
+  # Network libraries
   - http-api-data
-  - jose
-
-  - retry
-
+  - network
+  - network-run
+  - websockets
   - wai
   - warp
   - warp-tls
 
+  # Servant types
+  - servant-websockets
+  - servant
+  - servant-server
+  - servant-auth
+  - servant-auth-server
+
+  # Extra
+  - PyF
+  - posix-pty
+  - cgroup-rts-threads
+  - hashable
+  - uuid
+  - unix-time
+  - serialise
+  - jose
+  - retry
+  - ebml
+
+  # html
   - lucid
   - lucid-htmx
   - lucid-svg
   - http-types
   - servant-lucid
 
+  # xstatics
   - xstatic
   - xstatic-th
   - lucid-xstatic
-
-  - ebml
   - xstatic-htmx
   - xstatic-tailwind
   - xstatic-sweetalert2

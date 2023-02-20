@@ -3,7 +3,8 @@ module Butler.App.ProcessExplorer where
 import Butler
 import Butler.Desktop
 import Butler.Logger
-import Butler.Prelude
+import Butler.OS
+
 import Butler.Processor
 import Data.Aeson (Value (Number))
 

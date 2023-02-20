@@ -1,42 +1,56 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
--- TODO: remove -Wno
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Butler.Prelude (
+    -- * Custom helpers
     die,
     showT,
+    putTextLn,
+    whenM,
+    unlessM,
+
+    -- * ki
+    module Ki.Unlifted,
 
     -- * unliftio
     module UnliftIO,
     module UnliftIO.STM,
     Control.Concurrent.STM.stateTVar,
     Control.Concurrent.STM.check,
-    module Control.Monad.Morph,
-
-    -- * mtl
-    module Control.Monad.Reader,
-
-    -- * base extra
-    whenM,
-    unlessM,
-    module GHC.Stack,
-    module Data.Char,
-    System.Posix.ByteString.RawFilePath,
-    GHC.Exts.fromList,
-
-    -- * relude
-    Relude.putText,
-    Relude.putTextLn,
-    Relude.putBS,
-    Relude.putBSLn,
 
     -- * PyF
     module PyF,
 
     -- * lucid
-    Lucid.ToHtml (..),
-    Lucid.Html,
-    Lucid.HtmlT,
+    module Lucid,
+    module Lucid.Htmx,
+    Lucid.Base.makeAttribute,
+
+    -- * optparse-applicative
+    Options.Applicative.Types.ParserInfo,
+
+    -- * aeson
+    (.=),
+    Data.Aeson.Value (Object, String),
+    Data.Aeson.decode',
+    Data.Aeson.FromJSON,
+    Data.Aeson.fromJSON,
+    Data.Aeson.ToJSON,
+    Data.Aeson.toJSON,
+    Data.Aeson.Result (..),
+    encodeJSON,
+    decodeJSON,
+    Data.Aeson.object,
+
+    -- * xstatic
+    module XStatic,
+
+    -- * witch
+    Witch.From,
+    Witch.from,
+    Witch.tryFrom,
+    Witch.into,
+    Witch.via,
+    Witch.unsafeFrom,
 
     -- * lens
     (%~),
@@ -57,53 +71,9 @@ module Butler.Prelude (
     -- * uuid
     Data.UUID.UUID,
 
-    -- * re-exports from base
-    bool,
-    module Debug.Trace,
-    module Data.Coerce,
-    module Data.Int,
-    module Data.Word,
-    module Foreign.C.Types,
-    Data.Foldable.traverse_,
-    Data.Void.Void,
-    module Control.Applicative,
-    module Data.Bifunctor,
-    module Data.Functor.Identity,
-    module Data.Dynamic,
-    Data.Proxy.Proxy (..),
-    module Data.Maybe,
-    module Data.Either,
-    module Data.Monoid,
-    GHC.Generics.Generic,
-    GHC.Records.HasField (..),
-    module Control.Monad,
-    Numeric.Natural.Natural,
-    Control.Concurrent.ThreadId,
-    Control.Concurrent.myThreadId,
-    Control.Concurrent.threadDelay,
-    Text.Read.readMaybe,
-    Data.String.IsString,
-    (&),
-    Data.Foldable.toList,
-
-    -- * text/bytestring/containers
-    Data.Text.Text,
-    LByteString,
-    Data.ByteString.ByteString,
-    Data.IntMap.Strict.IntMap,
-    Data.IntSet.IntSet,
-    Data.Set.Set,
-    Data.Map.Strict.Map,
-    Warp.Port,
-    module Data.Text.Encoding,
-    module Data.Text.Encoding.Error,
-
     -- * servant
     Servant.API.FromHttpApiData (..),
     Servant.API.ToHttpApiData (..),
-
-    -- * ki
-    module Ki,
 
     -- * serialise
     Codec.Serialise.Serialise (..),
@@ -115,36 +85,53 @@ module Butler.Prelude (
     Data.Time.Clock.UTCTime,
     Data.Time.Clock.getCurrentTime,
 
-    -- * cli parser
-    Options.Applicative.Types.ParserInfo,
+    -- * text bytestring containers
+    Data.Sequence.Seq,
+    Data.Text.Text,
+    LByteString,
+    Data.ByteString.ByteString,
+    Data.IntMap.Strict.IntMap,
+    Data.IntSet.IntSet,
+    Data.Set.Set,
+    Data.Map.Strict.Map,
+    Warp.Port,
+    Data.Hashable.Hashable,
+    module Data.Text.Encoding,
+    module Data.Text.Encoding.Error,
 
-    -- * stm
-
-    -- module Control.Concurrent.STM,
-
-    -- * aeson
-    (.=),
-    Data.Aeson.Value (Object, String),
-    Data.Aeson.decode',
-    Data.Aeson.FromJSON,
-    Data.Aeson.fromJSON,
-    Data.Aeson.ToJSON,
-    Data.Aeson.toJSON,
-    Data.Aeson.Result (..),
-    encodeJSON,
-    decodeJSON,
-    Data.Aeson.object,
-
-    -- * xstatic
-    module XStatic,
-
-    -- * Convertion
-    Witch.From,
-    Witch.from,
-    Witch.tryFrom,
-    Witch.into,
-    Witch.via,
-    Witch.unsafeFrom,
+    -- * base extra
+    System.Posix.ByteString.RawFilePath,
+    GHC.Exts.fromList,
+    bool,
+    Data.Foldable.traverse_,
+    module Control.Applicative,
+    module Control.Monad,
+    module Control.Monad.Reader,
+    module Data.Bifunctor,
+    module Data.Char,
+    module Data.Coerce,
+    module Data.Dynamic,
+    module Data.Either,
+    module Data.Functor.Identity,
+    module Data.Int,
+    module Data.Maybe,
+    module Data.Monoid,
+    module Data.Proxy,
+    module Data.Void,
+    module Data.Word,
+    module Debug.Trace,
+    module Foreign.C.Types,
+    module GHC.Stack,
+    GHC.Generics.Generic,
+    GHC.Records.HasField (..),
+    Numeric.Natural.Natural,
+    Control.Concurrent.ThreadId,
+    Control.Concurrent.myThreadId,
+    Control.Concurrent.threadDelay,
+    Text.Read.readMaybe,
+    Data.String.IsString,
+    (&),
+    Data.Foldable.toList,
 ) where
 
 import Codec.Serialise qualified
@@ -155,11 +142,7 @@ import Control.Concurrent.STM
 import Control.Exception hiding (Handler)
 import Control.Lens hiding ((.=))
 import Control.Monad
-import Control.Monad.Fix qualified
-import Control.Monad.IO.Class qualified
-import Control.Monad.Morph (generalize, hoist)
 import Control.Monad.Reader
-import Control.Monad.State qualified
 import Data.Aeson ((.=))
 import Data.Aeson qualified
 import Data.Aeson.Lens qualified
@@ -172,26 +155,26 @@ import Data.Coerce
 import Data.Dynamic
 import Data.Either
 import Data.Foldable qualified
-import Data.Functor
 import Data.Functor.Identity qualified
 import Data.Generics.Labels ()
+import Data.Hashable qualified
 import Data.Int
 import Data.IntMap.Strict qualified
 import Data.IntSet qualified
-import Data.Kind qualified
-import Data.Map qualified
 import Data.Map.Strict qualified
 import Data.Maybe
 import Data.Monoid
-import Data.Proxy qualified
+import Data.Proxy
+import Data.Sequence
 import Data.Set qualified
 import Data.String qualified
 import Data.Text qualified
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
+import Data.Text.IO qualified
 import Data.Time.Clock qualified
 import Data.UUID qualified
-import Data.Void qualified
+import Data.Void
 import Data.Word
 import Debug.Trace
 import Foreign.C.Types
@@ -199,20 +182,20 @@ import GHC.Exts (fromList)
 import GHC.Generics qualified
 import GHC.Records qualified
 import GHC.Stack
-import GHC.TypeLits qualified
-import Ki
+import Ki.Unlifted
 import Lucid
+import Lucid.Base (makeAttribute)
+import Lucid.Htmx
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.WebSockets qualified as WS
 import Numeric.Natural qualified
 import Options.Applicative.Types qualified
 import PyF
-import Relude qualified
 import Servant.API
 import System.Posix.ByteString (RawFilePath)
 import System.Process.Typed qualified as ProcessTyped
 import Text.Read (readMaybe)
-import UnliftIO hiding (Handler)
+import UnliftIO
 import UnliftIO.STM
 import Witch qualified
 import XStatic
@@ -232,13 +215,16 @@ unlessM getCondition action = do
 instance Witch.From CTime Int64 where
     from (CTime c) = c
 
+putTextLn :: MonadIO m => Data.Text.Text -> m ()
+putTextLn = liftIO . Data.Text.IO.putStrLn
+
 encodeJSON :: Data.Aeson.ToJSON a => a -> LByteString
 encodeJSON = Data.Aeson.encode
 
 decodeJSON :: Data.Aeson.FromJSON a => LByteString -> Maybe a
 decodeJSON = Data.Aeson.decode
 
-die :: Relude.HasCallStack => MonadIO m => Relude.Text -> m ()
+die :: HasCallStack => MonadIO m => Data.Text.Text -> m ()
 die = error . Data.Text.unpack
 
 showT :: Show a => a -> Data.Text.Text

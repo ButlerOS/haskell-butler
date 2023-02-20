@@ -1,3 +1,6 @@
+{- | This module contains the logic to host multiple 'App'.
+TODO: support custom window-manager and theme.
+-}
 module Butler.Desktop (
     Desktop (..),
     newDesktop,
@@ -11,6 +14,8 @@ module Butler.Desktop (
 ) where
 
 import Data.Map.Strict qualified as Map
+import Lucid
+import Lucid.Htmx
 
 import Butler.App
 import Butler.Clock
@@ -19,6 +24,8 @@ import Butler.Frame
 import Butler.GUI
 import Butler.Logger
 import Butler.Memory
+import Butler.OS
+import Butler.Pipe
 import Butler.Prelude
 import Butler.Processor
 import Butler.SoundBlaster
@@ -130,7 +137,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
 
     -- This act as a ping thread
     let updateStatus s = do
-            clientsHtmlT desktop.clients $ statusHtml s
+            sendsHtml desktop.clients $ statusHtml s
             sleep 5_000
             updateStatus (not s)
     _ <- updateStatus True

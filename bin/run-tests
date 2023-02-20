@@ -21,6 +21,9 @@ fourmolu -i src/ app/ test/
 log "Linting"
 hlint .
 
+log "Weeder"
+weeder --config ./.weeder.dhall
+
 log "Check for diff"
 if [ ! -z "$(git status --porcelain)" ]; then
   git status

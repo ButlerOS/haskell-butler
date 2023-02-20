@@ -1,8 +1,5 @@
 -- | GUI toolkit
 module Butler.GUI (
-    emptyDraw,
-    pureDraw,
-    DrawHtml,
     WinID (..),
     GuiEvent (..),
     TriggerName (..),
@@ -14,10 +11,7 @@ module Butler.GUI (
     hyper_,
     wsSend,
     encodeVal,
-    withWindow,
-    button,
     topRightMenu,
-    popup,
     hideScript,
     showScript,
     websocketHtml,
@@ -26,27 +20,16 @@ module Butler.GUI (
 
     -- * Re-exports
     makeAttribute,
-    module Butler.OS,
-    module Butler.DisplayClient,
-    module Butler.Pipe,
-    module Lucid,
-    module Lucid.Htmx,
 ) where
 
 import Butler.Prelude
-import Data.Aeson (FromJSON (parseJSON), Value (Number), withObject, (.:))
+import Data.Aeson (FromJSON (parseJSON), withObject, (.:))
+import Data.Aeson.Types (Pair)
 import Data.Text qualified as Text
-
-import Lucid
-import Lucid.Base (makeAttribute)
-import Lucid.Htmx
+import Data.Text.Read qualified as Text
 
 import Butler.DisplayClient
-import Butler.OS
-import Butler.Pipe
 import Butler.Session
-import Data.Aeson.Types (Pair)
-import Data.Text.Read qualified as Text
 
 data HtmxEvent = HtmxEvent
     { trigger :: Text
@@ -72,14 +55,6 @@ decodeTriggerName txt = case Text.decimal txtSuffix of
     _ -> Nothing
   where
     (txtPrefix, txtSuffix) = Text.breakOnEnd "-" txt
-
-type DrawHtml = DisplayClient -> ProcessIO (HtmlT STM ())
-
-pureDraw :: HtmlT STM () -> DrawHtml
-pureDraw = const . pure
-
-emptyDraw :: DrawHtml
-emptyDraw = const $ pure mempty
 
 data GuiEvent = GuiEvent
     { client :: DisplayClient
@@ -113,45 +88,6 @@ hyper_ = makeAttribute "_"
 
 encodeVal :: [Pair] -> Attribute
 encodeVal kv = hxVals_ $ decodeUtf8 (from $ encodeJSON $ object kv)
-
-withWindow :: Monad m => Text -> Natural -> HtmlT m () -> HtmlT m ()
-withWindow name wid body = do
-    with div_ [class_ "border border-gray-500 overflow-auto m-2", id_ ("win-" <> from (show wid))] do
-        with' h4_ "flex bg-gray-500 text-lg text-gray-100 font-medium p-1" do
-            with' span_ "flex-grow" $ toHtml name
-            winButton "min" "ri-subtract-line"
-            winButton "max" "ri-fullscreen-line"
-            winButton "close" "ri-close-line"
-        body
-  where
-    winButton action cls =
-        with
-            i_
-            [ id_ ("win-" <> from (show wid))
-            , encodeVal [("wid", Number $ fromInteger $ toInteger wid), ("win-action", String action)]
-            , hxTrigger_ "click"
-            , wsSend
-            , class_ $
-                "mx-1 cursor-pointer " <> cls
-            ]
-            mempty
-
-button :: Monad m => Text -> Text -> HtmlT m () -> HtmlT m ()
-button bid cls =
-    with
-        i_
-        [ id_ bid
-        , wsSend
-        , class_ $
-            "mx-1 rounded cursor-pointer " <> cls
-        ]
-
-popup :: Text -> Text
-popup t =
-    "call Swal.fire({text: '"
-        <> Text.replace "'" "\\'" t
-        <> "', toast: true, position: 'bottom-end', timer: 5000, showConfirmButton: false, "
-        <> "customClass: {popup: 'm-4'}})"
 
 hideScript :: Text -> Text
 hideScript name = "htmx.addClass(htmx.find('#" <> name <> "'), 'invisible'); " <> "htmx.addClass(htmx.find('#" <> name <> "'), 'absolute')"

@@ -12,6 +12,7 @@ import Web.FormUrlEncoded (FromForm)
 
 import Butler.Display
 import Butler.GUI
+import Butler.OS
 import Butler.Prelude
 import Butler.Session
 import Butler.WebSocket

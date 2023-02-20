@@ -3,10 +3,9 @@ module Butler.App.Mumbler where
 import Data.ByteString qualified as BS
 
 import Butler
-import Butler.Frame
 import Butler.Logger
 import Butler.NatMap qualified as NM
-import Butler.Prelude
+
 import Butler.Session
 import Butler.SoundBlaster
 import Butler.User
@@ -157,13 +156,8 @@ startMumbler soundCard clients wid pipeAE = do
             with div_ [wid_ wid "tray"] do
                 ico readyColor (mumblerStatusClass Muted)
 
-        clientDraw dataClient html = do
-            atomically (lookupTabClient clients dataClient) >>= \case
-                Just hclient -> atomically $ sendHtml hclient html
-                Nothing -> logError "no hclient?" ["client" .= dataClient]
-
         updateUI dataClient status = do
-            clientDraw dataClient do
+            atomically $ sendHtml dataClient do
                 msBtn status
                 msIco status
             sendsHtml clients $ appStateHtml wid state

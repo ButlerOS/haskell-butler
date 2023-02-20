@@ -8,7 +8,6 @@ import Butler
 import Butler.Frame
 import Butler.Logger
 import Butler.NatMap qualified as NM
-import Butler.Prelude
 
 -- The data model
 newtype OID = OID Natural

@@ -1,6 +1,7 @@
 module Butler.OS (
     -- * Boot
     OS (..),
+    spawnInitProcess,
     withButlerOS,
     ProcessEnv (..),
     ProcessIO,
@@ -15,16 +16,15 @@ module Butler.OS (
     -- * Processor api
     spawnProcess,
     superviseProcess,
+    stopProcess,
     killProcess,
     spawnThread_,
     spawnThread,
 
     -- * Log api
     logSystem,
-    logTrace,
-    logInfo_,
+    logDebug,
     logInfo,
-    logError_,
     logError,
 
     -- * Clock api
@@ -34,7 +34,7 @@ module Butler.OS (
     writePipe,
 
     -- * Helpers
-    awaitProcess,
+    waitProcess,
 
     -- * Re-exports
     ProgramName (..),
@@ -48,8 +48,7 @@ import Data.ByteString qualified as BS
 import System.Process.Typed hiding (Process, startProcess, stopProcess)
 
 import Butler.Buzzer
-import Butler.Clock hiding (getTime)
-import Butler.Clock qualified as Clock
+import Butler.Clock
 import Butler.Events
 import Butler.Logger
 import Butler.Memory
@@ -92,7 +91,7 @@ getSelfProcess = asks process
 logSystem :: EventSeverity -> SystemEvent -> ProcessIO ()
 logSystem s ev = do
     os <- asks os
-    now <- liftIO os.clock.getTime
+    now <- getTime
     atomically (addEvent os.logger now s ev)
 
 processLog :: ByteString -> EventSeverity -> Text -> [Pair] -> ProcessIO ()
@@ -107,27 +106,24 @@ processLog loc s msg attrs = do
 getTime :: ProcessIO Time
 getTime = do
     os <- asks os
-    liftIO os.clock.getTime
+    getClockTime os.clock
 
 getLocName :: HasCallStack => ByteString
 getLocName = case getCallStack callStack of
     (_logStack : (_, srcLoc) : _) -> encodeUtf8 $ from (srcLocModule srcLoc) <> ":" <> from (show (srcLocStartLine srcLoc))
     _ -> "N/C"
 
-logTrace :: HasCallStack => Text -> [Pair] -> ProcessIO ()
-logTrace = processLog getLocName EventTrace
-
-logInfo_ :: HasCallStack => Text -> ProcessIO ()
-logInfo_ msg = processLog getLocName EventInfo msg []
-
+-- | Use 'logInfo' for nominal but important event.
 logInfo :: HasCallStack => Text -> [Pair] -> ProcessIO ()
 logInfo = processLog getLocName EventInfo
 
+-- | Use 'logError' for unexpected mal-functions.
 logError :: HasCallStack => Text -> [Pair] -> ProcessIO ()
 logError = processLog getLocName EventError
 
-logError_ :: HasCallStack => Text -> ProcessIO ()
-logError_ msg = processLog getLocName EventInfo msg []
+-- | Use 'logDebug' for the rest.
+logDebug :: HasCallStack => Text -> [Pair] -> ProcessIO ()
+logDebug = processLog getLocName EventDebug
 
 newProcessMemory :: Serialise a => StorageAddress -> ProcessIO a -> ProcessIO (a, MemoryVar a)
 newProcessMemory addr initialize = do
@@ -141,16 +137,17 @@ runExternalProcess name cmd = do
     withProcessWait_ (setStdout createPipe $ setStderr createPipe cmd) $ \p -> do
         stdoutFlusher <- spawnThread $ handle eofHandler $ forever do
             buf <- liftIO (BS.hGetLine (getStdout p))
-            logTrace name ["stdout" .= BSLog buf]
+            logDebug name ["stdout" .= BSLog buf]
         handle eofHandler $ forever do
             buf <- liftIO (BS.hGetLine (getStderr p))
-            logTrace name ["stderr" .= BSLog buf]
+            logDebug name ["stderr" .= BSLog buf]
         atomically (await stdoutFlusher)
   where
     eofHandler e
         | isEOFError e = pure ()
         | otherwise = throwIO e
 
+-- | Create a process.
 spawnProcess :: ProgramName -> ProcessIO () -> ProcessIO Process
 spawnProcess name (ProcessIO action) = do
     env <- ask
@@ -161,16 +158,21 @@ spawnProcess name (ProcessIO action) = do
 asProcess :: ProcessEnv -> ProcessIO a -> ProcessIO a
 asProcess env = local (const env)
 
+{- | Create a child thread that never exit, for example to handle messages.
+If the thread crash, the whole process is terminated.
+-}
 spawnThread_ :: ProcessIO Void -> ProcessIO ()
 spawnThread_ action = do
     process <- asks process
     process.scope `Ki.fork_` action
 
+-- | Create a child thread.
 spawnThread :: ProcessIO a -> ProcessIO (Thread a)
 spawnThread action = do
     process <- asks process
     process.scope `Ki.fork` action
 
+-- | Lookup and kill the pid. Use 'stopProcess' instead.
 killProcess :: Pid -> ProcessIO Bool
 killProcess pid = do
     os <- asks os
@@ -189,23 +191,25 @@ data OS = OS
     }
     deriving (Generic)
 
-awaitProcess :: MonadIO m => Process -> m ExitReason
-awaitProcess p = atomically $ await p.thread
+waitProcess :: MonadIO m => Process -> m ExitReason
+waitProcess p = atomically $ await p.thread
 
 writePipe :: HasCallStack => Pipe a -> a -> ProcessIO ()
 writePipe p v = unlessM (atomically (tryWritePipe p v)) do
     logError "Write pipe failed!" []
 
-withButlerOS :: ProcessIO () -> IO ExitReason
-withButlerOS action = withProcessor \processor -> do
+-- | Run the initial process with a given storage root directory.
+spawnInitProcess :: RawFilePath -> ProcessIO a -> IO ExitReason
+spawnInitProcess fp action = withProcessor \processor -> do
     clock <- newClock
     logger <- atomically (newLogger 42)
-    storage <- newStorage ".butler-storage"
+    storage <- newStorage fp
 
     let os = OS processor storage clock logger newBuzzer
     os.buzzer 440
 
     let systemDaemons = do
+            -- TODO: This should be configurable.
             void $ superviseProcess "logger" (stdoutLogger os.logger)
             void $ superviseProcess "storage" (syncThread os.storage (logSystem EventInfo . StorageSync))
 
@@ -216,10 +220,13 @@ withButlerOS action = withProcessor \processor -> do
             -- wait for daemon to initialize
             sleep 1
             logSystem EventInfo SystemReady
-            action
+            _ <- action
             logSystem EventInfo SystemCompleted
 
     atomically $ await p.thread
+
+withButlerOS :: ProcessIO a -> IO ExitReason
+withButlerOS = spawnInitProcess ".butler-storage"
 
 superviseProcess :: ProgramName -> ProcessIO Void -> ProcessIO Process
 superviseProcess name action = do
@@ -248,9 +255,11 @@ superviseProcess name action = do
     spawnProcess ("supervisor-" <> name) do
         supervisor defaultRetryStatus
 
+{-
 -- | The list of retry and their delay time in ms
 _restartPolicySimulation :: ProcessIO [(Int, Int)]
 _restartPolicySimulation = fmap (fmap (flip div 1_000 . fromMaybe 0)) <$> simulatePolicy 10 supervisorRestartPolicy
+-}
 
 supervisorRestartPolicy :: RetryPolicyM ProcessIO
 supervisorRestartPolicy = fullJitterBackoff 150_000 <> limitRetries 3

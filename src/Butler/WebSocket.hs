@@ -14,6 +14,7 @@ import Servant
 import Servant.API.WebSocket
 
 import Butler.GUI
+import Butler.OS
 import Butler.Prelude
 import Butler.Session
 

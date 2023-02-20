@@ -44,14 +44,14 @@ data Logger event = Logger
     -- ^ The worker channel
     }
 
-data EventSeverity = EventError | EventInfo | EventTrace
+data EventSeverity = EventError | EventInfo | EventDebug
     deriving (Bounded, Eq, Ord, Show)
 
 instance From EventSeverity Text where
     from = \case
         EventError -> "error"
         EventInfo -> "info"
-        EventTrace -> "trace"
+        EventDebug -> "trace"
 
 data Event event = Event
     { createdAt :: Time

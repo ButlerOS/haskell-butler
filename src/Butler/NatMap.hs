@@ -1,17 +1,13 @@
 module Butler.NatMap (
     NatCounter,
     newNatCounter,
-    readCounter,
     incr,
     NatMap,
     newNatMap,
     newKey,
-    capacity,
-    nmLength,
     elems,
     elemsIndex,
-    lookup,
-    lookupDefault,
+    Butler.NatMap.lookup,
     delete,
     nmDelete,
     insert,
@@ -21,12 +17,8 @@ module Butler.NatMap (
 
 import Butler.Prelude
 import Data.IntMap.Strict qualified as IM
-import Prelude hiding (lookup)
 
 newtype NatCounter = NatCounter (TVar Natural)
-
-readCounter :: NatCounter -> STM Natural
-readCounter (NatCounter t) = readTVar t
 
 newNatCounter :: STM NatCounter
 newNatCounter = NatCounter <$> newTVar 0
@@ -56,23 +48,8 @@ elemsIndex nm = fmap toNatKey . IM.toAscList <$> readTVar nm.values
 nmDelete :: NatMap a -> (a -> Bool) -> STM ()
 nmDelete nm f = modifyTVar' nm.values $ IM.filter (not . f)
 
-capacity :: NatMap a -> STM Natural
-capacity nm = readCounter nm.counter
-
-nmLength :: NatMap a -> STM Int
-nmLength nm = IM.size <$> readTVar nm.values
-
 lookup :: NatMap a -> Natural -> STM (Maybe a)
 lookup nm mapKey = IM.lookup (unsafeFrom mapKey) <$> readTVar nm.values
-
-lookupDefault :: NatMap a -> Natural -> STM a -> STM a
-lookupDefault nm mapKey mkDef =
-    lookup nm mapKey >>= \case
-        Just a -> pure a
-        Nothing -> do
-            a <- mkDef
-            insert nm mapKey a
-            pure a
 
 delete :: NatMap a -> Natural -> STM ()
 delete nm mapKey = modifyTVar' nm.values (IM.delete (unsafeFrom mapKey))

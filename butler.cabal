@@ -36,14 +36,12 @@ library
       Butler.App.Mumbler
       Butler.App.NoVnc
       Butler.App.ProcessExplorer
-      Butler.App.REPL
       Butler.App.Seat
       Butler.App.SessionManager
       Butler.App.SoundTest
-      Butler.App.SpeedTest
       Butler.App.Tabletop
       Butler.App.Terminal
-      Butler.App.Timer
+      Butler.Auth
       Butler.Auth.Guest
       Butler.Auth.Invitation
       Butler.Buzzer
@@ -125,7 +123,6 @@ library
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
-    , mmorph
     , mtl
     , network
     , network-run
@@ -134,7 +131,6 @@ library
     , posix-pty
     , process
     , random
-    , relude
     , retry
     , serialise
     , servant
@@ -224,7 +220,6 @@ executable butler
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
-    , mmorph
     , mtl
     , network
     , network-run
@@ -233,7 +228,6 @@ executable butler
     , posix-pty
     , process
     , random
-    , relude
     , retry
     , serialise
     , servant
@@ -332,7 +326,6 @@ test-suite spec
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
-    , mmorph
     , mtl
     , network
     , network-run
@@ -341,7 +334,6 @@ test-suite spec
     , posix-pty
     , process
     , random
-    , relude
     , retry
     , serialise
     , servant

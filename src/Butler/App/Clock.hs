@@ -1,7 +1,5 @@
 module Butler.App.Clock (clockApp) where
 
-import Butler.Prelude
-
 import Butler
 
 import Data.Time (formatTime)

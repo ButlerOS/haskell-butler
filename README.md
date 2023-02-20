@@ -15,8 +15,8 @@ by simulating a traditional computer.
 - [x] Storage for persistance
 - [x] Network for web application
 - [x] Websocket session for authentication
-- [ ] Display for html5 gui
-- [ ] Audio channel
+- [x] Display for html5 gui
+- [x] Audio channel
 
 To validate the abstractions, the project also feature some proof of concept demos:
 

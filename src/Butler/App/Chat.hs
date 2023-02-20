@@ -14,7 +14,7 @@ import Data.Set qualified as Set
 
 import Butler
 import Butler.History
-import Butler.Prelude
+
 import Butler.Session
 import Butler.User
 

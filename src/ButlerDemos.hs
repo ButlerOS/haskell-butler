@@ -6,15 +6,13 @@ import Main.Utf8
 import System.Environment (getArgs)
 import System.Process.Typed hiding (Process)
 
+import Butler
 import Butler.App
 import Butler.Desktop
 import Butler.Display
-import Butler.GUI
 import Butler.Lobby
-import Butler.Logger
-import Butler.Prelude
+import Butler.OS
 
-import Butler.Auth.Guest
 import Butler.Auth.Invitation
 
 import Butler.App.Chat
@@ -29,9 +27,7 @@ import Butler.App.SessionManager
 import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
-import Butler.Clock
 
-import Butler.Session (Sessions)
 import Lucid.XStatic
 import XStatic.Butler as XStatic
 import XStatic.Htmx qualified as XStatic
@@ -63,66 +59,15 @@ vncServer = do
     runProc "xterm" "env DISPLAY=:99 xterm"
     runProc "vnc" "env DISPLAY=:99 x11vnc -noxdamage -noipv6 -alwaysshared -xrandr resize -ncache 10 -shared -forever"
 
-    liftIO . print =<< awaitProcess =<< getSelfProcess
+    liftIO . print =<< waitProcess =<< getSelfProcess
   where
     runProc' name cmd = void $ spawnProcess (ProgramName name) (runExternalProcess name cmd)
     runProc name cmd = void $ superviseProcess (ProgramName name) do
         runExternalProcess name cmd
         error "process died"
 
-standaloneGuiApp :: ProcessIO ()
-standaloneGuiApp = serveAppPerClient defaultXFiles auth mineSweeperApp
-  where
-    auth = const . pure . guestAuthApp $ htmlMain defaultXFiles "Standalone GUI" Nothing
-
-htmlMain :: [XStaticFile] -> Text -> Maybe (Html ()) -> Html ()
-htmlMain xfiles title mHtml = do
-    doctypehtml_ do
-        head_ do
-            title_ (toHtml title)
-            meta_ [charset_ "utf-8"]
-            meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
-            xstaticScripts xfiles
-
-        with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
-            with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
-                with div_ [id_ "w-0", class_ "h-full"] mempty
-                forM_ mHtml id
-
-serveAppPerClient :: [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> App -> ProcessIO ()
-serveAppPerClient xfiles mkAuth app = do
-    desktop <- superviseProcess "gui" $
-        startDisplay 8085 xfiles mkAuth $ \_ -> do
-            pure $ \_ws -> do
-                env <- ask
-                -- The list of clients and the app instance is re-created per client
-                clients <- atomically newDisplayClients
-                appInstance <- startApp app clients (WinID 0)
-                pure (env, clientHandler clients appInstance)
-
-    void $ awaitProcess desktop
-  where
-    clientHandler :: DisplayClients -> AppInstance -> DisplayEvent -> ProcessIO ()
-    clientHandler clients appInstance displayEvent = case displayEvent of
-        UserConnected "htmx" client -> do
-            logInfo "Client connected" ["client" .= client]
-            spawnThread_ (pingThread client)
-            spawnThread_ (sendThread client)
-            atomically do
-                addClient clients client
-            writePipe appInstance.pipeAE (AppDisplay displayEvent)
-            forever do
-                dataMessage <- recvData client
-                case eventFromMessage client dataMessage of
-                    Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
-                    Just (_wid, ae) -> writePipe appInstance.pipeAE ae
-        UserDisconnected "htmx" client -> do
-            logInfo "Client disconnected" ["client" .= client]
-            atomically do
-                addClient clients client
-            writePipe appInstance.pipeAE (AppDisplay displayEvent)
-            void $ killProcess appInstance.process.pid
-        _ -> logError "Unknown event" ["ev" .= displayEvent]
+standaloneGuiApp :: ProcessIO Void
+standaloneGuiApp = serveAppPerClient (singleGuestDisplayApp defaultXFiles) mineSweeperApp
 
 defaultXFiles :: [XStaticFile]
 defaultXFiles = [XStatic.htmx, XStatic.butlerWS, XStatic.tailwind]
@@ -171,7 +116,7 @@ multiDesktop = do
             desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
                 chat <- atomically (newChatServer display.clients)
                 lobbyProgram (mkAppSet chat) xinit chat display
-            void $ awaitProcess desktop
+            void $ waitProcess desktop
 
     xinit desktop = do
         let seatApp' = seatApp desktop.soundCard

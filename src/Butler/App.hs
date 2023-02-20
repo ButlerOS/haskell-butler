@@ -1,22 +1,43 @@
+-- | This module contains the logic for graphical app definition.
 module Butler.App where
 
 import Data.Map.Strict qualified as Map
+import Lucid
+import Lucid.Htmx
 import Network.WebSockets qualified as WS
 
-import Butler.Display
+import Butler.DisplayClient
 import Butler.Frame
 import Butler.GUI
+import Butler.OS
+import Butler.Pipe
 import Butler.Prelude
+import Butler.WebSocket (ChannelName)
 import Butler.Window
 
+data DisplayEvent
+    = UserConnected ChannelName DisplayClient
+    | UserDisconnected ChannelName DisplayClient
+    deriving (Generic, ToJSON)
+
+instance Show DisplayEvent where
+    show = \case
+        UserConnected{} -> "UserConnected"
+        UserDisconnected{} -> "UserDisconnected"
+
+-- | Application tag.
 newtype AppTag = AppTag Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON)
 
+-- | The type of event an app receive
 data AppEvent
-    = AppDisplay DisplayEvent
-    | AppTrigger GuiEvent
-    | AppData DataEvent
+    = -- | A display event (e.g. to mount the UI)
+      AppDisplay DisplayEvent
+    | -- | A trigger event (e.g. onclick)
+      AppTrigger GuiEvent
+    | -- | A data event (e.g. for raw data)
+      AppData DataEvent
     deriving (Generic, ToJSON)
 
 eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
@@ -30,14 +51,26 @@ eventFromMessage client = \case
         (wid, buf) <- decodeMessage rawBuf
         pure (wid, AppData (DataEvent client buf rawBuf))
 
+{- | App is instantiated with:
+
+- 'DisplayClients' that contains all the connected clients. To send update, app should uses `sendsHtml clients ""`
+- 'WinID', the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
+- 'Pipe' 'AppEvent', the channel to receive event.
+-}
 type AppStart = DisplayClients -> WinID -> Pipe AppEvent -> ProcessIO ()
 
+-- | A graphical application definition.
 data App = App
     { name :: ProgramName
+    -- ^ The application name.
     , tags :: Set AppTag
+    -- ^ Its categories.
     , description :: Text
+    -- ^ A description.
     , size :: Maybe (Int, Int)
+    -- ^ An optional size.
     , start :: AppStart
+    -- ^ Start action.
     }
 
 data AppInstance = AppInstance
@@ -50,6 +83,7 @@ data AppInstance = AppInstance
 
 newtype AppSet = AppSet (Map ProgramName App)
 
+-- | A convenient helper to mount the UI when a new user connect.
 sendHtmlOnConnect :: HtmlT STM () -> AppEvent -> ProcessIO ()
 sendHtmlOnConnect htmlT = \case
     AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client htmlT

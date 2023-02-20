@@ -12,7 +12,7 @@ test_logger :: TestTree
 test_logger = testCase "Log buffer" do
     logger <- atomically $ newLogger 4
     clock <- newClock
-    now <- getTime clock
+    now <- getClockTime clock
     traverse_ (atomically . addEvent logger now EventInfo) ([5 .. 9] :: [Int])
     xs <- map (.body) <$> atomically (readLogs logger)
     traverse_ (atomically . addEvent logger now EventInfo) ([0 .. 9] :: [Int])

@@ -1,6 +1,5 @@
 module Butler.App.SoundTest (soundTestApp) where
 
-import Butler.Prelude
 import Codec.EBML qualified as EBML
 import Data.ByteString qualified as BS
 import UnliftIO.Process qualified as Process
@@ -26,7 +25,7 @@ localStream sc wid = spawnProcess "recoder" do
     processHandler soundChannel _stdin (Just pStdout) (Just pStderr) _process = do
         spawnThread_ $ forever do
             buf <- liftIO (BS.hGetLine pStdout)
-            logTrace "recorder" ["stdout" .= BSLog buf]
+            logDebug "recorder" ["stdout" .= BSLog buf]
 
         let
             readStream sr = do

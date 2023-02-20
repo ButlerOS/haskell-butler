@@ -18,9 +18,11 @@ import UnliftIO.Directory (withCurrentDirectory)
 
 type WaiApplication = Wai.Application
 
+-- | Listening mode.
 data WebProtocol
     = Http
-    | Https (Maybe (ByteString, ByteString))
+    | -- Https (Maybe (crt data, key data)). On Nothing, 'webService' generates a self-signed certificate.
+      Https (Maybe (ByteString, ByteString))
 
 getKeys :: ProcessIO (ByteString, ByteString)
 getKeys = fst <$> newProcessMemory "tls.key" genKeys
@@ -37,7 +39,7 @@ getKeys = fst <$> newProcessMemory "tls.key" genKeys
             keyData <- BS.readFile keyPath
             pure (crtData, keyData)
 
-webService :: [XStaticFile] -> Wai.Application -> Port -> WebProtocol -> ProcessIO Void
+webService :: [XStaticFile] -> WaiApplication -> Port -> WebProtocol -> ProcessIO Void
 webService xs app port = \case
     Http -> do
         logInfo "Running WARP" ["port" .= port, "tls" .= False]

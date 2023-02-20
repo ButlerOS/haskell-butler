@@ -1,4 +1,4 @@
--- | Data types for events
+-- | Data types for internal events
 module Butler.Events (SystemEvent (..)) where
 
 import Butler.Prelude

@@ -1,8 +1,9 @@
 module Butler.App.LogViewer where
 
 import Butler
+import Butler.Events
 import Butler.Logger
-import Butler.Prelude
+import Butler.OS
 
 renderLog :: Event SystemEvent -> HtmlT STM ()
 renderLog se = toHtml (showT se.createdAt <> " " <> showT se.body)
@@ -30,7 +31,7 @@ logViewerApp =
                     case ev of
                         Right de -> sendHtmlOnConnect (renderLogs os wid) de
                         Left sysEvent ->
-                            clientsHtmlT clients do
+                            sendsHtml clients do
                                 with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
                                     li_ $ renderLog sysEvent
         }

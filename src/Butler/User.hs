@@ -2,7 +2,6 @@ module Butler.User where
 
 import Butler.Prelude
 import Data.Hashable (Hashable (hash))
-import Lucid
 
 newtype UserName = UserName Text
     deriving newtype (Ord, Eq, IsString, Show, Serialise)

@@ -5,7 +5,6 @@ module Butler.Frame (
     DataEvent (..),
 
     -- * helper
-    encodeMessage,
     encodeMessageL,
     decodeMessage,
     clientScript,
@@ -21,19 +20,13 @@ import Data.ByteString.Lazy qualified as LBS
 data DataEvent = DataEvent
     { client :: DisplayClient
     , buffer :: ByteString
+    -- ^ The data buffer (without the channel id)
     , rawBuffer :: ByteString
+    -- ^ The original buffer including the channel id. Use this to forward the message to other clients.
     }
 
 instance ToJSON DataEvent where
     toJSON de = object ["client" .= de.client, "data" .= BSLog de.rawBuffer]
-
--- TODO: implement variable length encoding
-encodeMessage :: WinID -> ByteString -> ByteString
-encodeMessage (WinID wid) = BS.cons chan
-  where
-    chan
-        | wid < 255 = unsafeFrom wid
-        | otherwise = error $ "wid is too big " <> show wid
 
 encodeMessageL :: WinID -> LByteString -> LByteString
 encodeMessageL (WinID wid) = LBS.cons chan

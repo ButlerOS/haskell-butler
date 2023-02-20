@@ -19,7 +19,6 @@ module Butler.Session (
 import Butler.Prelude
 
 import Data.Aeson
-import Data.Hashable
 
 import Codec.Serialise.Decoding (decodeBytes)
 import Codec.Serialise.Encoding (encodeBytes)
@@ -132,7 +131,7 @@ instance ToJSON JsonUID where
 instance FromHttpApiData JsonUID where
     parseUrlPiece txt = case UUID.fromText txt of
         Just uuid -> pure $ JsonUID uuid
-        Nothing -> fail "invalid uuid"
+        Nothing -> error "invalid uuid"
 
 instance From JsonUID Text where
     from (JsonUID uuid) = UUID.toText uuid

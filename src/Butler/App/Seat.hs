@@ -1,16 +1,13 @@
 module Butler.App.Seat (seatApp) where
 
-import Butler.App
-import Butler.Display
+import Butler
 import Butler.Frame
-import Butler.GUI
 import Butler.Logger
-import Butler.Prelude
+
 import Butler.Process
 import Butler.Session
 import Butler.SoundBlaster
 import Butler.User
-import Butler.Window
 import Data.Aeson
 import Data.Map.Strict qualified as Map
 
@@ -168,7 +165,7 @@ startSeatApp sc clients wid pipeAE = do
                                 let cbuf = encodeJSON (object ["x" .= x, "y" .= y, "pid" .= client.process.pid])
                                 sendsBinary clients (encodeMessageL (from wid) cbuf)
                 when isNew do
-                    clientsHtmlT clients (appendSeat seat)
+                    sendsHtml clients (appendSeat seat)
                 action
             Left err -> logError "invalid json" ["ev" .= BSLog buf, "err" .= err]
 
@@ -190,7 +187,7 @@ startSeatApp sc clients wid pipeAE = do
                 mSeat <- atomically do
                     delSeat seats client
                 case mSeat of
-                    Just seat -> clientsHtmlT clients (removeSeat seat.client)
+                    Just seat -> sendsHtml clients (removeSeat seat.client)
                     Nothing -> pure ()
             AppData de -> dataHandler de.client de.buffer
             AppTrigger ge -> case ge.trigger of

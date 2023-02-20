@@ -3,18 +3,18 @@ module Butler.SoundBlaster where
 import Codec.EBML qualified as EBML
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Pair)
-import Data.Binary.Put (putInt16le, runPut)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import GHC.Float (int2Float)
+import Lucid
 
 import Butler.App
-import Butler.Clock
 import Butler.Display
 import Butler.Frame
 import Butler.GUI
 import Butler.Logger
 import Butler.NatMap qualified as NM
+import Butler.OS
+import Butler.Pipe
 import Butler.Prelude
 import Butler.Session
 import Butler.User
@@ -307,7 +307,7 @@ soundHandler sc = \case
 -- [data...] : audio data
 doSoundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
 doSoundHandler sc client msg = do
-    -- logTrace "Received audio data" ["client" .= client, "length" .= BS.length msg, "buf" .= BSLog (BS.take 5 msg)]
+    -- logDebug "Received audio data" ["client" .= client, "length" .= BS.length msg, "buf" .= BSLog (BS.take 5 msg)]
     case BS.uncons msg of
         Just (0, "\x00") -> do
             logInfo "audio client stopped" ["client" .= client]
@@ -636,64 +636,3 @@ function setupSoundClient(chan) {
         <> "\nsetupSoundClient("
         <> showT wid
         <> ");"
-
--------------------------------------------------------------------------------
--- Helpers
--------------------------------------------------------------------------------
-testSound :: ByteString
-testSound = encodeSampleList $ generateTone (round sampleRate) 440
-
-renderNotes :: [Note] -> Float -> ByteString
-renderNotes xs speed = encodeSampleList $ mconcat $ map (generateTone (round $ sampleRate / speed)) xs
-
-generateTone :: Int -> Float -> [Int16]
-generateTone size note = go 0
-  where
-    maxInt16 :: Int16
-    maxInt16 = maxBound
-    scale :: Float
-    scale = int2Float (fromIntegral (maxInt16 `div` 5))
-    sin16 :: Int -> Int16
-    sin16 x = round $ (* scale) $ sin $ note * 2 * pi * int2Float x / sampleRate
-    go :: Int -> [Int16]
-    go n
-        | n == size = []
-        | otherwise = sin16 n : go (n + 1)
-
-encodeSampleList :: [Int16] -> ByteString
-encodeSampleList = from . runPut . put
-  where
-    put [] = pure ()
-    put (x : xs) = putInt16le x >> put xs
-
-sampleRate :: Float
-sampleRate = 8000
-
-recordTimeSlice :: Float
-recordTimeSlice = 500
-
-sampleLength :: ByteString -> Float
-sampleLength buf = int2Float (BS.length buf `div` 2) / sampleRate
-
-sampleLengthMS :: ByteString -> Milli
-sampleLengthMS buf = Milli . round $ 1_000 * sampleLength buf
-
-type Note = Float
-
-furElise :: [Note]
-furElise = [e4, ds4, e4, ds4, e4, b3, d4, c4, a3]
-
-a3, as3, b3, c4, cs4, d4, ds4, e4, f4, fs4, g4, gs4, a4 :: Note
-a3 = 222.00
-as3 = 235.20
-b3 = 249.19
-c4 = 264.00
-cs4 = 279.70
-d4 = 296.33
-ds4 = 313.96
-e4 = 332.62
-f4 = 352.40
-fs4 = 373.36
-g4 = 395.56
-gs4 = 419.08
-a4 = 440.00

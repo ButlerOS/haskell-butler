@@ -60,6 +60,7 @@ lookupChildProcess process pid
             Just p -> pure (Just p)
             Nothing -> traverseChilds xs
 
+-- | Stop a process, returns False if the process did not received the message.
 stopProcess :: Process -> STM Bool
 stopProcess process = tryPutTMVar process.doneVar ()
 
@@ -72,7 +73,7 @@ startProcess ::
     ProcessAction ->
     IO Process
 startProcess clock logger processor parent program (ProcessAction action) = do
-    createdAt <- getTime clock
+    createdAt <- getClockTime clock
     doneVar <- newEmptyTMVarIO
     mthread <- newEmptyTMVarIO
     mprocess <- newEmptyTMVarIO
@@ -116,7 +117,7 @@ startProcess clock logger processor parent program (ProcessAction action) = do
     -- Create a new scope
     thread <-
         parentScope `fork` scoped \scope -> do
-            now <- getTime clock
+            now <- getClockTime clock
             processThread <-
                 scope `forkTry` do
                     scoped \processScope -> do
@@ -127,7 +128,7 @@ startProcess clock logger processor parent program (ProcessAction action) = do
                             pure process
                         action process
             res <- atomically (hitman processThread doneVar)
-            end <- getTime clock
+            end <- getClockTime clock
             atomically (processTerminated end res)
 
     -- Write back the new ki thread so that it is part of the Process data

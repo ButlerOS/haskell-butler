@@ -1,9 +1,42 @@
-module Butler.DisplayClient where
+-- | This module contains the 'DisplayClient' logic.
+module Butler.DisplayClient (
+    -- * Display client
+    DisplayClient (..),
+
+    -- * Html output
+    sendHtml,
+    sendsHtml,
+    sendsHtmlButSelf,
+    clientsDraw,
+
+    -- * Binary output
+    sendBinary,
+    sendsBinary,
+    sendsBinaryButSelf,
+
+    -- * Inputs
+    recvData,
+    recvBinary,
+
+    -- * Management thread
+    pingThread,
+    sendThread,
+
+    -- * Collection of clients
+    DisplayClients,
+    newDisplayClients,
+    getClients,
+    addClient,
+    delClient,
+
+    -- * Internal
+    newClient,
+    Endpoint (..),
+)
+where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.List qualified (find)
-import Data.Text qualified as Text
 import Lucid
 import Network.WebSockets qualified as WS
 
@@ -13,6 +46,7 @@ import Butler.OS
 import Butler.Prelude
 import Butler.Session
 
+-- | A network client. Note that the 'sendThread' must be running for the @send*@ function to work.
 data DisplayClient = DisplayClient
     { conn :: WS.Connection
     , endpoint :: Endpoint
@@ -27,50 +61,47 @@ data DisplayClient = DisplayClient
 newClient :: WS.Connection -> Endpoint -> Process -> Session -> TabID -> STM DisplayClient
 newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
+-- | An action to keep a client alive.
 pingThread :: DisplayClient -> ProcessIO Void
 pingThread client = forever do
     sleep 30_000
     liftIO (WS.sendPing client.conn ("ping" :: ByteString))
 
-recvData :: MonadIO m => DisplayClient -> m WS.DataMessage
-recvData client = do
-    dataMessage <- liftIO (WS.receiveDataMessage client.conn)
-    atomically $ modifyTVar' client.recv (+ unsafeFrom (LBS.length (from dataMessage)))
-    pure dataMessage
-
-recvMessage :: MonadIO m => DisplayClient -> m ByteString
-recvMessage client = do
-    buf <- liftIO (WS.receiveData client.conn)
-    atomically $ modifyTVar' client.recv (+ unsafeFrom (BS.length buf))
-    pure buf
-
+-- | An action to send data message.
 sendThread :: DisplayClient -> ProcessIO Void
 sendThread client = forever do
     dataMessage <- atomically (readTChan client.sendChannel)
     atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length (from dataMessage)))
     liftIO $ WS.sendDataMessage client.conn dataMessage
 
-writeBinaryMessage :: MonadIO m => DisplayClient -> LByteString -> m ()
-writeBinaryMessage client t = liftIO do
-    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length t))
-    WS.sendBinaryData client.conn t
+-- | Low-level helper to read a 'DataMessage'.
+recvData :: MonadIO m => DisplayClient -> m WS.DataMessage
+recvData client = do
+    dataMessage <- liftIO (WS.receiveDataMessage client.conn)
+    atomically $ modifyTVar' client.recv (+ unsafeFrom (LBS.length (from dataMessage)))
+    pure dataMessage
 
-writeTextMessage :: MonadIO m => DisplayClient -> Text -> m ()
-writeTextMessage client txt = liftIO do
-    atomically $ modifyTVar' client.send (+ unsafeFrom (Text.length txt))
-    WS.sendTextData client.conn txt
+-- | Low-level helper to read a binary buffer.
+recvBinary :: MonadIO m => DisplayClient -> m ByteString
+recvBinary client = do
+    buf <- liftIO (WS.receiveData client.conn)
+    atomically $ modifyTVar' client.recv (+ unsafeFrom (BS.length buf))
+    pure buf
 
+-- | Send Html to a client.
 sendHtml :: DisplayClient -> HtmlT STM () -> STM ()
 sendHtml client htmlT = do
     body <- renderBST htmlT
     writeTChan client.sendChannel (WS.Text body Nothing)
 
+-- | Send Html to all clients.
 sendsHtml :: DisplayClients -> HtmlT STM () -> ProcessIO ()
 sendsHtml clients htmlT = do
     body <- atomically $ renderBST htmlT
     xs <- atomically $ getClients clients
     forM_ xs \client -> atomically (writeTChan client.sendChannel (WS.Text body Nothing))
 
+-- | Send Html to all clients except the provided one (self).
 sendsHtmlButSelf :: DisplayClient -> DisplayClients -> HtmlT STM () -> ProcessIO ()
 sendsHtmlButSelf self clients htmlT = do
     body <- atomically $ renderBST htmlT
@@ -79,14 +110,17 @@ sendsHtmlButSelf self clients htmlT = do
         when (client.endpoint /= self.endpoint) do
             atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
+-- | Send binary to a client.
 sendBinary :: DisplayClient -> LByteString -> STM ()
 sendBinary client buf = writeTChan client.sendChannel (WS.Binary buf)
 
+-- | Send binary to all clients.
 sendsBinary :: DisplayClients -> LByteString -> ProcessIO ()
 sendsBinary clients buf = do
     xs <- atomically $ getClients clients
     forM_ xs $ \client -> atomically $ sendBinary client buf
 
+-- | Send binary to all clients except the provided one (self).
 sendsBinaryButSelf :: DisplayClient -> DisplayClients -> LByteString -> ProcessIO ()
 sendsBinaryButSelf self clients buf = do
     xs <- atomically $ getClients clients
@@ -94,12 +128,7 @@ sendsBinaryButSelf self clients buf = do
         when (client.endpoint /= self.endpoint) do
             atomically $ writeTChan client.sendChannel (WS.Binary buf)
 
-clientsHtmlT :: DisplayClients -> HtmlT STM () -> ProcessIO ()
-clientsHtmlT clients htmlT = do
-    body <- atomically $ renderBST htmlT
-    xs <- atomically $ getClients clients
-    forM_ xs $ \client -> atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
-
+-- | Send html using a draw action.
 clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 clientsDraw clients draw = do
     xs <- atomically (getClients clients)
@@ -115,16 +144,11 @@ newtype Endpoint = Endpoint Text
 instance ToJSON DisplayClient where
     toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session, "tab" .= dc.tabID]
 
+-- | A collection of clients.
 newtype DisplayClients = DisplayClients (NM.NatMap DisplayClient)
 
 newDisplayClients :: STM DisplayClients
 newDisplayClients = DisplayClients <$> NM.newNatMap
-
-newDisplayClientsFromClient :: DisplayClient -> STM DisplayClients
-newDisplayClientsFromClient client = do
-    clients <- newDisplayClients
-    addClient clients client
-    pure clients
 
 getClients :: DisplayClients -> STM [DisplayClient]
 getClients (DisplayClients x) = NM.elems x
@@ -134,8 +158,3 @@ addClient (DisplayClients x) = void . NM.add x
 
 delClient :: DisplayClients -> DisplayClient -> STM ()
 delClient (DisplayClients x) client = NM.nmDelete x (\o -> o.endpoint == client.endpoint)
-
-lookupTabClient :: DisplayClients -> DisplayClient -> STM (Maybe DisplayClient)
-lookupTabClient clients client = Data.List.find sameTab <$> getClients clients
-  where
-    sameTab oclient = oclient.session.sessionID == client.session.sessionID && oclient.tabID == client.tabID

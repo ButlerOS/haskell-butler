@@ -111,6 +111,7 @@
         hlint
         tasty-discover
         fourmolu
+        weeder
         hsPkgs.doctest
       ];
 

@@ -1,3 +1,4 @@
+-- | This module contains a general purpose data structure.
 module Butler.History (
     History,
     newHistory,
@@ -6,7 +7,7 @@ module Butler.History (
     oldestHistory,
 ) where
 
-import Data.Sequence (Seq, (|>))
+import Data.Sequence ((|>))
 import Data.Sequence qualified as Seq
 
 import Butler.Prelude

@@ -1,3 +1,4 @@
+-- | This module contains the logic to enable user access through HTTP.
 module Butler.Display (
     Display (..),
     AuthApplication (..),
@@ -6,6 +7,8 @@ module Butler.Display (
     getClient,
     DisplayEvent (..),
     JwkStorage (..),
+    DisplayApplication (..),
+    serveAppPerClient,
     module Butler.DisplayClient,
 ) where
 
@@ -23,10 +26,12 @@ import Network.Wai qualified
 import Network.WebSockets qualified as WS
 import Servant
 
+import Butler.App
 import Butler.DisplayClient
+import Butler.GUI
+import Butler.Logger
 import Butler.Network
 import Butler.OS
-import Butler.Pipe (BroadcastChan (..), broadcast, newBroadcastChan)
 import Butler.Prelude
 import Butler.Process
 import Butler.Session
@@ -35,13 +40,12 @@ import Butler.WebSocket
 data Display = Display
     { sessions :: Sessions
     , clients :: TVar (Map SessionID [DisplayClient])
-    , events :: BroadcastChan DisplayEvent
     }
 
 type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
 newDisplay :: Sessions -> STM Display
-newDisplay sessions = Display sessions <$> newTVar mempty <*> newBroadcastChan
+newDisplay sessions = Display sessions <$> newTVar mempty
 
 addDisplayClient :: Display -> DisplayClient -> STM ()
 addDisplayClient display client = do
@@ -67,16 +71,6 @@ removeClient display session endpoint = do
                         xs -> Just xs
             Nothing -> Nothing
     modifyTVar' display.clients (Map.alter alter session)
-
-data DisplayEvent
-    = UserConnected ChannelName DisplayClient
-    | UserDisconnected ChannelName DisplayClient
-    deriving (Generic, ToJSON)
-
-instance Show DisplayEvent where
-    show = \case
-        UserConnected{} -> "UserConnected"
-        UserDisconnected{} -> "UserDisconnected"
 
 dcSplash :: Html ()
 dcSplash = do
@@ -110,7 +104,6 @@ connectRoute display onClient sockAddr workspaceM channel session tabID connecti
         let ev = UserConnected channel client
         atomically do
             addDisplayClient display client
-            broadcast display.events ev
         handler ev
 
     client <- takeMVar clientM
@@ -121,7 +114,6 @@ connectRoute display onClient sockAddr workspaceM channel session tabID connecti
     let ev = UserDisconnected channel client
     atomically do
         removeClient display session.sessionID endpoint
-        broadcast display.events ev
     asProcess processEnv $ handler ev
     logInfo "Client quit" ["endpoint" .= endpoint, "reason" .= into @Text res]
 
@@ -158,3 +150,45 @@ startDisplay port xfiles mkAuthApp withDisplay = do
              in wsApp req wsRespHandler
 
     webService xfiles glApp port (Https Nothing)
+
+data DisplayApplication = DisplayApplication
+    { xfiles :: [XStaticFile]
+    , mkAuth :: Sessions -> ProcessIO AuthApplication
+    }
+
+-- | A single application environment where every client gets a new instance.
+serveAppPerClient :: DisplayApplication -> App -> ProcessIO Void
+serveAppPerClient displayApplication app = do
+    desktop <- superviseProcess "gui" $
+        startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
+            pure $ \_ws -> do
+                env <- ask
+                -- The list of clients and the app instance is re-created per client
+                clients <- atomically newDisplayClients
+                appInstance <- startApp app clients (WinID 0)
+                pure (env, clientHandler clients appInstance)
+
+    void $ waitProcess desktop
+    error "Display exited?!"
+  where
+    clientHandler :: DisplayClients -> AppInstance -> DisplayEvent -> ProcessIO ()
+    clientHandler clients appInstance displayEvent = case displayEvent of
+        UserConnected "htmx" client -> do
+            logInfo "Client connected" ["client" .= client]
+            spawnThread_ (pingThread client)
+            spawnThread_ (sendThread client)
+            atomically do
+                addClient clients client
+            writePipe appInstance.pipeAE (AppDisplay displayEvent)
+            forever do
+                dataMessage <- recvData client
+                case eventFromMessage client dataMessage of
+                    Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
+                    Just (_wid, ae) -> writePipe appInstance.pipeAE ae
+        UserDisconnected "htmx" client -> do
+            logInfo "Client disconnected" ["client" .= client]
+            atomically do
+                addClient clients client
+            writePipe appInstance.pipeAE (AppDisplay displayEvent)
+            void $ killProcess appInstance.process.pid
+        _ -> logError "Unknown event" ["ev" .= displayEvent]

@@ -1,7 +1,7 @@
 module Butler.App.NoVnc (vncApp) where
 
 import Butler
-import Butler.Prelude
+
 import Ki.Unlifted qualified as Ki
 
 import Network.Run.TCP (runTCPClient)
@@ -71,7 +71,7 @@ startVncApp _clients wid pipeAE = do
             logInfo "new client" ["client" .= client]
             withRunInIO \runInIO -> runTCPClient srv.host srv.port $ \skt -> runInIO do
                 spawnThread_ $ forever do
-                    buf <- recvMessage client
+                    buf <- recvBinary client
                     liftIO (Network.Socket.ByteString.sendAll skt buf)
 
                 forever do

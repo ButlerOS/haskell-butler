@@ -1,7 +1,5 @@
 module Butler.App.Terminal (termApp) where
 
-import Butler.Prelude
-
 import System.Posix.Pty qualified as Pty
 
 import Butler
@@ -98,7 +96,7 @@ startTermApp name clients wid pipeAE = do
                             if currentDim == dim
                                 then retrySTM
                                 else pure currentDim
-                        logTrace (prog <> " term resized") ["dim" .= dim]
+                        logDebug (prog <> " term resized") ["dim" .= dim]
                         forM_ mNewDim \newDim -> do
                             sendsHtml clients (renderTray wid server)
                             liftIO (Pty.resizePty pty newDim)
@@ -107,7 +105,7 @@ startTermApp name clients wid pipeAE = do
             -- shell writer thread
             spawnThread_ $ forever do
                 inputData <- atomically $ readTChan server.inputChan
-                -- logTrace (prog <> "-write") ["buf" .= BSLog inputData]
+                -- logDebug (prog <> "-write") ["buf" .= BSLog inputData]
                 liftIO (Pty.writePty pty inputData)
 
             -- shell reader thread
@@ -115,7 +113,7 @@ startTermApp name clients wid pipeAE = do
                 outputData <- liftIO do
                     Pty.threadWaitReadPty pty
                     Pty.readPty pty
-                -- logTrace (prog <> "-read") ["buf" .= BSLog outputData]
+                -- logDebug (prog <> "-read") ["buf" .= BSLog outputData]
                 sendsBinary clients (encodeMessageL wid (from outputData))
 
     let welcomeMessage = "\rConnected to " <> encodeUtf8 prog
@@ -123,7 +121,7 @@ startTermApp name clients wid pipeAE = do
 
     let supervisor = do
             ptyProcess <- mkProc
-            res <- awaitProcess ptyProcess
+            res <- waitProcess ptyProcess
             logError "pty stopped" ["res" .= res]
             now <- getTime
             let errorMessage = "\r\n" <> from now <> " " <> encodeUtf8 prog <> " exited: " <> encodeUtf8 (from $ show res) <> "\r\n"

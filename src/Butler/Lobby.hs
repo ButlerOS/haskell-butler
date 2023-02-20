@@ -3,6 +3,8 @@ module Butler.Lobby (lobbyProgram) where
 import Data.IntMap.Strict qualified as IM
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
+import Lucid
+import Lucid.Htmx
 
 import Butler.App (AppSet)
 import Butler.Clock
@@ -11,6 +13,7 @@ import Butler.Display
 import Butler.GUI
 import Butler.Logger
 import Butler.Memory
+import Butler.OS
 import Butler.Prelude
 import Butler.Session
 import Butler.Storage
@@ -40,7 +43,7 @@ lobbyProgram mkAppSet xinit chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
     dmProcess <- spawnProcess "welcome-desktop" do
-        void $ awaitProcess displayProcess
+        void $ waitProcess displayProcess
     rootOS <- asks os
     let dmEnv = ProcessEnv rootOS dmProcess
 

@@ -1,20 +1,38 @@
-module Butler.Pipe where
+-- | This module provides 'Pipe' and 'BroadcastChan' helpers.
+module Butler.Pipe (
+    -- * BroadcastChan
+    BroadcastChan,
+    newBroadcastChan,
+    newReaderChan,
+    broadcast,
+
+    -- * Pipe
+    Pipe,
+    newPipe,
+    readPipe,
+    tryWritePipe,
+) where
 
 import Butler.Prelude
 
+-- | A 'BroadcastChan' is a single-producer multi-consumer channel.
 newtype BroadcastChan a = BroadcastChan
     { chan :: TChan a
     }
 
+-- | Creates the producer end.
 newBroadcastChan :: STM (BroadcastChan a)
 newBroadcastChan = BroadcastChan <$> newBroadcastTChan
 
+-- | Creates a new reader end.
 newReaderChan :: BroadcastChan a -> STM (TChan a)
 newReaderChan b = dupTChan b.chan
 
+-- | Broadcast a message.
 broadcast :: BroadcastChan a -> a -> STM ()
 broadcast b = writeTChan b.chan
 
+-- | A 'Pipe' is a bounded channel, analogous to pipe(2).
 newtype Pipe a = Pipe
     { content :: TBQueue a
     }
@@ -22,18 +40,11 @@ newtype Pipe a = Pipe
 newPipe :: STM (Pipe a)
 newPipe = Pipe <$> newTBQueue 42
 
+-- | 'readPipe' block until a message is available.
 readPipe :: Pipe a -> STM a
 readPipe pipe = readTBQueue pipe.content
 
-readPipe2 :: Pipe a -> Pipe b -> STM (Either a b)
-readPipe2 p1 p2 = (Left <$> readPipe p1) <|> (Right <$> readPipe p2)
-
-readPipe3 :: Pipe a -> Pipe b -> Pipe c -> STM (Either a (Either b c))
-readPipe3 p1 p2 p3 = (Left <$> readPipe p1) <|> (Right . Left <$> readPipe p2) <|> (Right . Right <$> readPipe p3)
-
-data PipeException = PipeException deriving (Show)
-instance Exception PipeException
-
+-- | 'tryWritePipe' returns False when the message could not be delivered because the pipe is full.
 tryWritePipe :: Pipe a -> a -> STM Bool
 tryWritePipe pipe v = doWrite <|> pure False
   where
