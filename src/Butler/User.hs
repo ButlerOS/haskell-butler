@@ -17,14 +17,6 @@ instance FromHttpApiData UserName where
 instance From UserName Text where
     from (UserName n) = n
 
--- | A TabID represent a single client window.
-newtype TabID = TabID Natural
-    deriving (Ord, Eq, Generic)
-    deriving newtype (Show, Num, ToJSON, FromJSON, FromHttpApiData, Serialise, Hashable)
-
-instance From TabID Text where
-    from (TabID tabID) = from (show tabID)
-
 userColor :: UserName -> Text
 userColor (UserName n) =
     let k = hash n
@@ -45,6 +37,3 @@ userIconTitle user title =
 
 userIcon :: Monad m => UserName -> HtmlT m ()
 userIcon user = userIconTitle user (from user)
-
-userTabIcon :: Monad m => UserName -> TabID -> HtmlT m ()
-userTabIcon user tab = userIconTitle user (from user <> "<" <> from tab <> ">")

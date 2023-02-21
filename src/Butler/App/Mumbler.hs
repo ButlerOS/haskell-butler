@@ -44,7 +44,7 @@ newMumblerState client = MumblerState client <$> newTVar Muted <*> newTVar 0 <*>
 
 mumblerStateHtml :: MumblerState -> HtmlT STM ()
 mumblerStateHtml ms = do
-    userTabIcon ms.client.session.username ms.client.tabID
+    userIcon ms.client.session.username
     toHtml ms.client.session.username
     ": "
     icon <- mumblerStatusClass <$> lift (readTVar ms.status)

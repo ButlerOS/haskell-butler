@@ -73,7 +73,7 @@ soundCardInfoHtml sc = with div_ [id_ "sc-info"] do
             _ -> do
                 with div_ [class_ "text-sm font-bold"] "Connected: "
                 forM_ clients \client -> do
-                    userTabIcon client.session.username client.tabID
+                    userIcon client.session.username
 
     drawList sc.channels "Playing:" (soundChannelHtml sc)
     drawList sc.receivers "Receiving:" soundReceiverHtml
@@ -99,12 +99,12 @@ soundChannelHtml sc chan = do
         mClientStatus <- lift (getSoundChannelClient chan client)
         forM_ mClientStatus \clientStatus -> do
             with span_ [class_ "mr-2"] do
-                userTabIcon client.session.username client.tabID
+                userIcon client.session.username
                 clientStatusHtml clientStatus
 
 soundReceiverHtml :: SoundReceiver -> HtmlT STM ()
 soundReceiverHtml receiver = do
-    userTabIcon receiver.client.session.username receiver.client.tabID
+    userIcon receiver.client.session.username
     ": "
     counter <- lift (readTVar receiver.counter)
     toHtml (show counter)

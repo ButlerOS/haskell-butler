@@ -12,7 +12,6 @@ module Butler.Session (
     UserName (..),
     isValidUserName,
     SessionID (..),
-    TabID (..),
     InviteID (..),
 ) where
 

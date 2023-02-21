@@ -44,7 +44,7 @@ renderSeat :: Seat -> HtmlT STM ()
 renderSeat seat = do
     let user = seat.client.session.username
         Pid idx = seat.client.process.pid
-    with span_ [id_ ("seat-" <> showT idx)] $ userTabIcon user seat.client.tabID
+    with span_ [id_ ("seat-" <> showT idx)] $ userIcon user
     createSeatCursor user idx
 
 createSeatCursor :: UserName -> Natural -> HtmlT STM ()

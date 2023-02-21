@@ -52,14 +52,13 @@ data DisplayClient = DisplayClient
     , endpoint :: Endpoint
     , process :: Process
     , session :: Session
-    , tabID :: TabID
     , recv :: TVar Word64
     , send :: TVar Word64
     , sendChannel :: TChan WS.DataMessage
     }
 
-newClient :: WS.Connection -> Endpoint -> Process -> Session -> TabID -> STM DisplayClient
-newClient c endpoint p s t = DisplayClient c endpoint p s t <$> newTVar 0 <*> newTVar 0 <*> newTChan
+newClient :: WS.Connection -> Endpoint -> Process -> Session -> STM DisplayClient
+newClient c endpoint p s = DisplayClient c endpoint p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
 -- | An action to keep a client alive.
 pingThread :: DisplayClient -> ProcessIO Void
@@ -142,7 +141,7 @@ newtype Endpoint = Endpoint Text
     deriving (FromJSON, ToJSON, ToHtml) via Text
 
 instance ToJSON DisplayClient where
-    toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session, "tab" .= dc.tabID]
+    toJSON dc = object ["endpoint" .= dc.endpoint, "session" .= dc.session]
 
 -- | A collection of clients.
 newtype DisplayClients = DisplayClients (NM.NatMap DisplayClient)
