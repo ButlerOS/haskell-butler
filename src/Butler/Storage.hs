@@ -1,6 +1,7 @@
 module Butler.Storage (
     Storage,
     newStorage,
+    getStoragePath,
     scopeStorage,
     syncThread,
 
@@ -74,17 +75,17 @@ syncThread storage fire = forever do
     sleep 5_000
     doStorageSync storage fire
 
-getStoragePath :: RawFilePath -> StorageAddress -> RawFilePath
-getStoragePath rootDir (StorageAddress n) = rootDir <> n
+getStoragePath :: Storage -> StorageAddress -> RawFilePath
+getStoragePath storage (StorageAddress n) = storage.rootDir <> n
 
 readStorage :: MonadIO m => Storage -> StorageAddress -> m (Maybe LByteString)
 readStorage storage addr = liftIO do
-    let fp = getStoragePath storage.rootDir addr
+    let fp = getStoragePath storage addr
     fileExist fp >>= \case
         False -> pure Nothing
         True -> Just . from <$> BS.readFile (from $ decodeUtf8 fp)
 
 writeStorage :: Storage -> StorageAddress -> LByteString -> STM ()
 writeStorage storage addr obj = do
-    modifyTVar' storage.journal (Map.insert (getStoragePath storage.rootDir addr) obj)
+    modifyTVar' storage.journal (Map.insert (getStoragePath storage addr) obj)
     void $ tryPutTMVar storage.sync ()

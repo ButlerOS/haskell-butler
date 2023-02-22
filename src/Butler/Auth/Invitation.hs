@@ -33,10 +33,10 @@ data LoginForm = LoginForm
 instance FromForm LoginForm
 
 welcomeForm :: Text -> Maybe InviteID -> Html ()
-welcomeForm pathPrefix inviteM = do
+welcomeForm pathPrefix mInvite = do
     loginForm pathPrefix "Welcome to ButlerOS" attrs
   where
-    attrs = maybe [] (\invite -> ["invite" .= invite]) inviteM
+    attrs = maybe [] (\invite -> ["invite" .= invite]) mInvite
 
 authServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> ServerT AuthAPI ProcessIO
 authServer sessions mkIndexHtml jwtSettings auth =
@@ -51,7 +51,7 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
         Just (Workspace ws) -> "/" <> ws
 
     indexRoute :: AuthResult SessionID -> Maybe InviteID -> ProcessIO (Html ())
-    indexRoute ar inviteM = liftIO $ case ar of
+    indexRoute ar mInvite = liftIO $ case ar of
         Authenticated sessionID -> do
             isSessionValid <- atomically (checkSession sessions sessionID)
             case isSessionValid of
@@ -61,12 +61,12 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
         _OtherAuth -> loginPage
       where
         loginPage = do
-            isValid <- atomically (validClient inviteM)
+            isValid <- atomically (validClient mInvite)
             pure $
                 mkIndexHtml $
                     splashHtml $
                         if isValid
-                            then welcomeForm pathPrefix inviteM
+                            then welcomeForm pathPrefix mInvite
                             else div_ "access denied"
 
     swapSplash = with div_ [id_ "display-lock", hxSwapOob_ "outerHTML"]

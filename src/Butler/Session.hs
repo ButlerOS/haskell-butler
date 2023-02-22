@@ -1,7 +1,7 @@
 module Butler.Session (
     Sessions (..),
     Session (..),
-    loadSessions,
+    withSessions,
     newInvite,
     deleteInvite,
     deleteSession,
@@ -30,6 +30,7 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import Servant.Auth.JWT (FromJWT, ToJWT)
 
+import Butler.Database
 import Butler.Memory
 import Butler.OS
 import Butler.User
@@ -55,11 +56,14 @@ newInvite sessions = do
 deleteInvite :: Sessions -> InviteID -> STM ()
 deleteInvite sessions invite = modifyMemoryVar sessions.invitations (Map.delete invite)
 
-deleteSession :: Sessions -> SessionID -> STM ()
-deleteSession sessions session = modifyMemoryVar sessions.sessions (Map.delete session)
+deleteSession :: Sessions -> SessionID -> ProcessIO ()
+deleteSession sessions sessionID = do
+    dbExecute sessions.db "DELETE FROM sessions WHERE uuid = :uuid" [":uuid" := into @Text sessionID]
+    atomically $ modifyTVar' sessions.sessions (Map.delete sessionID)
 
 data Sessions = Sessions
-    { sessions :: MemoryVar (Map SessionID Session)
+    { db :: Database
+    , sessions :: TVar (Map SessionID Session)
     , invitations :: MemoryVar (Map InviteID [SessionID])
     }
 
@@ -77,44 +81,62 @@ instance From SessionID Text where
 instance FromJWT SessionID
 instance ToJWT SessionID
 
-loadSessions :: ProcessIO Sessions
-loadSessions = do
-    sessions <- snd <$> newProcessMemory "sessions.bin" (pure mempty)
+sessionsDB :: DatabaseMigration
+sessionsDB = dbSimpleCreate "sessions" "uuid TEXT, username TEXT"
+
+sessionsFromDB :: Database -> ProcessIO [(SessionID, Session)]
+sessionsFromDB db = fmap mkSession <$> dbQuery db "select * from sessions" []
+  where
+    mkSession (uuid, username) =
+        let sessionID = SessionID (fromMaybe (error "bad uuid?!") (UUID.fromText uuid))
+            session = Session sessionID (UserName username)
+         in (sessionID, session)
+
+withSessions :: (Sessions -> ProcessIO a) -> ProcessIO a
+withSessions cb = withDatabase "sessions" sessionsDB \db -> do
+    sessions <- newTVarIO =<< Map.fromList <$> sessionsFromDB db
     invitations <- snd <$> newProcessMemory "invitations.bin" (pure mempty)
-    pure $ Sessions sessions invitations
+    cb $ Sessions db sessions invitations
 
 isEmptySessions :: Sessions -> STM Bool
-isEmptySessions (Sessions s _) = Map.null <$> readMemoryVar s
+isEmptySessions sessions = Map.null <$> readTVar sessions.sessions
 
 checkInvite :: Sessions -> InviteID -> STM Bool
-checkInvite (Sessions _ invites) inviteID = Map.member inviteID <$> readMemoryVar invites
+checkInvite sessions inviteID = Map.member inviteID <$> readMemoryVar sessions.invitations
 
 checkSession :: Sessions -> SessionID -> STM (Maybe Session)
-checkSession (Sessions s _) sessionID = Map.lookup sessionID <$> readMemoryVar s
+checkSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
 
-addSession :: Sessions -> SessionID -> Session -> STM Session
-addSession (Sessions s _) k v = do
-    modifyMemoryVar s (Map.insert k v)
-    pure v
+addSessionDB :: Sessions -> Session -> ProcessIO ()
+addSessionDB sessions session = do
+    dbExecute
+        sessions.db
+        "INSERT INTO sessions (uuid, username) VALUES (:uuid, :username)"
+        [":uuid" := into @Text session.sessionID, ":username" := into @Text session.username]
 
-createSession :: MonadIO m => Sessions -> UserName -> Maybe InviteID -> m (Maybe Session)
-createSession sessions username inviteM = do
+createSession :: Sessions -> UserName -> Maybe InviteID -> ProcessIO (Maybe Session)
+createSession sessions username mInvite = do
     sessionID <- SessionID <$> liftIO UUID.nextRandom
-    let session = Session sessionID username
-    atomically do
+    mSession <- atomically do
         firstSession <- isEmptySessions sessions
-        validInvite <- case inviteM of
+        validInvite <- case mInvite of
             Just invite -> checkInvite sessions invite
             Nothing -> pure False
         when validInvite do
-            let invite = fromMaybe (error "oops?") inviteM
+            let invite = fromMaybe (error "oops?") mInvite
                 alter = \case
                     Just xs -> Just (sessionID : xs)
                     Nothing -> Just [sessionID]
             modifyMemoryVar sessions.invitations (Map.alter alter invite)
         if firstSession || validInvite
-            then Just <$> addSession sessions sessionID session
+            then do
+                let session = Session sessionID username
+                modifyTVar' sessions.sessions (Map.insert session.sessionID session)
+                pure (Just session)
             else pure Nothing
+
+    forM_ mSession (addSessionDB sessions)
+    pure mSession
 
 newtype JsonUID = JsonUID UUID
     deriving newtype (Eq, Hashable)

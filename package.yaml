@@ -58,6 +58,11 @@ dependencies:
   - time
   - unix
 
+  # SQLite
+  - sqlite-simple
+  - migrant-core
+  - migrant-sqlite-simple
+
   # CLI
   - with-utf8
   - optparse-applicative

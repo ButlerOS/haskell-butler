@@ -11,6 +11,7 @@ module Butler.OS (
     runExternalProcess,
 
     -- * Memory api
+    getPath,
     newProcessMemory,
 
     -- * Processor api
@@ -107,6 +108,11 @@ getTime :: ProcessIO Time
 getTime = do
     os <- asks os
     getClockTime os.clock
+
+getPath :: StorageAddress -> ProcessIO RawFilePath
+getPath addr = do
+    os <- asks os
+    pure $ getStoragePath os.storage addr
 
 getLocName :: HasCallStack => ByteString
 getLocName = case getCallStack callStack of

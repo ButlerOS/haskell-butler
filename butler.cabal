@@ -46,6 +46,7 @@ library
       Butler.Auth.Invitation
       Butler.Buzzer
       Butler.Clock
+      Butler.Database
       Butler.Desktop
       Butler.Display
       Butler.DisplayClient
@@ -123,6 +124,8 @@ library
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
+    , migrant-core
+    , migrant-sqlite-simple
     , mtl
     , network
     , network-run
@@ -139,6 +142,7 @@ library
     , servant-lucid
     , servant-server
     , servant-websockets
+    , sqlite-simple
     , stm
     , text
     , time
@@ -220,6 +224,8 @@ executable butler
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
+    , migrant-core
+    , migrant-sqlite-simple
     , mtl
     , network
     , network-run
@@ -236,6 +242,7 @@ executable butler
     , servant-lucid
     , servant-server
     , servant-websockets
+    , sqlite-simple
     , stm
     , text
     , time
@@ -326,6 +333,8 @@ test-suite spec
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
+    , migrant-core
+    , migrant-sqlite-simple
     , mtl
     , network
     , network-run
@@ -342,6 +351,7 @@ test-suite spec
     , servant-lucid
     , servant-server
     , servant-websockets
+    , sqlite-simple
     , stm
     , tasty
     , tasty-hunit

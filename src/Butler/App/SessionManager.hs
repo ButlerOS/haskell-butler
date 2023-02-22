@@ -11,7 +11,7 @@ import Butler.Session
 
 renderSM :: Display -> WinID -> HtmlT STM ()
 renderSM display wid = do
-    sessions <- Map.elems <$> lift (readMemoryVar display.sessions.sessions)
+    sessions <- Map.elems <$> lift (readTVar display.sessions.sessions)
     clients <- lift (readTVar display.clients)
     invites <- Map.toList <$> lift (readMemoryVar display.sessions.invitations)
     with div_ [id_ (withWID wid "w")] do
@@ -123,8 +123,8 @@ startSMApp display clients wid pipeAE = do
                     Nothing -> pure mempty
                 "terminate-session" -> case ev.body ^? key "uuid" . _JSON of
                     Just session -> do
+                        deleteSession display.sessions session
                         pids <- atomically do
-                            deleteSession display.sessions session
                             allClients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
                             pure ((.process.pid) <$> allClients)
                         logInfo "Terminating" ["pids" .= pids]

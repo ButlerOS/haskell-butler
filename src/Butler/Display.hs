@@ -132,8 +132,7 @@ data AuthApplication = AuthApplication
     }
 
 startDisplay :: Port -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
-startDisplay port xfiles mkAuthApp withDisplay = do
-    sessions <- loadSessions
+startDisplay port xfiles mkAuthApp withDisplay = withSessions \sessions -> do
     display <- atomically (newDisplay sessions)
     authApp <- mkAuthApp sessions
     onClient <- withDisplay display

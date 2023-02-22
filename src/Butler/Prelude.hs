@@ -129,7 +129,7 @@ module Butler.Prelude (
     Control.Concurrent.myThreadId,
     Control.Concurrent.threadDelay,
     Text.Read.readMaybe,
-    Data.String.IsString,
+    Data.String.IsString (..),
     (&),
     Data.Foldable.toList,
 ) where

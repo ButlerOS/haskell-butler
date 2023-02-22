@@ -143,7 +143,7 @@
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
         buildInputs = with pkgs;
-          [ ghcid haskell-language-server pkgs.gst_all_1.gstreamer ] ++ desktop
+          [ sqlite ghcid haskell-language-server pkgs.gst_all_1.gstreamer ] ++ desktop
           ++ baseTools;
         GST_PLUGIN_PATH =
           "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
