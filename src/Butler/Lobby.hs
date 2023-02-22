@@ -1,3 +1,6 @@
+{- | This module contains the logic to serve multiple 'Desktop'.
+The 'Lobby' act as a router to dispatch user based on the workspace path.
+-}
 module Butler.Lobby (lobbyProgram) where
 
 import Data.IntMap.Strict qualified as IM

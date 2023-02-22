@@ -5,10 +5,12 @@ import Butler.Auth.Guest
 import Butler.Display
 import Butler.Prelude
 import Lucid.XStatic
+import XStatic.Butler
 
-singleGuestDisplayApp :: [XStaticFile] -> DisplayApplication
-singleGuestDisplayApp xfiles = DisplayApplication xfiles auth
+publicDisplayApp :: [XStaticFile] -> DisplayApplication
+publicDisplayApp extraXfiles = DisplayApplication xfiles auth
   where
+    xfiles = defaultXFiles <> extraXfiles
     auth = const . pure . guestAuthApp $ htmlMain xfiles "Standalone GUI"
 
 htmlMain :: [XStaticFile] -> Text -> Html ()
@@ -22,4 +24,5 @@ htmlMain xfiles title = do
 
         with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
             with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
-                with div_ [id_ "w-0", class_ "h-full"] mempty
+                with div_ [id_ "display-wins"] do
+                    mempty

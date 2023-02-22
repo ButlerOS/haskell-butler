@@ -1,8 +1,6 @@
 -- | Demos
 module ButlerDemos where
 
-import Control.Concurrent.CGroup qualified
-import Main.Utf8
 import System.Environment (getArgs)
 import System.Process.Typed hiding (Process)
 
@@ -30,15 +28,14 @@ import Butler.App.Terminal
 
 import Lucid.XStatic
 import XStatic.Butler as XStatic
-import XStatic.Htmx qualified as XStatic
 import XStatic.NoVNC qualified as XStatic
 import XStatic.PcmPlayer qualified as XStatic
 import XStatic.Remixicon qualified as XStatic
 import XStatic.SweetAlert2 qualified as XStatic
-import XStatic.Tailwind qualified as XStatic
 import XStatic.Winbox qualified as XStatic
 import XStatic.Xterm qualified as XStatic
 
+-- | Demonstrate running external processes.
 vncServer :: ProcessIO ()
 vncServer = do
     let exts = ["MIT-SHM", "XTEST", "RANDR", "RENDER", "XFIXES", "DOUBLE-BUFFER", "DPMS", "GLX", "X-Resource", "XVideo"]
@@ -55,27 +52,34 @@ vncServer = do
 
     sleep 1_000
     runProc "clip" "env DISPLAY=:99 autocutsel -s CLIPBOARD -verbose"
-    runProc' "xrandr" "DISPLAY=:99 xrandr --output default --mode 800x600"
+    runProc_ "xrandr" "DISPLAY=:99 xrandr --output default --mode 800x600"
     runProc "xterm" "env DISPLAY=:99 xterm"
     runProc "vnc" "env DISPLAY=:99 x11vnc -noxdamage -noipv6 -alwaysshared -xrandr resize -ncache 10 -shared -forever"
 
     liftIO . print =<< waitProcess =<< getSelfProcess
   where
-    runProc' name cmd = void $ spawnProcess (ProgramName name) (runExternalProcess name cmd)
+    runProc_ name cmd = void $ spawnProcess (ProgramName name) (runExternalProcess name cmd)
     runProc name cmd = void $ superviseProcess (ProgramName name) do
         runExternalProcess name cmd
         error "process died"
 
-standaloneGuiApp :: ProcessIO Void
-standaloneGuiApp = serveAppPerClient (singleGuestDisplayApp defaultXFiles) mineSweeperApp
+-- | Demonstrate apps deployment
+demoApp :: ProcessIO Void
+demoApp = serveApps (publicDisplayApp []) [mineSweeperApp, clockApp]
 
-defaultXFiles :: [XStaticFile]
-defaultXFiles = [XStatic.htmx, XStatic.butlerWS, XStatic.tailwind]
+-- | Demonstrate dashboard apps deployment
+demoDashboard :: ProcessIO Void
+demoDashboard = serveDashboardApps (publicDisplayApp []) [clockApp, clockApp]
 
-multiDesktop :: IO ()
-multiDesktop = do
-    v <- runDemo
-    putStrLn $ "The end: " <> show v
+-- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
+demoDesktop :: ProcessIO Void
+demoDesktop = do
+    let authApp = invitationAuthApp indexHtml
+    desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
+        chat <- atomically (newChatServer display.clients)
+        lobbyProgram (mkAppSet chat) xinit chat display
+    void $ waitProcess desktop
+    error "oops"
   where
     indexHtml :: Html () -> Html ()
     indexHtml body = do
@@ -109,14 +113,6 @@ multiDesktop = do
       } catch (e) { console.log("Error", e); }
     });
     |]
-
-    runDemo =
-        withButlerOS do
-            let authApp = invitationAuthApp indexHtml
-            desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
-                chat <- atomically (newChatServer display.clients)
-                lobbyProgram (mkAppSet chat) xinit chat display
-            void $ waitProcess desktop
 
     xinit desktop = do
         let seatApp' = seatApp desktop.soundCard
@@ -156,13 +152,9 @@ run :: ProcessIO _ -> IO ()
 run action = withButlerOS action >>= print
 
 main :: IO ()
-main = Main.Utf8.withUtf8 do
-    -- ensure tty-less environment gets line based output
-    hSetBuffering stdout LineBuffering
-    hSetBuffering stderr LineBuffering
-    -- make rts aware of the cgroup capabilities
-    Control.Concurrent.CGroup.initRTSThreads
+main = runMain do
     getArgs >>= \case
         ["vnc"] -> run vncServer
-        ["ms"] -> run standaloneGuiApp
-        _ -> multiDesktop
+        ["app"] -> run demoApp
+        ["dashboard"] -> run demoDashboard
+        _ -> run demoDesktop

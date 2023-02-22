@@ -4,6 +4,7 @@ This module exposes the main API.
 -}
 module Butler (
     -- * Core primitive
+    runMain,
     ProcessIO,
     spawnInitProcess,
 
@@ -44,8 +45,9 @@ module Butler (
     AppEvent (..),
     GuiEvent (..),
     DataEvent (..),
-    serveAppPerClient,
-    singleGuestDisplayApp,
+    serveApps,
+    serveDashboardApps,
+    publicDisplayApp,
 
     -- * GUI toolkit
     sendHtmlOnConnect,
@@ -56,6 +58,9 @@ module Butler (
     module Butler.Prelude,
 )
 where
+
+import Control.Concurrent.CGroup qualified
+import Main.Utf8
 
 import Butler.App
 import Butler.Auth
@@ -69,3 +74,13 @@ import Butler.OS
 import Butler.Pipe
 import Butler.Prelude
 import Butler.Window
+
+-- | Helper to setup line-buffering and cgroup rts for container
+runMain :: IO a -> IO a
+runMain action = Main.Utf8.withUtf8 do
+    -- ensure tty-less environment gets line based output
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
+    -- make rts aware of the cgroup capabilities
+    Control.Concurrent.CGroup.initRTSThreads
+    action

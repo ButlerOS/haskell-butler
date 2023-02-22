@@ -8,8 +8,11 @@ module Butler.Display (
     DisplayEvent (..),
     JwkStorage (..),
     DisplayApplication (..),
-    serveAppPerClient,
     module Butler.DisplayClient,
+
+    -- * Application environment
+    serveApps,
+    serveDashboardApps,
 ) where
 
 import Codec.Serialise.Decoding (decodeBytes)
@@ -36,6 +39,7 @@ import Butler.Prelude
 import Butler.Process
 import Butler.Session
 import Butler.WebSocket
+import Butler.Window
 
 data Display = Display
     { sessions :: Sessions
@@ -155,39 +159,61 @@ data DisplayApplication = DisplayApplication
     , mkAuth :: Sessions -> ProcessIO AuthApplication
     }
 
--- | A single application environment where every client gets a new instance.
-serveAppPerClient :: DisplayApplication -> App -> ProcessIO Void
-serveAppPerClient displayApplication app = do
-    desktop <- superviseProcess "gui" $
-        startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
-            pure $ \_ws -> do
-                env <- ask
-                -- The list of clients and the app instance is re-created per client
-                clients <- atomically newDisplayClients
-                appInstance <- startApp app clients (WinID 0)
-                pure (env, clientHandler clients appInstance)
-
-    void $ waitProcess desktop
+-- | Serve applications with one instance per client.
+serveApps :: DisplayApplication -> [App] -> ProcessIO Void
+serveApps displayApplication apps = do
+    void $
+        waitProcess =<< superviseProcess "gui" do
+            startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
+                pure $ \_ws -> do
+                    env <- ask
+                    -- The list of clients and the app instance is re-created per client
+                    clients <- atomically newDisplayClients
+                    appInstances <- startApps apps clients
+                    let onDisconnect = do
+                            forM_ appInstances \appInstance -> do
+                                void $ killProcess appInstance.process.pid
+                    pure (env, staticClientHandler onDisconnect clients appInstances)
     error "Display exited?!"
-  where
-    clientHandler :: DisplayClients -> AppInstance -> DisplayEvent -> ProcessIO ()
-    clientHandler clients appInstance displayEvent = case displayEvent of
-        UserConnected "htmx" client -> do
-            logInfo "Client connected" ["client" .= client]
-            spawnThread_ (pingThread client)
-            spawnThread_ (sendThread client)
-            atomically do
-                addClient clients client
+
+-- | Serve applications with one instance for all clients.
+serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void
+serveDashboardApps displayApplication apps = do
+    void $
+        waitProcess =<< superviseProcess "gui" do
+            startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
+                clients <- atomically newDisplayClients
+                appInstances <- startApps apps clients
+                pure $ \_ws -> do
+                    env <- ask
+                    pure (env, staticClientHandler (pure ()) clients appInstances)
+    error "Display exited?!"
+
+staticClientHandler :: ProcessIO () -> DisplayClients -> Map WinID AppInstance -> DisplayEvent -> ProcessIO ()
+staticClientHandler onDisconnect clients appInstances displayEvent = case displayEvent of
+    UserConnected "htmx" client -> do
+        logInfo "Client connected" ["client" .= client]
+        spawnThread_ (pingThread client)
+        spawnThread_ (sendThread client)
+        atomically $ addClient clients client
+        logInfo "Sending html" []
+        atomically $ sendHtml client do
+            with div_ [id_ "display-wins", class_ "flex"] do
+                forM_ appInstances \appInstance -> do
+                    with div_ [wid_ appInstance.wid "w"] mempty
+        logInfo "Pinging instances" []
+        forM_ appInstances \appInstance -> writePipe appInstance.pipeAE (AppDisplay displayEvent)
+        forever do
+            dataMessage <- recvData client
+            case eventFromMessage client dataMessage of
+                Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
+                Just (wid, ae) -> case Map.lookup wid appInstances of
+                    Just appInstance -> writePipe appInstance.pipeAE ae
+                    Nothing -> logError "Unknown wid" ["wid" .= wid]
+    UserDisconnected "htmx" client -> do
+        logInfo "Client disconnected" ["client" .= client]
+        atomically $ delClient clients client
+        forM_ appInstances \appInstance -> do
             writePipe appInstance.pipeAE (AppDisplay displayEvent)
-            forever do
-                dataMessage <- recvData client
-                case eventFromMessage client dataMessage of
-                    Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
-                    Just (_wid, ae) -> writePipe appInstance.pipeAE ae
-        UserDisconnected "htmx" client -> do
-            logInfo "Client disconnected" ["client" .= client]
-            atomically do
-                addClient clients client
-            writePipe appInstance.pipeAE (AppDisplay displayEvent)
-            void $ killProcess appInstance.process.pid
-        _ -> logError "Unknown event" ["ev" .= displayEvent]
+        onDisconnect
+    _ -> logError "Unknown event" ["ev" .= displayEvent]

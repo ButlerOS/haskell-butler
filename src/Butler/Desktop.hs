@@ -1,4 +1,5 @@
 {- | This module contains the logic to host multiple 'App'.
+
 TODO: support custom window-manager and theme.
 -}
 module Butler.Desktop (

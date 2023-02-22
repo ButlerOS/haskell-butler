@@ -106,6 +106,14 @@ startApp app clients wid = do
 
     pure $ AppInstance{app, process, wid, pipeAE}
 
+startApps :: [App] -> DisplayClients -> ProcessIO (Map WinID AppInstance)
+startApps apps clients = fromList <$> traverse go (zip [0 ..] apps)
+  where
+    go (i, app) = do
+        let wid = WinID i
+        appInstance <- startApp app clients wid
+        pure (wid, appInstance)
+
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
     with ul_ [class_ "list-disc"] do
