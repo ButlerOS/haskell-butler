@@ -95,8 +95,10 @@ soundTestApp sc =
         , size = Just (200, 164)
         }
 
-startSoundTest :: SoundCard -> AppStart
-startSoundTest soundCard clients wid pipeAE = do
+startSoundTest :: SoundCard -> AppContext -> ProcessIO ()
+startSoundTest soundCard ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     vState <- newTVarIO Pending
     let setStatus = atomically . writeTVar vState
 
@@ -109,7 +111,7 @@ startSoundTest soundCard clients wid pipeAE = do
         sendsHtml clients (soundCardInfoHtml soundCard)
 
     forever do
-        ae <- atomically (readPipe pipeAE)
+        ae <- atomically (readPipe ctx.pipe)
         state <- readTVarIO vState
         case ae of
             AppDisplay _ -> sendHtmlOnConnect render ae

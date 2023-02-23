@@ -136,8 +136,10 @@ tabletopApp =
         , size = Just (725, 696)
         }
 
-startTabletopApp :: AppStart
-startTabletopApp clients wid pipeAE = do
+startTabletopApp :: AppContext -> ProcessIO ()
+startTabletopApp ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     tableState <- atomically newTableState
 
     let clientHandler :: DataEvent -> ProcessIO ()
@@ -160,7 +162,7 @@ startTabletopApp clients wid pipeAE = do
             Left err -> logError "invalid json" ["ev" .= BSLog de.buffer, "err" .= err]
 
     forever do
-        ev <- atomically (readPipe pipeAE)
+        ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppData de -> clientHandler de
             AppTrigger ge -> logError "Unknown gui event" ["ev" .= ge]

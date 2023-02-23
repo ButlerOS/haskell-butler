@@ -42,11 +42,6 @@ import Butler.WebSocket
 import Butler.Window
 import XStatic.Butler
 
-data Display = Display
-    { sessions :: Sessions
-    , clients :: TVar (Map SessionID [DisplayClient])
-    }
-
 type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
 newDisplay :: Sessions -> STM Display
@@ -165,12 +160,12 @@ serveApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 xfiles (mkAuth xfiles) $ \_ -> do
+            startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
                 pure $ \_ws -> do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
                     clients <- atomically newDisplayClients
-                    appInstances <- startApps apps clients
+                    appInstances <- startApps apps display clients
                     let onDisconnect = do
                             forM_ appInstances \appInstance -> do
                                 void $ killProcess appInstance.process.pid
@@ -184,9 +179,9 @@ serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveDashboardApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 xfiles (mkAuth xfiles) $ \_ -> do
+            startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
                 clients <- atomically newDisplayClients
-                appInstances <- startApps apps clients
+                appInstances <- startApps apps display clients
                 pure $ \_ws -> do
                     env <- ask
                     pure (env, staticClientHandler (pure ()) clients appInstances)

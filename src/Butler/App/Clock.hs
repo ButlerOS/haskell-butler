@@ -60,14 +60,16 @@ clockApp =
         , start = startClockApp
         }
 
-startClockApp :: AppStart
-startClockApp clients wid pipeAE = do
+startClockApp :: AppContext -> ProcessIO ()
+startClockApp ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     state <- newTVarIO ClockUTC
     let
         draw = clockHtml wid <$> clockContent wid state
     forever do
         -- TODO: adjust wait time based until the next minute starting second
-        res <- atomically =<< waitTransaction 60_000 (readPipe pipeAE)
+        res <- atomically =<< waitTransaction 60_000 (readPipe ctx.pipe)
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted (AppDisplay de) -> case de of

@@ -12,8 +12,14 @@ import Butler.GUI
 import Butler.OS
 import Butler.Pipe
 import Butler.Prelude
+import Butler.Session
 import Butler.WebSocket (ChannelName)
 import Butler.Window
+
+data Display = Display
+    { sessions :: Sessions
+    , clients :: TVar (Map SessionID [DisplayClient])
+    }
 
 data DisplayEvent
     = UserConnected ChannelName DisplayClient
@@ -51,14 +57,6 @@ eventFromMessage client = \case
         (wid, buf) <- decodeMessage rawBuf
         pure (wid, AppData (DataEvent client buf rawBuf))
 
-{- | App is instantiated with:
-
-- 'DisplayClients' that contains all the connected clients. To send update, app should uses `sendsHtml clients ""`
-- 'WinID', the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
-- 'Pipe' 'AppEvent', the channel to receive event.
--}
-type AppStart = DisplayClients -> WinID -> Pipe AppEvent -> ProcessIO ()
-
 -- | A graphical application definition.
 data App = App
     { name :: ProgramName
@@ -71,11 +69,11 @@ data App = App
     -- ^ An optional size.
     , xfiles :: [XStaticFile]
     -- ^ Required XStaticFile
-    , start :: AppStart
+    , start :: AppContext -> ProcessIO ()
     -- ^ Start action.
     }
 
-defaultApp :: ProgramName -> AppStart -> App
+defaultApp :: ProgramName -> (AppContext -> ProcessIO ()) -> App
 defaultApp name start =
     App
         { name
@@ -85,6 +83,17 @@ defaultApp name start =
         , xfiles = []
         , start
         }
+
+-- | The application context
+data AppContext = AppContext
+    { clients :: DisplayClients
+    -- ^ the list of all the connected clients. To send update, app should uses `sendsHtml clients ""`
+    , wid :: WinID
+    -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
+    , pipe :: Pipe AppEvent
+    -- ^ the channel to receive events.
+    , display :: Display
+    }
 
 data AppInstance = AppInstance
     { app :: App
@@ -105,26 +114,27 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
 
-launchApp :: AppSet -> ProgramName -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) name clients wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app clients wid
+launchApp :: AppSet -> ProgramName -> Display -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) name display clients wid = case Map.lookup name apps of
+    Just app -> Just <$> startApp app display clients wid
     Nothing -> pure Nothing
 
-startApp :: App -> DisplayClients -> WinID -> ProcessIO AppInstance
-startApp app clients wid = do
+startApp :: App -> Display -> DisplayClients -> WinID -> ProcessIO AppInstance
+startApp app display clients wid = do
     -- Start app process
     pipeAE <- atomically newPipe
+    let ctx = AppContext clients wid pipeAE display
     process <- spawnProcess ("app-" <> app.name) do
-        app.start clients wid pipeAE
+        app.start ctx
 
     pure $ AppInstance{app, process, wid, pipeAE}
 
-startApps :: [App] -> DisplayClients -> ProcessIO (Map WinID AppInstance)
-startApps apps clients = fromList <$> traverse go (zip [0 ..] apps)
+startApps :: [App] -> Display -> DisplayClients -> ProcessIO (Map WinID AppInstance)
+startApps apps display clients = fromList <$> traverse go (zip [0 ..] apps)
   where
     go (i, app) = do
         let wid = WinID i
-        appInstance <- startApp app clients wid
+        appInstance <- startApp app display clients wid
         pure (wid, appInstance)
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()

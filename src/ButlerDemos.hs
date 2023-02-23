@@ -72,6 +72,9 @@ demoDashboard :: ProcessIO Void
 demoDashboard = serveDashboardApps publicDisplayApp [clockApp, clockApp]
 
 -- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
+multiDesktop :: IO ()
+multiDesktop = run demoDesktop
+
 demoDesktop :: ProcessIO Void
 demoDesktop = do
     let authApp = invitationAuthApp indexHtml
@@ -116,7 +119,7 @@ demoDesktop = do
 
     xinit desktop = do
         let seatApp' = seatApp desktop.soundCard
-        atomically . addDesktopApp desktop =<< startApp seatApp' desktop.clients (WinID 2)
+        atomically . addDesktopApp desktop =<< startApp seatApp' desktop.display desktop.clients (WinID 2)
 
     mkAppSet chat desktop =
         newAppSet
@@ -128,7 +131,7 @@ demoDesktop = do
             , mumblerApp desktop.soundCard
             , peApp desktop
             , vncApp
-            , smApp desktop.display
+            , smApp
             , tabletopApp
             , mineSweeperApp
             ]

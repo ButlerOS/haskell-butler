@@ -99,15 +99,18 @@ renderSM display wid = do
                 ]
                 mempty
 
-smApp :: Display -> App
-smApp display =
-    (defaultApp "user-manager" (startSMApp display))
+smApp :: App
+smApp =
+    (defaultApp "user-manager" startSMApp)
         { tags = fromList ["System"]
         , description = "Manage sessions"
         }
 
-startSMApp :: Display -> AppStart
-startSMApp display clients wid pipeAE = do
+startSMApp :: AppContext -> ProcessIO ()
+startSMApp ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
+        display = ctx.display
     let handleGuiEvent ev = do
             resp <- case ev.trigger of
                 "new-invite" -> do
@@ -143,7 +146,7 @@ startSMApp display clients wid pipeAE = do
                     pure mempty
             sendsHtml clients resp
     forever do
-        atomically (readPipe pipeAE) >>= \case
+        atomically (readPipe ctx.pipe) >>= \case
             ae@(AppDisplay _) -> sendHtmlOnConnect (renderSM display wid) ae
             AppTrigger ge -> handleGuiEvent ge
             _ -> pure ()

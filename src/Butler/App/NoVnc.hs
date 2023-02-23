@@ -43,8 +43,10 @@ vncApp =
         , xfiles = XStatic.noVNC
         }
 
-startVncApp :: AppStart
-startVncApp _clients wid pipeAE = do
+startVncApp :: AppContext -> ProcessIO ()
+startVncApp ctx = do
+    let wid = ctx.wid
+
     srv <- atomically (newVncServer "localhost" 5900)
 
     let draw :: HtmlT STM ()
@@ -77,7 +79,7 @@ startVncApp _clients wid pipeAE = do
                     atomically $ sendBinary client (from buf)
 
     forever do
-        atomically (readPipe pipeAE) >>= \case
+        atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client draw)
             AppDisplay (UserConnected "novnc" client) -> client.process.scope `Ki.fork_` onClient client
             _ -> pure ()

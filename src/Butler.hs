@@ -41,8 +41,8 @@ module Butler (
 
     -- * App API
     App (..),
+    AppContext (..),
     defaultApp,
-    AppStart,
     AppEvent (..),
     GuiEvent (..),
     DataEvent (..),

@@ -63,14 +63,14 @@ newDesktopIO display ws = do
 deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App
 deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
   where
-    startWelcomeApp clients wid pipeAE = forever do
-        atomically (readPipe pipeAE) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw wid)
+    startWelcomeApp ctx = forever do
+        atomically (readPipe ctx.pipe) >>= \case
+            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw ctx.wid)
             AppTrigger te -> case te.trigger of
                 "win-swap" ->
                     case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
                         (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                            mGuiApp <- asProcess desktop.env (launchApp appSet appName clients winId)
+                            mGuiApp <- asProcess desktop.env (launchApp appSet appName ctx.display ctx.clients winId)
                             case mGuiApp of
                                 Just guiApp -> swapWindow winId guiApp
                                 Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
@@ -103,7 +103,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
     desktop <- newDesktopIO display name
     let appSet = mkAppSet desktop
 
-    let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.clients
+    let mkDeskApp draw = startApp (deskApp desktop appSet draw) display desktop.clients
 
     xinit desktop
 
@@ -118,7 +118,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
                     "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
-                    _ -> launchApp appSet prog desktop.clients wid
+                    _ -> launchApp appSet prog display desktop.clients wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow desktop.wm.windows wid)) do
@@ -306,7 +306,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.clients wid)
+        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.display desktop.clients wid)
         atomically $ addApp desktop guiApp
 
         sendsHtml desktop.clients do

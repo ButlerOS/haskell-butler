@@ -22,15 +22,15 @@ logViewerApp =
         , description = "Read event logs"
         }
   where
-    startViewer clients wid pipeDE = do
+    startViewer ctx = do
         os <- asks os
         do
             chan <- atomically (getLogsChan os.logger)
             forever do
-                ev <- atomically (Left <$> readTChan chan <|> Right <$> readPipe pipeDE)
+                ev <- atomically (Left <$> readTChan chan <|> Right <$> readPipe ctx.pipe)
                 case ev of
-                    Right de -> sendHtmlOnConnect (renderLogs os wid) de
+                    Right de -> sendHtmlOnConnect (renderLogs os ctx.wid) de
                     Left sysEvent ->
-                        sendsHtml clients do
-                            with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
+                        sendsHtml ctx.clients do
+                            with ul_ [id_ (withWID ctx.wid "logs-list"), hxSwapOob_ "afterbegin"] do
                                 li_ $ renderLog sysEvent

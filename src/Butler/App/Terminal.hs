@@ -50,8 +50,10 @@ termApp name =
 
         }
 
-startTermApp :: Text -> AppStart
-startTermApp name clients wid pipeAE = do
+startTermApp :: Text -> AppContext -> ProcessIO ()
+startTermApp name ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     server <- atomically newXtermServer
 
     let draw :: HtmlT STM ()
@@ -60,7 +62,7 @@ startTermApp name clients wid pipeAE = do
             renderTray wid server
 
     spawnThread_ $ forever do
-        ev <- atomically (readPipe pipeAE)
+        ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppDisplay _ -> sendHtmlOnConnect draw ev
             AppData de -> atomically $ writeTChan server.inputChan de.buffer

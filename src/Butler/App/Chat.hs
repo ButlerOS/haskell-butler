@@ -131,8 +131,10 @@ chatApp srv =
         , description = "Local chat room"
         }
 
-startChatApp :: ChatServer -> AppStart
-startChatApp srv clients wid pipeAE = do
+startChatApp :: ChatServer -> AppContext -> ProcessIO ()
+startChatApp srv ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     chatChan <- atomically (newChatReader srv)
     spawnThread_ $ forever do
         ev <- atomically (readTChan chatChan)
@@ -145,7 +147,7 @@ startChatApp srv clients wid pipeAE = do
                 Nothing -> logError "bad chat ev" ["ev" .= ev]
 
     forever do
-        ev <- atomically $ readPipe pipeAE
+        ev <- atomically $ readPipe ctx.pipe
         case ev of
             AppDisplay de@(UserConnected "htmx" client) -> do
                 atomically $ sendHtml client (renderChat wid srv client)

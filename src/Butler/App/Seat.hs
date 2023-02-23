@@ -131,8 +131,10 @@ instance FromJSON SeatEvent where
 seatApp :: SoundCard -> App
 seatApp sc = defaultApp "seat" (startSeatApp sc)
 
-startSeatApp :: SoundCard -> AppStart
-startSeatApp sc clients wid pipeAE = do
+startSeatApp :: SoundCard -> AppContext -> ProcessIO ()
+startSeatApp sc ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     seats <- atomically newSeats
 
     let dataHandler client buf = case eitherDecode' (from buf) of
@@ -173,7 +175,7 @@ startSeatApp sc clients wid pipeAE = do
             with div_ [id_ "tray-0", hxSwapOob_ "beforeend"] do
                 renderSeatTray client.session wid sc.wid seats
     forever do
-        ev <- atomically (readPipe pipeAE)
+        ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (tray client)
             AppDisplay (UserDisconnected "htmx" client) -> do

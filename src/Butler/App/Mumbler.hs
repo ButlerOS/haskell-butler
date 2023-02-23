@@ -103,8 +103,10 @@ appStateHtml wid (AppState nm) = do
 ----
 -- App implementation
 ----
-startMumbler :: SoundCard -> AppStart
-startMumbler soundCard clients wid pipeAE = do
+startMumbler :: SoundCard -> AppContext -> ProcessIO ()
+startMumbler soundCard ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     (state, soundEvents) <- atomically do
         (,) <$> newAppState soundCard.clients <*> newReaderChan soundCard.events
 
@@ -225,7 +227,7 @@ startMumbler soundCard clients wid pipeAE = do
                 atomically (feedChannel soundCard soundChannel buf mFrame)
 
         handleEvent = forever do
-            ev <- atomically (Left <$> readPipe pipeAE <|> Right <$> readTChan soundEvents)
+            ev <- atomically (Left <$> readPipe ctx.pipe <|> Right <$> readTChan soundEvents)
             case ev of
                 Left (AppDisplay (UserConnected "htmx" client)) -> atomically $ sendHtml client mountUI
                 Left (AppData de) -> do

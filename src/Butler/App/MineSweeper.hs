@@ -214,12 +214,14 @@ mineSweeperApp =
         , size = Just (240, 351)
         }
 
-startMineSweeper :: AppStart
-startMineSweeper clients wid pipeAE = do
+startMineSweeper :: AppContext -> ProcessIO ()
+startMineSweeper ctx = do
+    let clients = ctx.clients
+        wid = ctx.wid
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
     forever do
-        res <- atomically =<< waitTransaction 60_000 (readPipe pipeAE)
+        res <- atomically =<< waitTransaction 60_000 (readPipe ctx.pipe)
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted (AppDisplay de) -> case de of

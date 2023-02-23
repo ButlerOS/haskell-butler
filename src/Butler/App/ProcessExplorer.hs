@@ -61,7 +61,9 @@ peApp desktop =
         , description = "Process Explorer"
         }
   where
-    startPE clients wid pipeAE = do
+    startPE ctx = do
+        let clients = ctx.clients
+            wid = ctx.wid
         stV <- newTVarIO (PEScopped desktop.env.process.pid)
         os <- asks os
         let doRender = renderPE os stV wid
@@ -79,7 +81,7 @@ peApp desktop =
                             sendsHtml clients doRender
                         _ -> logError "unknown event" ["ev" .= ev]
         spawnThread_ $ forever do
-            atomically (readPipe pipeAE) >>= \case
+            atomically (readPipe ctx.pipe) >>= \case
                 de@(AppDisplay _) -> sendHtmlOnConnect (renderPE os stV wid) de
                 AppTrigger ev -> handleEvent ev
                 _ -> pure ()
