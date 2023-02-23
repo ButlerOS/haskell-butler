@@ -69,9 +69,22 @@ data App = App
     -- ^ A description.
     , size :: Maybe (Int, Int)
     -- ^ An optional size.
+    , xfiles :: [XStaticFile]
+    -- ^ Required XStaticFile
     , start :: AppStart
     -- ^ Start action.
     }
+
+defaultApp :: ProgramName -> AppStart -> App
+defaultApp name start =
+    App
+        { name
+        , tags = mempty
+        , description = mempty
+        , size = Nothing
+        , xfiles = []
+        , start
+        }
 
 data AppInstance = AppInstance
     { app :: App

@@ -1,9 +1,9 @@
 module Butler.App.NoVnc (vncApp) where
 
 import Butler
+import XStatic.NoVNC qualified as XStatic
 
 import Ki.Unlifted qualified as Ki
-
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
 
@@ -37,12 +37,10 @@ newVncServer h p = VncServer (from h) (show p) <$> newTVar (800, 600)
 
 vncApp :: App
 vncApp =
-    App
-        { name = "vnc"
-        , tags = fromList ["Graphic", "Development"]
+    (defaultApp "vnc" startVncApp)
+        { tags = fromList ["Graphic", "Development"]
         , description = "NoVNC client"
-        , size = Nothing
-        , start = startVncApp
+        , xfiles = XStatic.noVNC
         }
 
 startVncApp :: AppStart

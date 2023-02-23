@@ -17,21 +17,20 @@ renderLogs os wid = do
 
 logViewerApp :: App
 logViewerApp =
-    App
-        { name = "log-viewer"
-        , tags = fromList ["System"]
+    (defaultApp "log-viewer" startViewer)
+        { tags = fromList ["System"]
         , description = "Read event logs"
-        , size = Nothing
-        , start = \clients wid pipeDE -> do
-            os <- asks os
-            do
-                chan <- atomically (getLogsChan os.logger)
-                forever do
-                    ev <- atomically (Left <$> readTChan chan <|> Right <$> readPipe pipeDE)
-                    case ev of
-                        Right de -> sendHtmlOnConnect (renderLogs os wid) de
-                        Left sysEvent ->
-                            sendsHtml clients do
-                                with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
-                                    li_ $ renderLog sysEvent
         }
+  where
+    startViewer clients wid pipeDE = do
+        os <- asks os
+        do
+            chan <- atomically (getLogsChan os.logger)
+            forever do
+                ev <- atomically (Left <$> readTChan chan <|> Right <$> readPipe pipeDE)
+                case ev of
+                    Right de -> sendHtmlOnConnect (renderLogs os wid) de
+                    Left sysEvent ->
+                        sendsHtml clients do
+                            with ul_ [id_ (withWID wid "logs-list"), hxSwapOob_ "afterbegin"] do
+                                li_ $ renderLog sysEvent

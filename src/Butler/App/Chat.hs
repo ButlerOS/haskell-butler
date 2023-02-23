@@ -126,12 +126,9 @@ renderChat wid srv client = do
 
 chatApp :: ChatServer -> App
 chatApp srv =
-    App
-        { name = "chat"
-        , tags = fromList ["Communication"]
+    (defaultApp "chat" (startChatApp srv))
+        { tags = fromList ["Communication"]
         , description = "Local chat room"
-        , size = Nothing
-        , start = startChatApp srv
         }
 
 startChatApp :: ChatServer -> AppStart

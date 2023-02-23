@@ -89,12 +89,10 @@ soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
 
 soundTestApp :: SoundCard -> App
 soundTestApp sc =
-    App
-        { name = "sound-test"
-        , tags = fromList ["Utility", "Sound"]
+    (defaultApp "sound-test" (startSoundTest sc))
+        { tags = fromList ["Utility", "Sound"]
         , description = "Test audio stream"
         , size = Just (200, 164)
-        , start = startSoundTest sc
         }
 
 startSoundTest :: SoundCard -> AppStart

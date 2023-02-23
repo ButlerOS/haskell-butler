@@ -40,6 +40,7 @@ import Butler.Process
 import Butler.Session
 import Butler.WebSocket
 import Butler.Window
+import XStatic.Butler
 
 data Display = Display
     { sessions :: Sessions
@@ -154,17 +155,17 @@ startDisplay port xfiles mkAuthApp withDisplay = withSessions \sessions -> do
 
     webService xfiles glApp port (Https Nothing)
 
-data DisplayApplication = DisplayApplication
-    { xfiles :: [XStaticFile]
-    , mkAuth :: Sessions -> ProcessIO AuthApplication
-    }
+newtype DisplayApplication
+    = DisplayApplication
+        ( [XStaticFile] -> (Sessions -> ProcessIO AuthApplication)
+        )
 
 -- | Serve applications with one instance per client.
 serveApps :: DisplayApplication -> [App] -> ProcessIO Void
-serveApps displayApplication apps = do
+serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
+            startDisplay 8085 xfiles (mkAuth xfiles) $ \_ -> do
                 pure $ \_ws -> do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
@@ -175,19 +176,23 @@ serveApps displayApplication apps = do
                                 void $ killProcess appInstance.process.pid
                     pure (env, staticClientHandler onDisconnect clients appInstances)
     error "Display exited?!"
+  where
+    xfiles = concatMap (\app -> app.xfiles) apps <> defaultXFiles
 
 -- | Serve applications with one instance for all clients.
 serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void
-serveDashboardApps displayApplication apps = do
+serveDashboardApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 displayApplication.xfiles displayApplication.mkAuth $ \_ -> do
+            startDisplay 8085 xfiles (mkAuth xfiles) $ \_ -> do
                 clients <- atomically newDisplayClients
                 appInstances <- startApps apps clients
                 pure $ \_ws -> do
                     env <- ask
                     pure (env, staticClientHandler (pure ()) clients appInstances)
     error "Display exited?!"
+  where
+    xfiles = concatMap (\app -> app.xfiles) apps <> defaultXFiles
 
 staticClientHandler :: ProcessIO () -> DisplayClients -> Map WinID AppInstance -> DisplayEvent -> ProcessIO ()
 staticClientHandler onDisconnect clients appInstances displayEvent = case displayEvent of

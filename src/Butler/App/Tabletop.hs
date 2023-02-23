@@ -130,12 +130,10 @@ instance FromJSON TableEvent where
 
 tabletopApp :: App
 tabletopApp =
-    App
-        { name = "tabletop"
-        , tags = fromList ["Game"]
+    (defaultApp "tabletop" startTabletopApp)
+        { tags = fromList ["Game"]
         , description = "Free form tabletop"
         , size = Just (725, 696)
-        , start = startTabletopApp
         }
 
 startTabletopApp :: AppStart

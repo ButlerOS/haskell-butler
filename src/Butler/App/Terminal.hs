@@ -4,6 +4,7 @@ import System.Posix.Pty qualified as Pty
 
 import Butler
 import Butler.Frame
+import XStatic.Xterm qualified as XStatic
 
 import System.Process (cleanupProcess)
 import System.Process.Typed qualified
@@ -42,12 +43,11 @@ renderTray wid server = do
 
 termApp :: Text -> App
 termApp name =
-    App
-        { name = "term"
-        , tags = fromList ["Development"]
+    (defaultApp "term" (startTermApp name))
+        { tags = fromList ["Development"]
         , description = "XTerm"
-        , size = Nothing
-        , start = startTermApp name
+        , xfiles = [XStatic.xtermFitAddonJs, XStatic.xtermFitAddonJsMap] <> XStatic.xterm
+
         }
 
 startTermApp :: Text -> AppStart

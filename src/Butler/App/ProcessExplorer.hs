@@ -55,40 +55,40 @@ renderPE os stV wid = do
 
 peApp :: Desktop -> App
 peApp desktop =
-    App
+    (defaultApp "ps" startPE)
         { name = "ps"
         , tags = fromList ["System"]
         , description = "Process Explorer"
-        , size = Nothing
-        , start = \clients wid pipeAE -> do
-            stV <- newTVarIO (PEScopped desktop.env.process.pid)
-            os <- asks os
-            let doRender = renderPE os stV wid
-                handleEvent ev =
-                    case ev.body ^? key "pid" . _Integer of
-                        Just pid -> do
-                            logInfo "Killing" ["pid" .= pid]
-                            void $ killProcess (Pid (unsafeFrom pid))
-                        Nothing -> case withoutWID ev.trigger of
-                            "ps-toggle" -> do
-                                st <- readTVarIO stV
-                                atomically $ writeTVar stV $ case st of
-                                    PEAll -> PEScopped desktop.env.process.pid
-                                    PEScopped _ -> PEAll
-                                sendsHtml clients doRender
-                            _ -> logError "unknown event" ["ev" .= ev]
-            spawnThread_ $ forever do
-                atomically (readPipe pipeAE) >>= \case
-                    de@(AppDisplay _) -> sendHtmlOnConnect (renderPE os stV wid) de
-                    AppTrigger ev -> handleEvent ev
-                    _ -> pure ()
-
-            forever do
-                sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
-                case sysEvent of
-                    WaitCompleted{} -> sendsHtml clients doRender
-                    WaitTimeout{} -> pure ()
         }
+  where
+    startPE clients wid pipeAE = do
+        stV <- newTVarIO (PEScopped desktop.env.process.pid)
+        os <- asks os
+        let doRender = renderPE os stV wid
+            handleEvent ev =
+                case ev.body ^? key "pid" . _Integer of
+                    Just pid -> do
+                        logInfo "Killing" ["pid" .= pid]
+                        void $ killProcess (Pid (unsafeFrom pid))
+                    Nothing -> case withoutWID ev.trigger of
+                        "ps-toggle" -> do
+                            st <- readTVarIO stV
+                            atomically $ writeTVar stV $ case st of
+                                PEAll -> PEScopped desktop.env.process.pid
+                                PEScopped _ -> PEAll
+                            sendsHtml clients doRender
+                        _ -> logError "unknown event" ["ev" .= ev]
+        spawnThread_ $ forever do
+            atomically (readPipe pipeAE) >>= \case
+                de@(AppDisplay _) -> sendHtmlOnConnect (renderPE os stV wid) de
+                AppTrigger ev -> handleEvent ev
+                _ -> pure ()
+
+        forever do
+            sysEvent <- atomically =<< waitLog os.logger 10_000 isProcess
+            case sysEvent of
+                WaitCompleted{} -> sendsHtml clients doRender
+                WaitTimeout{} -> pure ()
 
 isProcess :: SystemEvent -> Bool
 isProcess = \case

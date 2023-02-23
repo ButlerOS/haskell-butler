@@ -5,13 +5,11 @@ import Butler.Auth.Guest
 import Butler.Display
 import Butler.Prelude
 import Lucid.XStatic
-import XStatic.Butler
 
-publicDisplayApp :: [XStaticFile] -> DisplayApplication
-publicDisplayApp extraXfiles = DisplayApplication xfiles auth
+publicDisplayApp :: DisplayApplication
+publicDisplayApp = DisplayApplication auth
   where
-    xfiles = defaultXFiles <> extraXfiles
-    auth = const . pure . guestAuthApp $ htmlMain xfiles "Standalone GUI"
+    auth xfiles = const . pure . guestAuthApp $ htmlMain xfiles "Standalone GUI"
 
 htmlMain :: [XStaticFile] -> Text -> Html ()
 htmlMain xfiles title = do

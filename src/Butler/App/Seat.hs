@@ -129,14 +129,7 @@ instance FromJSON SeatEvent where
             _ -> fail "x or w attribute missing"
 
 seatApp :: SoundCard -> App
-seatApp sc =
-    App
-        { name = "seat"
-        , tags = mempty
-        , description = mempty
-        , size = Nothing
-        , start = startSeatApp sc
-        }
+seatApp sc = defaultApp "seat" (startSeatApp sc)
 
 startSeatApp :: SoundCard -> AppStart
 startSeatApp sc clients wid pipeAE = do

@@ -53,9 +53,8 @@ clockContent wid s = do
 
 clockApp :: App
 clockApp =
-    App
-        { name = "clock"
-        , tags = fromList ["Utility"]
+    (defaultApp "clock" startClockApp)
+        { tags = fromList ["Utility"]
         , description = "Display time"
         , size = Just (164, 164)
         , start = startClockApp

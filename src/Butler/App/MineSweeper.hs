@@ -208,12 +208,10 @@ mkHxVals vals =
 
 mineSweeperApp :: App
 mineSweeperApp =
-    App
-        { name = "minesweeper"
-        , tags = fromList ["Game"]
+    (defaultApp "minesweeper" startMineSweeper)
+        { tags = fromList ["Game"]
         , description = "game"
         , size = Just (240, 351)
-        , start = startMineSweeper
         }
 
 startMineSweeper :: AppStart

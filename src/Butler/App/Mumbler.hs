@@ -12,12 +12,9 @@ import Butler.User
 
 mumblerApp :: SoundCard -> App
 mumblerApp soundCard =
-    App
-        { name = "mumbler"
-        , tags = fromList ["Communication", "Sound"]
+    (defaultApp "mumbler" (startMumbler soundCard))
+        { tags = fromList ["Communication", "Sound"]
         , description = "Voice chat"
-        , size = Nothing
-        , start = startMumbler soundCard
         }
 
 ----

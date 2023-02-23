@@ -61,28 +61,23 @@ newDesktopIO display ws = do
     atomically (newDesktop processEnv display ws wm)
 
 deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App
-deskApp desktop appSet draw =
-    App
-        { name = "welcome"
-        , description = mempty
-        , tags = mempty
-        , size = Nothing
-        , start = \clients wid pipeAE -> forever do
-            atomically (readPipe pipeAE) >>= \case
-                AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw wid)
-                AppTrigger te -> case te.trigger of
-                    "win-swap" ->
-                        case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
-                            (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                                mGuiApp <- asProcess desktop.env (launchApp appSet appName clients winId)
-                                case mGuiApp of
-                                    Just guiApp -> swapWindow winId guiApp
-                                    Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
-                            _ -> logInfo "unknown win-swap" ["v" .= te.body]
-                    _ -> logInfo "unknown ev" ["ev" .= te]
-                _ -> pure ()
-        }
+deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
   where
+    startWelcomeApp clients wid pipeAE = forever do
+        atomically (readPipe pipeAE) >>= \case
+            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw wid)
+            AppTrigger te -> case te.trigger of
+                "win-swap" ->
+                    case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
+                        (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
+                            mGuiApp <- asProcess desktop.env (launchApp appSet appName clients winId)
+                            case mGuiApp of
+                                Just guiApp -> swapWindow winId guiApp
+                                Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
+                        _ -> logInfo "unknown win-swap" ["v" .= te.body]
+                _ -> logInfo "unknown ev" ["ev" .= te]
+            _ -> pure ()
+
     swapWindow :: WinID -> AppInstance -> ProcessIO ()
     swapWindow wid guiApp = do
         clients <- atomically do

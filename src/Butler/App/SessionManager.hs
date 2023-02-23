@@ -101,12 +101,9 @@ renderSM display wid = do
 
 smApp :: Display -> App
 smApp display =
-    App
-        { name = "user-manager"
-        , tags = fromList ["System"]
+    (defaultApp "user-manager" (startSMApp display))
+        { tags = fromList ["System"]
         , description = "Manage sessions"
-        , size = Nothing
-        , start = startSMApp display
         }
 
 startSMApp :: Display -> AppStart

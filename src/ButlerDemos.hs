@@ -65,11 +65,11 @@ vncServer = do
 
 -- | Demonstrate apps deployment
 demoApp :: ProcessIO Void
-demoApp = serveApps (publicDisplayApp []) [mineSweeperApp, clockApp]
+demoApp = serveApps publicDisplayApp [mineSweeperApp, clockApp]
 
 -- | Demonstrate dashboard apps deployment
 demoDashboard :: ProcessIO Void
-demoDashboard = serveDashboardApps (publicDisplayApp []) [clockApp, clockApp]
+demoDashboard = serveDashboardApps publicDisplayApp [clockApp, clockApp]
 
 -- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
 demoDesktop :: ProcessIO Void
