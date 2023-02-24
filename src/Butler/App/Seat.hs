@@ -6,7 +6,6 @@ import Butler.Logger
 
 import Butler.Process
 import Butler.Session
-import Butler.SoundBlaster
 import Butler.User
 import Data.Aeson
 import Data.Map.Strict qualified as Map
@@ -57,21 +56,6 @@ createSeatCursor user idx =
         ]
         "°"
 
-renderToggle :: Text -> [Attribute] -> Bool -> Text -> Text -> HtmlT STM ()
-renderToggle icon attrs enabled onScript offScript = do
-    let bg = if enabled then "bg-stone-400" else "bg-stone-800"
-    with
-        i_
-        ( [ class_ $ icon <> " rounded-xl px-0.5 text-bold text-xl cursor-pointer " <> bg
-          , wsSend
-          , hxTrigger_ "click"
-          , encodeVal ["running" .= enabled]
-          ]
-            <> attrs
-        )
-        do
-            script_ $ if enabled then onScript else offScript
-
 renderCursorToggle :: WinID -> UserName -> Bool -> HtmlT STM ()
 renderCursorToggle wid username enabled = do
     renderToggle
@@ -84,35 +68,18 @@ renderCursorToggle wid username enabled = do
         "window.addEventListener('mousemove', mouseHandler)"
         "window.removeEventListener('mousemove', mouseHandler)"
 
-renderAudioToggle :: WinID -> UserName -> Bool -> HtmlT STM ()
-renderAudioToggle wid username enabled = do
-    renderToggle
-        "ri-volume-up-line"
-        [ userColorStyle username
-        , title_ (if enabled then "Mute" else "Listen")
-        , wid_ wid "toggle-audio"
-        ]
-        enabled
-        "startAudio()"
-        "stopAudio()"
-
 appendSeat :: Seat -> HtmlT STM ()
 appendSeat seat =
     with div_ [id_ "current-seats", hxSwapOob_ "afterbegin"] do
         renderSeat seat
 
-renderSeatTray :: Session -> WinID -> WinID -> Seats -> HtmlT STM ()
-renderSeatTray session wid audioWin seats = do
+renderSeatTray :: Session -> WinID -> Seats -> HtmlT STM ()
+renderSeatTray session wid seats = do
     with div_ [id_ "seats", class_ "flex content-center mr-1"] do
-        script_ $
-            mconcat
-                [ seatClient wid
-                , soundClient audioWin
-                ]
+        script_ $ seatClient wid
         with div_ [id_ "current-seats"] do
             traverse_ renderSeat =<< lift (getSeats seats)
         renderCursorToggle wid session.username True
-        renderAudioToggle wid session.username True
 
 data SeatEvent
     = SeatEventResolution Int Int
@@ -128,11 +95,11 @@ instance FromJSON SeatEvent where
             (Nothing, Just w) -> SeatEventResolution w <$> obj .: "h"
             _ -> fail "x or w attribute missing"
 
-seatApp :: SoundCard -> App
-seatApp sc = defaultApp "seat" (startSeatApp sc)
+seatApp :: App
+seatApp = defaultApp "seat" startSeatApp
 
-startSeatApp :: SoundCard -> AppContext -> ProcessIO ()
-startSeatApp sc ctx = do
+startSeatApp :: AppContext -> ProcessIO ()
+startSeatApp ctx = do
     let clients = ctx.clients
         wid = ctx.wid
     seats <- atomically newSeats
@@ -173,7 +140,7 @@ startSeatApp sc ctx = do
     let tray :: DisplayClient -> HtmlT STM ()
         tray client = do
             with div_ [id_ "tray-0", hxSwapOob_ "beforeend"] do
-                renderSeatTray client.session wid sc.wid seats
+                renderSeatTray client.session wid seats
     forever do
         ev <- atomically (readPipe ctx.pipe)
         case ev of
@@ -189,10 +156,6 @@ startSeatApp sc ctx = do
                 "toggle-cursor" ->
                     let running = fromMaybe True (ge.body ^? key "running" . _Bool)
                         btn = renderCursorToggle wid ge.client.session.username (not running)
-                     in atomically $ sendHtml ge.client btn
-                "toggle-audio" ->
-                    let running = fromMaybe True (ge.body ^? key "running" . _Bool)
-                        btn = renderAudioToggle wid ge.client.session.username (not running)
                      in atomically $ sendHtml ge.client btn
                 _ -> logError "Invalid ev" ["ev" .= ev]
             _ -> pure ()

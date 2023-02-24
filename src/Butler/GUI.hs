@@ -18,6 +18,9 @@ module Butler.GUI (
     splashHtml,
     loginForm,
 
+    -- * Widget
+    renderToggle,
+
     -- * Re-exports
     makeAttribute,
 ) where
@@ -133,3 +136,18 @@ loginForm pathPrefix title attr = do
         with div_ [class_ "font-semibold pb-2 flex flex-row justify-center"] do
             toHtml title
         with (input_ mempty) [name_ "username", type_ "text", placeholder_ "What is your name?"]
+
+renderToggle :: Text -> [Attribute] -> Bool -> Text -> Text -> HtmlT STM ()
+renderToggle icon attrs enabled onScript offScript = do
+    let bg = if enabled then "bg-stone-400" else "bg-stone-800"
+    with
+        i_
+        ( [ class_ $ icon <> " rounded-xl px-0.5 text-bold text-xl cursor-pointer " <> bg
+          , wsSend
+          , hxTrigger_ "click"
+          , encodeVal ["running" .= enabled]
+          ]
+            <> attrs
+        )
+        do
+            script_ $ if enabled then onScript else offScript

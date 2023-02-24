@@ -30,7 +30,6 @@ import Butler.OS
 import Butler.Pipe
 import Butler.Prelude
 import Butler.Processor
-import Butler.SoundBlaster
 import Butler.WebSocket
 import Butler.Window
 
@@ -41,7 +40,6 @@ data Desktop = Desktop
     , wm :: WindowManager
     , apps :: TVar (Map WinID AppInstance)
     , clients :: DisplayClients
-    , soundCard :: SoundCard
     , services :: Dynamics
     }
 
@@ -50,17 +48,15 @@ newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
         <$> newTVar mempty
         <*> newDisplayClients
-        <*> newSoundCard audioWin
         <*> newDynamics
 
-controlWin, audioWin :: WinID
+controlWin :: WinID
 controlWin = WinID 0
-audioWin = WinID 1
 
 newDesktopIO :: Display -> Workspace -> ProcessIO Desktop
 newDesktopIO display ws = do
     processEnv <- ask
-    wm <- newWindowManager (WinID 1) -- the first wid are reserved
+    wm <- newWindowManager (WinID 2) -- the first wid are reserved
     atomically (newDesktop processEnv display ws wm)
 
 deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App
@@ -192,6 +188,7 @@ desktopHtml windows = do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
                     forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
                     with span_ [id_ "tray-0"] mempty
+                    with span_ [id_ "tray-1"] mempty
                     statusHtml False
 
         with div_ [id_ "reconnect_script"] mempty
@@ -250,7 +247,6 @@ desktopHandler appSet desktop event = do
             atomically do
                 when (chan == "htmx") do
                     delClient desktop.clients client
-                    delSoundClient desktop.soundCard client
 
             forwardDisplayEvent event
   where
@@ -277,7 +273,6 @@ desktopHandler appSet desktop event = do
                 case eventFromMessage client dataMessage of
                     Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
                     Just (wid, ae)
-                        | wid == audioWin -> soundHandler desktop.soundCard ae
                         | wid == controlWin -> handleDesktopEvent appSet desktop ae
                         | otherwise ->
                             (Map.lookup wid <$> readTVarIO desktop.apps) >>= \case

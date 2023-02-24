@@ -1,4 +1,4 @@
-module Butler.SoundBlaster where
+module Butler.App.SoundBlaster where
 
 import Codec.EBML qualified as EBML
 import Data.Aeson.KeyMap qualified as KM
@@ -8,7 +8,9 @@ import Data.ByteString.Lazy qualified as LBS
 import Lucid
 
 import Butler.App
+import Butler.Clock
 import Butler.Display
+import Butler.Dynamic
 import Butler.Frame
 import Butler.GUI
 import Butler.Logger
@@ -18,8 +20,45 @@ import Butler.Pipe
 import Butler.Prelude
 import Butler.Session
 import Butler.User
-import Butler.Dynamic
-import Butler.Clock
+import Butler.Window
+
+-------------------------------------------------------------------------------
+-- Sound Card app
+-------------------------------------------------------------------------------
+soundCardApp :: App
+soundCardApp = defaultApp "sound-blaster" startSoundCard
+
+startSoundCard :: AppContext -> ProcessIO ()
+startSoundCard ctx = do
+    sc <- atomically (newSoundCard ctx.wid)
+    let mountUI client = do
+            with div_ [wid_ ctx.wid "tray", hxSwapOob_ "beforeend"] do
+                script_ $ soundClient ctx.wid
+                renderAudioToggle ctx.wid client.session.username True
+    withDynamic ctx.services "sound-blaster" sc $ forever do
+        atomically (readPipe ctx.pipe) >>= \case
+            AppDisplay (UserDisconnected "htmx" client) -> atomically (delSoundClient sc client)
+            AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client (mountUI client))
+            AppTrigger ge
+                | ge.trigger == "toggle-audio" ->
+                    let running = fromMaybe True (ge.body ^? key "running" . _Bool)
+                        btn = renderAudioToggle ctx.wid ge.client.session.username (not running)
+                     in atomically $ sendHtml ge.client btn
+                | otherwise -> logError "Invalid ev" ["ev" .= ge]
+            AppData de -> soundHandler sc de.client de.buffer
+            ev -> logError "Unknown ev" ["ev" .= ev]
+
+renderAudioToggle :: WinID -> UserName -> Bool -> HtmlT STM ()
+renderAudioToggle wid username enabled = do
+    renderToggle
+        "ri-volume-up-line"
+        [ userColorStyle username
+        , title_ (if enabled then "Mute" else "Listen")
+        , wid_ wid "toggle-audio"
+        ]
+        enabled
+        "startAudio()"
+        "stopAudio()"
 
 -------------------------------------------------------------------------------
 -- Sound Card setup
@@ -30,15 +69,17 @@ data SoundCard = SoundCard
     , channels :: NM.NatMap SoundChannel
     , receivers :: NM.NatMap SoundReceiver
     , events :: BroadcastChan SoundCardEvent
-    } deriving (Typeable)
+    }
+    deriving (Typeable)
 
 newSoundCard :: WinID -> STM SoundCard
 newSoundCard wid = SoundCard wid <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
 
 getSoundCard :: MonadUnliftIO m => AppContext -> m SoundCard
-getSoundCard ctx = waitDynamic 150 ctx.services "sound-card" >>= \case
-  WaitCompleted sc -> pure sc
-  WaitTimeout -> error "sound blaster service is not running"
+getSoundCard ctx =
+    waitDynamic 150 ctx.services "sound-blaster" >>= \case
+        WaitCompleted sc -> pure sc
+        WaitTimeout -> error "sound blaster service is not running"
 
 data SoundCardEvent
     = SoundUserJoined DisplayClient
@@ -303,17 +344,12 @@ stopSoundReceiver sc wid client = sendBinary client msg
   where
     msg = mkControlMessage sc "stop-record" ["wid" .= wid]
 
-soundHandler :: SoundCard -> AppEvent -> ProcessIO ()
-soundHandler sc = \case
-    AppData de -> doSoundHandler sc de.client de.buffer
-    ev -> logError "Unknown ev" ["ev" .= ev]
-
 -- Simple binary protocol:
 -- [0, op] : stop/start message
 -- [0, chan, op] : error/ready/playing message
 -- [data...] : audio data
-doSoundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
-doSoundHandler sc client msg = do
+soundHandler :: SoundCard -> DisplayClient -> ByteString -> ProcessIO ()
+soundHandler sc client msg = do
     -- logDebug "Received audio data" ["client" .= client, "length" .= BS.length msg, "buf" .= BSLog (BS.take 5 msg)]
     case BS.uncons msg of
         Just (0, "\x00") -> do

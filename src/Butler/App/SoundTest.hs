@@ -7,7 +7,7 @@ import UnliftIO.Process qualified as Process
 import Butler
 import Butler.Logger
 import Butler.Session
-import Butler.SoundBlaster
+import Butler.App.SoundBlaster
 
 data TestState
     = Pending
@@ -87,18 +87,19 @@ soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
             with button_ [id_ (withWID wid "stop"), wsSend, hxTrigger_ "click", class_ "bg-red-500 hover:bg-red-700 text-white font-bold p-1 rounded"] "stop"
     soundCardInfoHtml sc
 
-soundTestApp :: SoundCard -> App
-soundTestApp sc =
-    (defaultApp "sound-test" (startSoundTest sc))
+soundTestApp :: App
+soundTestApp =
+    (defaultApp "sound-test" startSoundTest)
         { tags = fromList ["Utility", "Sound"]
         , description = "Test audio stream"
         , size = Just (200, 164)
         }
 
-startSoundTest :: SoundCard -> AppContext -> ProcessIO ()
-startSoundTest soundCard ctx = do
+startSoundTest :: AppContext -> ProcessIO ()
+startSoundTest ctx = do
     let clients = ctx.clients
         wid = ctx.wid
+    soundCard <- getSoundCard ctx
     vState <- newTVarIO Pending
     let setStatus = atomically . writeTVar vState
 

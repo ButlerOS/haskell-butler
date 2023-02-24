@@ -38,6 +38,7 @@ library
       Butler.App.ProcessExplorer
       Butler.App.Seat
       Butler.App.SessionManager
+      Butler.App.SoundBlaster
       Butler.App.SoundTest
       Butler.App.Tabletop
       Butler.App.Terminal
@@ -66,7 +67,6 @@ library
       Butler.Process
       Butler.Processor
       Butler.Session
-      Butler.SoundBlaster
       Butler.Storage
       Butler.User
       Butler.WebSocket

@@ -174,7 +174,7 @@ serveApps (DisplayApplication mkAuth) apps = do
                     pure (env, staticClientHandler onDisconnect clients appInstances)
     error "Display exited?!"
   where
-    xfiles = concatMap (\app -> app.xfiles) apps <> defaultXFiles
+    xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
 -- | Serve applications with one instance for all clients.
 serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void

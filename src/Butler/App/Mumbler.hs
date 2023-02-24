@@ -7,12 +7,12 @@ import Butler.Logger
 import Butler.NatMap qualified as NM
 
 import Butler.Session
-import Butler.SoundBlaster
+import Butler.App.SoundBlaster
 import Butler.User
 
-mumblerApp :: SoundCard -> App
-mumblerApp soundCard =
-    (defaultApp "mumbler" (startMumbler soundCard))
+mumblerApp :: App
+mumblerApp =
+    (defaultApp "mumbler" startMumbler)
         { tags = fromList ["Communication", "Sound"]
         , description = "Voice chat"
         }
@@ -103,10 +103,11 @@ appStateHtml wid (AppState nm) = do
 ----
 -- App implementation
 ----
-startMumbler :: SoundCard -> AppContext -> ProcessIO ()
-startMumbler soundCard ctx = do
+startMumbler :: AppContext -> ProcessIO ()
+startMumbler ctx = do
     let clients = ctx.clients
         wid = ctx.wid
+    soundCard <- getSoundCard ctx
     (state, soundEvents) <- atomically do
         (,) <$> newAppState soundCard.clients <*> newReaderChan soundCard.events
 

@@ -47,7 +47,6 @@ termApp name =
         { tags = fromList ["Development"]
         , description = "XTerm"
         , xfiles = [XStatic.xtermFitAddonJs, XStatic.xtermFitAddonJsMap] <> XStatic.xterm
-
         }
 
 startTermApp :: Text -> AppContext -> ProcessIO ()
