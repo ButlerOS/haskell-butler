@@ -90,6 +90,7 @@ module Butler.Prelude (
     Data.Text.Text,
     LByteString,
     Data.ByteString.ByteString,
+    Data.ByteString.Short.ShortByteString,
     Data.IntMap.Strict.IntMap,
     Data.IntSet.IntSet,
     Data.Set.Set,
@@ -150,6 +151,7 @@ import Data.Bifunctor
 import Data.Bool (bool)
 import Data.ByteString qualified
 import Data.ByteString.Lazy qualified
+import Data.ByteString.Short qualified
 import Data.Char
 import Data.Coerce
 import Data.Dynamic

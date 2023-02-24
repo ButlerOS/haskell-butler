@@ -31,6 +31,7 @@ import Servant
 
 import Butler.App
 import Butler.DisplayClient
+import Butler.Dynamic
 import Butler.GUI
 import Butler.Logger
 import Butler.Network
@@ -165,7 +166,8 @@ serveApps (DisplayApplication mkAuth) apps = do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
                     clients <- atomically newDisplayClients
-                    appInstances <- startApps apps display clients
+                    services <- atomically newDynamics
+                    appInstances <- startApps apps services display clients
                     let onDisconnect = do
                             forM_ appInstances \appInstance -> do
                                 void $ killProcess appInstance.process.pid
@@ -181,7 +183,8 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
         waitProcess =<< superviseProcess "gui" do
             startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
                 clients <- atomically newDisplayClients
-                appInstances <- startApps apps display clients
+                services <- atomically newDynamics
+                appInstances <- startApps apps services display clients
                 pure $ \_ws -> do
                     env <- ask
                     pure (env, staticClientHandler (pure ()) clients appInstances)

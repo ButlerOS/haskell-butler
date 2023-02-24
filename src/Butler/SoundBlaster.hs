@@ -18,6 +18,8 @@ import Butler.Pipe
 import Butler.Prelude
 import Butler.Session
 import Butler.User
+import Butler.Dynamic
+import Butler.Clock
 
 -------------------------------------------------------------------------------
 -- Sound Card setup
@@ -28,10 +30,15 @@ data SoundCard = SoundCard
     , channels :: NM.NatMap SoundChannel
     , receivers :: NM.NatMap SoundReceiver
     , events :: BroadcastChan SoundCardEvent
-    }
+    } deriving (Typeable)
 
 newSoundCard :: WinID -> STM SoundCard
 newSoundCard wid = SoundCard wid <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
+
+getSoundCard :: MonadUnliftIO m => AppContext -> m SoundCard
+getSoundCard ctx = waitDynamic 150 ctx.services "sound-card" >>= \case
+  WaitCompleted sc -> pure sc
+  WaitTimeout -> error "sound blaster service is not running"
 
 data SoundCardEvent
     = SoundUserJoined DisplayClient

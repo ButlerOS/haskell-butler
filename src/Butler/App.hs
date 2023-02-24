@@ -7,6 +7,7 @@ import Lucid.Htmx
 import Network.WebSockets qualified as WS
 
 import Butler.DisplayClient
+import Butler.Dynamic
 import Butler.Frame
 import Butler.GUI
 import Butler.OS
@@ -93,6 +94,8 @@ data AppContext = AppContext
     , pipe :: Pipe AppEvent
     -- ^ the channel to receive events.
     , display :: Display
+    -- ^ the global display and associated sessions
+    , services :: Dynamics
     }
 
 data AppInstance = AppInstance
@@ -114,27 +117,27 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
 
-launchApp :: AppSet -> ProgramName -> Display -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) name display clients wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app display clients wid
+launchApp :: AppSet -> ProgramName -> Dynamics -> Display -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) name services display clients wid = case Map.lookup name apps of
+    Just app -> Just <$> startApp app services display clients wid
     Nothing -> pure Nothing
 
-startApp :: App -> Display -> DisplayClients -> WinID -> ProcessIO AppInstance
-startApp app display clients wid = do
+startApp :: App -> Dynamics -> Display -> DisplayClients -> WinID -> ProcessIO AppInstance
+startApp app services display clients wid = do
     -- Start app process
     pipeAE <- atomically newPipe
-    let ctx = AppContext clients wid pipeAE display
+    let ctx = AppContext clients wid pipeAE display services
     process <- spawnProcess ("app-" <> app.name) do
         app.start ctx
 
     pure $ AppInstance{app, process, wid, pipeAE}
 
-startApps :: [App] -> Display -> DisplayClients -> ProcessIO (Map WinID AppInstance)
-startApps apps display clients = fromList <$> traverse go (zip [0 ..] apps)
+startApps :: [App] -> Dynamics -> Display -> DisplayClients -> ProcessIO (Map WinID AppInstance)
+startApps apps services display clients = fromList <$> traverse go (zip [0 ..] apps)
   where
     go (i, app) = do
         let wid = WinID i
-        appInstance <- startApp app display clients wid
+        appInstance <- startApp app services display clients wid
         pure (wid, appInstance)
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()

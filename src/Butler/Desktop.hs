@@ -21,6 +21,7 @@ import Lucid.Htmx
 import Butler.App
 import Butler.Clock
 import Butler.Display
+import Butler.Dynamic
 import Butler.Frame
 import Butler.GUI
 import Butler.Logger
@@ -41,6 +42,7 @@ data Desktop = Desktop
     , apps :: TVar (Map WinID AppInstance)
     , clients :: DisplayClients
     , soundCard :: SoundCard
+    , services :: Dynamics
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
@@ -49,6 +51,7 @@ newDesktop processEnv display ws wm = do
         <$> newTVar mempty
         <*> newDisplayClients
         <*> newSoundCard audioWin
+        <*> newDynamics
 
 controlWin, audioWin :: WinID
 controlWin = WinID 0
@@ -70,7 +73,7 @@ deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
                 "win-swap" ->
                     case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
                         (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                            mGuiApp <- asProcess desktop.env (launchApp appSet appName ctx.display ctx.clients winId)
+                            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.services ctx.display ctx.clients winId)
                             case mGuiApp of
                                 Just guiApp -> swapWindow winId guiApp
                                 Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
@@ -103,7 +106,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
     desktop <- newDesktopIO display name
     let appSet = mkAppSet desktop
 
-    let mkDeskApp draw = startApp (deskApp desktop appSet draw) display desktop.clients
+    let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.services display desktop.clients
 
     xinit desktop
 
@@ -118,7 +121,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
                     "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
-                    _ -> launchApp appSet prog display desktop.clients wid
+                    _ -> launchApp appSet prog desktop.services display desktop.clients wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow desktop.wm.windows wid)) do
@@ -306,7 +309,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.display desktop.clients wid)
+        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.services desktop.display desktop.clients wid)
         atomically $ addApp desktop guiApp
 
         sendsHtml desktop.clients do

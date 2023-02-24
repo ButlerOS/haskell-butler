@@ -50,6 +50,7 @@ library
       Butler.Desktop
       Butler.Display
       Butler.DisplayClient
+      Butler.Dynamic
       Butler.Events
       Butler.Frame
       Butler.GUI

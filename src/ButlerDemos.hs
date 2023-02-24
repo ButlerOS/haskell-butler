@@ -119,7 +119,7 @@ demoDesktop = do
 
     xinit desktop = do
         let seatApp' = seatApp desktop.soundCard
-        atomically . addDesktopApp desktop =<< startApp seatApp' desktop.display desktop.clients (WinID 2)
+        atomically . addDesktopApp desktop =<< startApp seatApp' desktop.services desktop.display desktop.clients (WinID 2)
 
     mkAppSet chat desktop =
         newAppSet
