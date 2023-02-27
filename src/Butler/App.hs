@@ -93,10 +93,31 @@ data AppContext = AppContext
     -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
     , pipe :: Pipe AppEvent
     -- ^ the channel to receive events.
-    , display :: Display
-    -- ^ the global display and associated sessions
-    , services :: Dynamics
+    , shared :: AppSharedContext
     }
+
+data AppSharedContext = AppSharedContext
+    { display :: Display
+    , devices :: Dynamics
+    , apps :: Apps
+    }
+
+newAppSharedContext :: Display -> STM AppSharedContext
+newAppSharedContext display = AppSharedContext display <$> newDynamics <*> newApps
+
+newtype Apps = Apps (TVar (Map WinID AppInstance))
+
+newApps :: STM Apps
+newApps = Apps <$> newTVar mempty
+
+unregisterApp :: Apps -> AppInstance -> STM ()
+unregisterApp (Apps tv) appInstance = modifyTVar' tv (Map.delete appInstance.wid)
+
+registerApp :: Apps -> AppInstance -> STM ()
+registerApp (Apps tv) appInstance = modifyTVar' tv (Map.insert appInstance.wid appInstance)
+
+getApps :: Apps -> STM (Map WinID AppInstance)
+getApps (Apps tv) = readTVar tv
 
 data AppInstance = AppInstance
     { app :: App
@@ -117,28 +138,31 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
 
-launchApp :: AppSet -> ProgramName -> Dynamics -> Display -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) name services display clients wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app services display clients wid
+launchApp :: AppSet -> ProgramName -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) name shared clients wid = case Map.lookup name apps of
+    Just app -> Just <$> startApp app shared clients wid
     Nothing -> pure Nothing
 
-startApp :: App -> Dynamics -> Display -> DisplayClients -> WinID -> ProcessIO AppInstance
-startApp app services display clients wid = do
+startApp :: App -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO AppInstance
+startApp app shared clients wid = do
     -- Start app process
     pipeAE <- atomically newPipe
-    let ctx = AppContext clients wid pipeAE display services
+    let ctx = AppContext clients wid pipeAE shared
     process <- spawnProcess ("app-" <> app.name) do
         app.start ctx
 
     pure $ AppInstance{app, process, wid, pipeAE}
 
-startApps :: [App] -> Dynamics -> Display -> DisplayClients -> ProcessIO (Map WinID AppInstance)
-startApps apps services display clients = fromList <$> traverse go (zip [0 ..] apps)
+startApps :: [App] -> Display -> DisplayClients -> ProcessIO AppSharedContext
+startApps apps display clients = do
+    shared <- atomically (newAppSharedContext display)
+    traverse_ (go shared) (zip [0 ..] apps)
+    pure shared
   where
-    go (i, app) = do
+    go shared (i, app) = do
         let wid = WinID i
-        appInstance <- startApp app services display clients wid
-        pure (wid, appInstance)
+        appInstance <- startApp app shared clients wid
+        atomically (registerApp shared.apps appInstance)
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do

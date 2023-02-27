@@ -6,8 +6,8 @@ import Butler
 import Butler.Logger
 import Butler.NatMap qualified as NM
 
-import Butler.Session
 import Butler.App.SoundBlaster
+import Butler.Session
 import Butler.User
 
 mumblerApp :: App

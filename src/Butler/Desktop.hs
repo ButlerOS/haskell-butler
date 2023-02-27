@@ -21,7 +21,6 @@ import Lucid.Htmx
 import Butler.App
 import Butler.Clock
 import Butler.Display
-import Butler.Dynamic
 import Butler.Frame
 import Butler.GUI
 import Butler.Logger
@@ -38,17 +37,15 @@ data Desktop = Desktop
     , display :: Display
     , workspace :: Workspace
     , wm :: WindowManager
-    , apps :: TVar (Map WinID AppInstance)
     , clients :: DisplayClients
-    , services :: Dynamics
+    , shared :: AppSharedContext
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
 newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
-        <$> newTVar mempty
-        <*> newDisplayClients
-        <*> newDynamics
+        <$> newDisplayClients
+        <*> newAppSharedContext display
 
 controlWin :: WinID
 controlWin = WinID 0
@@ -69,7 +66,7 @@ deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
                 "win-swap" ->
                     case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
                         (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.services ctx.display ctx.clients winId)
+                            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.shared ctx.clients winId)
                             case mGuiApp of
                                 Just guiApp -> swapWindow winId guiApp
                                 Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
@@ -102,7 +99,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
     desktop <- newDesktopIO display name
     let appSet = mkAppSet desktop
 
-    let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.services display desktop.clients
+    let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.shared desktop.clients
 
     xinit desktop
 
@@ -117,7 +114,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
                     "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
-                    _ -> launchApp appSet prog desktop.services display desktop.clients wid
+                    _ -> launchApp appSet prog desktop.shared desktop.clients wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow desktop.wm.windows wid)) do
@@ -141,7 +138,7 @@ startDesktop desktopMVar mkAppSet xinit display name = do
 -- | Remove a registered gui app
 delApp :: Desktop -> AppInstance -> STM ()
 delApp desktop app = do
-    modifyTVar' desktop.apps (Map.delete app.wid)
+    unregisterApp desktop.shared.apps app
     void $ stopProcess app.process
 
 -- | Register a new windowed application.
@@ -153,18 +150,18 @@ addApp desktop app = do
 -- | Add app without registering a window.
 addDesktopApp :: Desktop -> AppInstance -> STM ()
 addDesktopApp desktop app = do
-    modifyTVar' desktop.apps (Map.insert app.wid app)
+    registerApp desktop.shared.apps app
 
 swapApp :: Desktop -> AppInstance -> STM ()
 swapApp desktop app = do
-    Map.lookup app.wid <$> readTVar desktop.apps >>= \case
+    Map.lookup app.wid <$> getApps desktop.shared.apps >>= \case
         Nothing -> pure ()
         Just prevApp -> delApp desktop prevApp
     addApp desktop app
 
 delWin :: Desktop -> WinID -> STM ()
 delWin desktop wid = do
-    Map.lookup wid <$> readTVar desktop.apps >>= \case
+    Map.lookup wid <$> getApps desktop.shared.apps >>= \case
         Nothing -> pure ()
         Just prevApp -> delApp desktop prevApp
     delWindowApp desktop.wm wid
@@ -252,7 +249,7 @@ desktopHandler appSet desktop event = do
   where
     forwardDisplayEvent :: DisplayEvent -> ProcessIO ()
     forwardDisplayEvent devent = do
-        apps <- readTVarIO desktop.apps
+        apps <- atomically (getApps desktop.shared.apps)
         forM_ apps \app -> writePipe app.pipeAE (AppDisplay devent)
 
     handleNewUser :: ChannelName -> DisplayClient -> ProcessIO ()
@@ -275,7 +272,7 @@ desktopHandler appSet desktop event = do
                     Just (wid, ae)
                         | wid == controlWin -> handleDesktopEvent appSet desktop ae
                         | otherwise ->
-                            (Map.lookup wid <$> readTVarIO desktop.apps) >>= \case
+                            (Map.lookup wid <$> atomically (getApps desktop.shared.apps)) >>= \case
                                 Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
                                 Just appInstance -> writePipe appInstance.pipeAE ae
         _ -> logError "unknown channel" ["channel" .= channel]
@@ -304,7 +301,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.services desktop.display desktop.clients wid)
+        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.shared desktop.clients wid)
         atomically $ addApp desktop guiApp
 
         sendsHtml desktop.clients do

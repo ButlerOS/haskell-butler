@@ -35,7 +35,7 @@ startSoundCard ctx = do
             with div_ [wid_ ctx.wid "tray", hxSwapOob_ "beforeend"] do
                 script_ $ soundClient ctx.wid
                 renderAudioToggle ctx.wid client.session.username True
-    withDynamic ctx.services "sound-blaster" sc $ forever do
+    withDynamic ctx.shared.devices "sound-blaster" sc $ forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserDisconnected "htmx" client) -> atomically (delSoundClient sc client)
             AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client (mountUI client))
@@ -77,7 +77,7 @@ newSoundCard wid = SoundCard wid <$> newDisplayClients <*> NM.newNatMap <*> NM.n
 
 getSoundCard :: MonadUnliftIO m => AppContext -> m SoundCard
 getSoundCard ctx =
-    waitDynamic 150 ctx.services "sound-blaster" >>= \case
+    waitDynamic 150 ctx.shared.devices "sound-blaster" >>= \case
         WaitCompleted sc -> pure sc
         WaitTimeout -> error "sound blaster service is not running"
 

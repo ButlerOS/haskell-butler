@@ -110,7 +110,7 @@ startSMApp :: AppContext -> ProcessIO ()
 startSMApp ctx = do
     let clients = ctx.clients
         wid = ctx.wid
-        display = ctx.display
+        display = ctx.shared.display
     let handleGuiEvent ev = do
             resp <- case ev.trigger of
                 "new-invite" -> do

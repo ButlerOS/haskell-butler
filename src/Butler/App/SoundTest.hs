@@ -5,9 +5,9 @@ import Data.ByteString qualified as BS
 import UnliftIO.Process qualified as Process
 
 import Butler
+import Butler.App.SoundBlaster
 import Butler.Logger
 import Butler.Session
-import Butler.App.SoundBlaster
 
 data TestState
     = Pending

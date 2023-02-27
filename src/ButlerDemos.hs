@@ -119,8 +119,8 @@ demoDesktop = do
     |]
 
     xinit desktop = do
-        atomically . addDesktopApp desktop =<< startApp soundCardApp desktop.services desktop.display desktop.clients (WinID 1)
-        atomically . addDesktopApp desktop =<< startApp seatApp desktop.services desktop.display desktop.clients (WinID 2)
+        atomically . addDesktopApp desktop =<< startApp soundCardApp desktop.shared desktop.clients (WinID 1)
+        atomically . addDesktopApp desktop =<< startApp seatApp desktop.shared desktop.clients (WinID 2)
 
     mkAppSet chat desktop =
         newAppSet

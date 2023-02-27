@@ -41,6 +41,7 @@ module Butler (
 
     -- * App API
     App (..),
+    AppSharedContext (..),
     AppContext (..),
     defaultApp,
     AppEvent (..),

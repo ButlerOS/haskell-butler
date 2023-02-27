@@ -31,8 +31,6 @@ import Servant
 
 import Butler.App
 import Butler.DisplayClient
-import Butler.Dynamic
-import Butler.GUI
 import Butler.Logger
 import Butler.Network
 import Butler.OS
@@ -166,12 +164,12 @@ serveApps (DisplayApplication mkAuth) apps = do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
                     clients <- atomically newDisplayClients
-                    services <- atomically newDynamics
-                    appInstances <- startApps apps services display clients
+                    shared <- startApps apps display clients
                     let onDisconnect = do
+                            appInstances <- atomically (getApps shared.apps)
                             forM_ appInstances \appInstance -> do
                                 void $ killProcess appInstance.process.pid
-                    pure (env, staticClientHandler onDisconnect clients appInstances)
+                    pure (env, staticClientHandler onDisconnect clients shared)
     error "Display exited?!"
   where
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
@@ -183,23 +181,23 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
         waitProcess =<< superviseProcess "gui" do
             startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
                 clients <- atomically newDisplayClients
-                services <- atomically newDynamics
-                appInstances <- startApps apps services display clients
+                shared <- startApps apps display clients
                 pure $ \_ws -> do
                     env <- ask
-                    pure (env, staticClientHandler (pure ()) clients appInstances)
+                    pure (env, staticClientHandler (pure ()) clients shared)
     error "Display exited?!"
   where
-    xfiles = concatMap (\app -> app.xfiles) apps <> defaultXFiles
+    xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
-staticClientHandler :: ProcessIO () -> DisplayClients -> Map WinID AppInstance -> DisplayEvent -> ProcessIO ()
-staticClientHandler onDisconnect clients appInstances displayEvent = case displayEvent of
+staticClientHandler :: ProcessIO () -> DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
+staticClientHandler onDisconnect clients shared displayEvent = case displayEvent of
     UserConnected "htmx" client -> do
         logInfo "Client connected" ["client" .= client]
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
         atomically $ addClient clients client
         logInfo "Sending html" []
+        appInstances <- atomically (getApps shared.apps)
         atomically $ sendHtml client do
             with div_ [id_ "display-wins", class_ "flex"] do
                 forM_ appInstances \appInstance -> do
@@ -216,6 +214,7 @@ staticClientHandler onDisconnect clients appInstances displayEvent = case displa
     UserDisconnected "htmx" client -> do
         logInfo "Client disconnected" ["client" .= client]
         atomically $ delClient clients client
+        appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> do
             writePipe appInstance.pipeAE (AppDisplay displayEvent)
         onDisconnect
