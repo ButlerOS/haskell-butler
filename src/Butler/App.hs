@@ -6,15 +6,15 @@ import Lucid
 import Lucid.Htmx
 import Network.WebSockets qualified as WS
 
-import Butler.DisplayClient
-import Butler.Dynamic
+import Butler.Core
+import Butler.Core.Dynamic
+import Butler.Core.Pipe
+import Butler.Display.Client
+import Butler.Display.GUI
+import Butler.Display.Session
+import Butler.Display.WebSocket (ChannelName)
 import Butler.Frame
-import Butler.GUI
-import Butler.OS
-import Butler.Pipe
 import Butler.Prelude
-import Butler.Session
-import Butler.WebSocket (ChannelName)
 import Butler.Window
 
 data Display = Display

@@ -1,8 +1,8 @@
 -- | Data types for internal events
-module Butler.Events (SystemEvent (..)) where
+module Butler.Core.Events (SystemEvent (..)) where
 
+import Butler.Core.Process
 import Butler.Prelude
-import Butler.Process
 
 data SystemEvent
     = ProcessCreated Process

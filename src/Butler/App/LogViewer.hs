@@ -1,9 +1,8 @@
 module Butler.App.LogViewer where
 
 import Butler
-import Butler.Events
-import Butler.Logger
-import Butler.OS
+import Butler.Core
+import Butler.Core.Logger
 
 renderLog :: Event SystemEvent -> HtmlT STM ()
 renderLog se = toHtml (showT se.createdAt <> " " <> showT se.body)

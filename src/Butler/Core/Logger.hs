@@ -1,5 +1,5 @@
 -- | Logger provide system logs facility
-module Butler.Logger (
+module Butler.Core.Logger (
     Logger,
     EventSeverity (..),
     Event (..),
@@ -21,9 +21,9 @@ module Butler.Logger (
 
 import Data.Text qualified as Text
 
-import Butler.Clock
-import Butler.History
-import Butler.Pipe
+import Butler.Core.Clock
+import Butler.Core.History
+import Butler.Core.Pipe
 import Butler.Prelude
 
 -- Lazy bytestring pretty debug encoding

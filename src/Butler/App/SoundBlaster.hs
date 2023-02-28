@@ -8,18 +8,18 @@ import Data.ByteString.Lazy qualified as LBS
 import Lucid
 
 import Butler.App
-import Butler.Clock
+import Butler.Core
+import Butler.Core.Clock
+import Butler.Core.Dynamic
+import Butler.Core.Logger
+import Butler.Core.NatMap qualified as NM
+import Butler.Core.Pipe
 import Butler.Display
-import Butler.Dynamic
+import Butler.Display.GUI
+import Butler.Display.Session
+import Butler.Display.User
 import Butler.Frame
-import Butler.GUI
-import Butler.Logger
-import Butler.NatMap qualified as NM
-import Butler.OS
-import Butler.Pipe
 import Butler.Prelude
-import Butler.Session
-import Butler.User
 import Butler.Window
 
 -------------------------------------------------------------------------------

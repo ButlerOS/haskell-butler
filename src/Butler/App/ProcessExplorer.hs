@@ -1,11 +1,11 @@
 module Butler.App.ProcessExplorer where
 
 import Butler
+import Butler.Core
+import Butler.Core.Logger
 import Butler.Desktop
-import Butler.Logger
-import Butler.OS
 
-import Butler.Processor
+import Butler.Core.Processor
 import Data.Aeson (Value (Number))
 
 data PEState = PEAll | PEScopped Pid

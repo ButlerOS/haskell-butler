@@ -13,10 +13,10 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
 import Butler
-import Butler.History
+import Butler.Core.History
 
-import Butler.Session
-import Butler.User
+import Butler.Display.Session
+import Butler.Display.User
 
 data ChatServer = ChatServer
     { allClients :: TVar (Map SessionID [DisplayClient])

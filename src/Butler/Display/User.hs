@@ -1,4 +1,4 @@
-module Butler.User where
+module Butler.Display.User where
 
 import Butler.Prelude
 import Data.Hashable (Hashable (hash))

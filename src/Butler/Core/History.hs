@@ -1,5 +1,5 @@
 -- | This module contains a general purpose data structure.
-module Butler.History (
+module Butler.Core.History (
     History,
     newHistory,
     addHistory,

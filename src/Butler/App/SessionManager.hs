@@ -5,9 +5,9 @@ import Data.Text qualified as Text
 import Data.UUID qualified as UUID
 
 import Butler
+import Butler.Core.Memory
 import Butler.Display
-import Butler.Memory
-import Butler.Session
+import Butler.Display.Session
 
 renderSM :: Display -> WinID -> HtmlT STM ()
 renderSM display wid = do

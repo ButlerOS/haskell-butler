@@ -3,11 +3,11 @@ module ProcessorTest where
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Butler.Clock
-import Butler.Events
-import Butler.Logger
+import Butler.Core.Clock
+import Butler.Core.Events
+import Butler.Core.Logger
+import Butler.Core.Processor
 import Butler.Prelude
-import Butler.Processor
 
 test_processor :: TestTree
 test_processor =

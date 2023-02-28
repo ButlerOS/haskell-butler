@@ -17,7 +17,7 @@ module Butler (
     killProcess,
     spawnThread_,
     spawnThread,
-    module Butler.Pipe,
+    module Butler.Core.Pipe,
 
     -- * Logging API
     logInfo,
@@ -33,10 +33,10 @@ module Butler (
     waitTransaction,
 
     -- * Network API
-    module Butler.Network,
+    module Butler.Core.Network,
 
     -- * Display API
-    module Butler.DisplayClient,
+    module Butler.Display.Client,
     DisplayEvent (..),
 
     -- * App API
@@ -53,7 +53,7 @@ module Butler (
 
     -- * GUI toolkit
     sendHtmlOnConnect,
-    module Butler.GUI,
+    module Butler.Display.GUI,
     module Butler.Window,
 
     -- * Prelude
@@ -66,14 +66,14 @@ import Main.Utf8
 
 import Butler.App
 import Butler.Auth
-import Butler.Clock
+import Butler.Core
+import Butler.Core.Clock
+import Butler.Core.Network
+import Butler.Core.Pipe
 import Butler.Display
-import Butler.DisplayClient
+import Butler.Display.Client
+import Butler.Display.GUI
 import Butler.Frame
-import Butler.GUI
-import Butler.Network
-import Butler.OS
-import Butler.Pipe
 import Butler.Prelude
 import Butler.Window
 

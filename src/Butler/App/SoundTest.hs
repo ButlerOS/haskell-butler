@@ -6,8 +6,8 @@ import UnliftIO.Process qualified as Process
 
 import Butler
 import Butler.App.SoundBlaster
-import Butler.Logger
-import Butler.Session
+import Butler.Core.Logger
+import Butler.Display.Session
 
 data TestState
     = Pending

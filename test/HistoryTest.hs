@@ -3,7 +3,7 @@ module HistoryTest where
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Butler.History
+import Butler.Core.History
 import Butler.Prelude
 
 test_history :: TestTree

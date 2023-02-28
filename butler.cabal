@@ -45,31 +45,31 @@ library
       Butler.Auth
       Butler.Auth.Guest
       Butler.Auth.Invitation
-      Butler.Buzzer
-      Butler.Clock
+      Butler.Core
+      Butler.Core.Buzzer
+      Butler.Core.Clock
+      Butler.Core.Dynamic
+      Butler.Core.Events
+      Butler.Core.History
+      Butler.Core.Logger
+      Butler.Core.Memory
+      Butler.Core.NatMap
+      Butler.Core.Network
+      Butler.Core.Pipe
+      Butler.Core.Process
+      Butler.Core.Processor
+      Butler.Core.Storage
       Butler.Database
       Butler.Desktop
       Butler.Display
-      Butler.DisplayClient
-      Butler.Dynamic
-      Butler.Events
+      Butler.Display.Client
+      Butler.Display.GUI
+      Butler.Display.Session
+      Butler.Display.User
+      Butler.Display.WebSocket
       Butler.Frame
-      Butler.GUI
-      Butler.History
       Butler.Lobby
-      Butler.Logger
-      Butler.Memory
-      Butler.NatMap
-      Butler.Network
-      Butler.OS
-      Butler.Pipe
       Butler.Prelude
-      Butler.Process
-      Butler.Processor
-      Butler.Session
-      Butler.Storage
-      Butler.User
-      Butler.WebSocket
       Butler.Window
       ButlerDemos
       XStatic.Butler
@@ -100,7 +100,7 @@ library
       OverloadedLabels
       DerivingStrategies
       PartialTypeSignatures
-  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods
   build-depends:
       PyF
     , aeson
@@ -199,7 +199,7 @@ executable butler
       OverloadedLabels
       DerivingStrategies
       PartialTypeSignatures
-  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
   build-depends:
       PyF
     , aeson
@@ -305,7 +305,7 @@ test-suite spec
       OverloadedLabels
       DerivingStrategies
       PartialTypeSignatures
-  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -hiedir=.hie -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
+  ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:

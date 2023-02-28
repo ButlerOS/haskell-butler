@@ -1,4 +1,4 @@
-module Butler.Network (
+module Butler.Core.Network (
     WaiApplication,
     webService,
     WebProtocol (..),
@@ -11,7 +11,7 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Handler.WarpTLS qualified as Warp
 import System.Process.Typed
 
-import Butler.OS
+import Butler.Core
 import Butler.Prelude
 import System.FilePath ((</>))
 import UnliftIO.Directory (withCurrentDirectory)

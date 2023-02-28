@@ -1,4 +1,4 @@
-module Butler.Storage (
+module Butler.Core.Storage (
     Storage,
     newStorage,
     getStoragePath,
@@ -17,7 +17,7 @@ import System.Directory (createDirectoryIfMissing)
 import System.Posix.Files.ByteString (fileExist)
 import Prelude hiding (readFile, writeFile)
 
-import Butler.Clock
+import Butler.Core.Clock
 import Butler.Prelude
 
 newtype StorageAddress = StorageAddress ByteString

@@ -4,8 +4,8 @@ import Test.Hspec.Expectations
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Butler.Clock
-import Butler.Logger
+import Butler.Core.Clock
+import Butler.Core.Logger
 import Butler.Prelude
 
 test_logger :: TestTree

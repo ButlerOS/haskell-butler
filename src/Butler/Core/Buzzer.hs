@@ -1,4 +1,4 @@
-module Butler.Buzzer (Buzzer, newBuzzer) where
+module Butler.Core.Buzzer (Buzzer, newBuzzer) where
 
 import Prelude
 

@@ -6,8 +6,8 @@ import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified
 
 import Butler.Display
+import Butler.Display.Session
 import Butler.Prelude
-import Butler.Session
 
 guestAuthApp :: Html () -> AuthApplication
 guestAuthApp html = AuthApplication app getSession

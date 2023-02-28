@@ -1,4 +1,4 @@
-module Butler.Memory (
+module Butler.Core.Memory (
     MemoryVar,
     newMemoryVar,
     readMemoryVar,
@@ -9,8 +9,8 @@ module Butler.Memory (
     Storage,
 ) where
 
+import Butler.Core.Storage
 import Butler.Prelude
-import Butler.Storage
 
 data MemoryVar a = MemoryVar
     { save :: STM ()

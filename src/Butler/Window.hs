@@ -5,11 +5,11 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 
-import Butler.GUI
-import Butler.Memory
-import Butler.OS
+import Butler.Core
+import Butler.Core.Memory
+import Butler.Core.Process
+import Butler.Display.GUI
 import Butler.Prelude
-import Butler.Process
 
 data Window = Window
     { position :: (Int, Int)

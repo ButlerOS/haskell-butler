@@ -6,10 +6,10 @@ import System.Process.Typed hiding (Process)
 
 import Butler
 import Butler.App
+import Butler.Core
 import Butler.Desktop
 import Butler.Display
 import Butler.Lobby
-import Butler.OS
 
 import Butler.Auth.Invitation
 

@@ -3,9 +3,9 @@ module MemoryTest where
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Butler.Memory
+import Butler.Core.Memory
+import Butler.Core.Storage
 import Butler.Prelude
-import Butler.Storage
 
 test_memory :: TestTree
 test_memory = testCase "Memory" do

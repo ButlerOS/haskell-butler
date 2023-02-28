@@ -8,7 +8,7 @@ module Butler.Display (
     DisplayEvent (..),
     JwkStorage (..),
     DisplayApplication (..),
-    module Butler.DisplayClient,
+    module Butler.Display.Client,
 
     -- * Application environment
     serveApps,
@@ -30,14 +30,14 @@ import Network.WebSockets qualified as WS
 import Servant
 
 import Butler.App
-import Butler.DisplayClient
-import Butler.Logger
-import Butler.Network
-import Butler.OS
+import Butler.Core
+import Butler.Core.Logger
+import Butler.Core.Network
+import Butler.Core.Process
+import Butler.Display.Client
+import Butler.Display.Session
+import Butler.Display.WebSocket
 import Butler.Prelude
-import Butler.Process
-import Butler.Session
-import Butler.WebSocket
 import Butler.Window
 import XStatic.Butler
 

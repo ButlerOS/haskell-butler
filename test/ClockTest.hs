@@ -3,7 +3,7 @@ module ClockTest where
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Butler.Clock
+import Butler.Core.Clock
 import Butler.Prelude
 
 test_time :: TestTree

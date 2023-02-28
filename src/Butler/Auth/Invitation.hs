@@ -9,12 +9,12 @@ import Servant.Auth.Server as SAS
 import Servant.HTML.Lucid
 import Web.FormUrlEncoded (FromForm)
 
+import Butler.Core
 import Butler.Display
-import Butler.GUI
-import Butler.OS
+import Butler.Display.GUI
+import Butler.Display.Session
+import Butler.Display.WebSocket
 import Butler.Prelude
-import Butler.Session
-import Butler.WebSocket
 
 type AuthResp = Headers '[Header "Set-Cookie" SetCookie, Header "Set-Cookie" SetCookie] (Html ())
 

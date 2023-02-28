@@ -10,18 +10,18 @@ import Lucid
 import Lucid.Htmx
 
 import Butler.App (AppSet)
-import Butler.Clock
+import Butler.Core
+import Butler.Core.Clock
+import Butler.Core.Logger
+import Butler.Core.Memory
+import Butler.Core.Storage
 import Butler.Desktop
 import Butler.Display
-import Butler.GUI
-import Butler.Logger
-import Butler.Memory
-import Butler.OS
+import Butler.Display.GUI
+import Butler.Display.Session
+import Butler.Display.User
+import Butler.Display.WebSocket
 import Butler.Prelude
-import Butler.Session
-import Butler.Storage
-import Butler.User
-import Butler.WebSocket
 import Butler.Window
 
 import Butler.App.Chat

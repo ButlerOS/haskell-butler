@@ -1,5 +1,5 @@
 -- | This module contains the 'DisplayClient' logic.
-module Butler.DisplayClient (
+module Butler.Display.Client (
     -- * Display client
     DisplayClient (..),
 
@@ -40,11 +40,11 @@ import Data.ByteString.Lazy qualified as LBS
 import Lucid
 import Network.WebSockets qualified as WS
 
-import Butler.Clock
-import Butler.NatMap qualified as NM
-import Butler.OS
+import Butler.Core
+import Butler.Core.Clock
+import Butler.Core.NatMap qualified as NM
+import Butler.Display.Session
 import Butler.Prelude
-import Butler.Session
 
 -- | A network client. Note that the 'sendThread' must be running for the @send*@ function to work.
 data DisplayClient = DisplayClient

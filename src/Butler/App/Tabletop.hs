@@ -5,9 +5,9 @@ import Data.Text qualified as Text
 import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
 import Butler
+import Butler.Core.Logger
+import Butler.Core.NatMap qualified as NM
 import Butler.Frame
-import Butler.Logger
-import Butler.NatMap qualified as NM
 
 -- The data model
 newtype OID = OID Natural

@@ -1,5 +1,5 @@
 -- | Clock provides timing facility
-module Butler.Clock (
+module Butler.Core.Clock (
     Clock,
     newClock,
 

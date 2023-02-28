@@ -1,4 +1,4 @@
-module Butler.WebSocket (
+module Butler.Display.WebSocket (
     WebSocketAPI,
     OnWSConnect,
     websocketServer,
@@ -13,10 +13,10 @@ import Network.WebSockets qualified as WS
 import Servant
 import Servant.API.WebSocket
 
-import Butler.GUI
-import Butler.OS
+import Butler.Core
+import Butler.Display.GUI
+import Butler.Display.Session
 import Butler.Prelude
-import Butler.Session
 
 newtype Workspace = Workspace Text
     deriving newtype (Serialise, Eq, Ord, Show, IsString, FromHttpApiData)

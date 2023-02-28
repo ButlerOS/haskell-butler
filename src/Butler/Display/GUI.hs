@@ -1,5 +1,5 @@
 -- | GUI toolkit
-module Butler.GUI (
+module Butler.Display.GUI (
     WinID (..),
     GuiEvent (..),
     TriggerName (..),
@@ -31,8 +31,8 @@ import Data.Aeson.Types (Pair)
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text
 
-import Butler.DisplayClient
-import Butler.Session
+import Butler.Display.Client
+import Butler.Display.Session
 
 data HtmxEvent = HtmxEvent
     { trigger :: Text

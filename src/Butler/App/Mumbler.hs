@@ -3,12 +3,12 @@ module Butler.App.Mumbler where
 import Data.ByteString qualified as BS
 
 import Butler
-import Butler.Logger
-import Butler.NatMap qualified as NM
+import Butler.Core.Logger
+import Butler.Core.NatMap qualified as NM
 
 import Butler.App.SoundBlaster
-import Butler.Session
-import Butler.User
+import Butler.Display.Session
+import Butler.Display.User
 
 mumblerApp :: App
 mumblerApp =

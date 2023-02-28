@@ -1,4 +1,4 @@
-module Butler.NatMap (
+module Butler.Core.NatMap (
     NatCounter,
     newNatCounter,
     incr,
@@ -7,7 +7,7 @@ module Butler.NatMap (
     newKey,
     elems,
     elemsIndex,
-    Butler.NatMap.lookup,
+    Butler.Core.NatMap.lookup,
     delete,
     nmDelete,
     insert,

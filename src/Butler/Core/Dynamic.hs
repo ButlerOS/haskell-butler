@@ -1,5 +1,5 @@
 -- | This module contains a small wrapper around Data.Dynamic.
-module Butler.Dynamic (
+module Butler.Core.Dynamic (
     Dynamics,
     newDynamics,
     addDynamic,
@@ -9,7 +9,7 @@ module Butler.Dynamic (
     waitDynamic,
 ) where
 
-import Butler.Clock
+import Butler.Core.Clock
 import Butler.Prelude
 import Data.Map.Strict qualified as Map
 

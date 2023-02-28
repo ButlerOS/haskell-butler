@@ -1,4 +1,4 @@
-module Butler.Session (
+module Butler.Display.Session (
     Sessions (..),
     Session (..),
     withSessions,
@@ -30,10 +30,10 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import Servant.Auth.JWT (FromJWT, ToJWT)
 
+import Butler.Core
+import Butler.Core.Memory
 import Butler.Database
-import Butler.Memory
-import Butler.OS
-import Butler.User
+import Butler.Display.User
 
 isValidUserName :: Text -> Maybe UserName
 isValidUserName n

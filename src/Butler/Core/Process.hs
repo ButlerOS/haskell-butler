@@ -1,4 +1,4 @@
-module Butler.Process (
+module Butler.Core.Process (
     Pid (..),
     Process (..),
     processID,
@@ -7,7 +7,7 @@ module Butler.Process (
     ProgramName (..),
 ) where
 
-import Butler.Clock
+import Butler.Core.Clock
 import Butler.Prelude
 
 newtype Pid = Pid Natural

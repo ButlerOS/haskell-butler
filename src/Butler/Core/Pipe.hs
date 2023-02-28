@@ -1,5 +1,5 @@
 -- | This module provides 'Pipe' and 'BroadcastChan' helpers.
-module Butler.Pipe (
+module Butler.Core.Pipe (
     -- * BroadcastChan
     BroadcastChan,
     newBroadcastChan,

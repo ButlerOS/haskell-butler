@@ -17,9 +17,9 @@ import Database.Migrant hiding (withTransaction)
 import Database.Migrant.Driver.Sqlite ()
 import Database.SQLite.Simple
 
-import Butler.OS
+import Butler.Core
+import Butler.Core.Storage
 import Butler.Prelude
-import Butler.Storage
 
 newtype Database = Database (MVar Connection)
 

@@ -1,12 +1,12 @@
 module Butler.App.Seat (seatApp) where
 
 import Butler
+import Butler.Core.Logger
 import Butler.Frame
-import Butler.Logger
 
-import Butler.Process
-import Butler.Session
-import Butler.User
+import Butler.Core.Process
+import Butler.Display.Session
+import Butler.Display.User
 import Data.Aeson
 import Data.Map.Strict qualified as Map
 

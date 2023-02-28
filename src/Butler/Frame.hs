@@ -10,9 +10,9 @@ module Butler.Frame (
     clientScript,
 ) where
 
-import Butler.DisplayClient
-import Butler.GUI
-import Butler.Logger
+import Butler.Core.Logger
+import Butler.Display.Client
+import Butler.Display.GUI
 import Butler.Prelude
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS

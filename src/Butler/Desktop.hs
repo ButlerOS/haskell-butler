@@ -19,17 +19,17 @@ import Lucid
 import Lucid.Htmx
 
 import Butler.App
-import Butler.Clock
+import Butler.Core
+import Butler.Core.Clock
+import Butler.Core.Logger
+import Butler.Core.Memory
+import Butler.Core.Pipe
+import Butler.Core.Processor
 import Butler.Display
+import Butler.Display.GUI
+import Butler.Display.WebSocket
 import Butler.Frame
-import Butler.GUI
-import Butler.Logger
-import Butler.Memory
-import Butler.OS
-import Butler.Pipe
 import Butler.Prelude
-import Butler.Processor
-import Butler.WebSocket
 import Butler.Window
 
 data Desktop = Desktop

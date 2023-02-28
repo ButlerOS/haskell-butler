@@ -1,4 +1,4 @@
-module Butler.OS (
+module Butler.Core (
     -- * Boot
     OS (..),
     spawnInitProcess,
@@ -48,16 +48,16 @@ import Control.Retry
 import Data.ByteString qualified as BS
 import System.Process.Typed hiding (Process, startProcess, stopProcess)
 
-import Butler.Buzzer
-import Butler.Clock
-import Butler.Events
-import Butler.Logger
-import Butler.Memory
-import Butler.Pipe
+import Butler.Core.Buzzer
+import Butler.Core.Clock
+import Butler.Core.Events
+import Butler.Core.Logger
+import Butler.Core.Memory
+import Butler.Core.Pipe
+import Butler.Core.Process
+import Butler.Core.Processor
+import Butler.Core.Storage
 import Butler.Prelude
-import Butler.Process
-import Butler.Processor
-import Butler.Storage
 
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.OneLine (renderObject)

@@ -1,4 +1,4 @@
-module Butler.Processor (
+module Butler.Core.Processor (
     Processor,
     withProcessor,
     awaitProcessor,
@@ -10,15 +10,15 @@ module Butler.Processor (
     stopProcess,
 
     -- * useful re-exports
-    module Butler.Process,
+    module Butler.Core.Process,
 ) where
 
-import Butler.Clock
-import Butler.Events
-import Butler.Logger
-import Butler.NatMap as NM
+import Butler.Core.Clock
+import Butler.Core.Events
+import Butler.Core.Logger
+import Butler.Core.NatMap as NM
+import Butler.Core.Process
 import Butler.Prelude
-import Butler.Process
 
 data Processor = Processor
     { scope :: Scope

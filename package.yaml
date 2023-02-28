@@ -16,7 +16,6 @@ ghc-options:
   - -fwarn-incomplete-uni-patterns
   - -Wno-partial-type-signatures
   - -fwrite-ide-info
-  - -hiedir=.hie
   - -Wno-missing-methods
 
 default-extensions:
