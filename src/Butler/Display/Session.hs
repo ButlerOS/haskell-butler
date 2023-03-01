@@ -6,7 +6,7 @@ module Butler.Display.Session (
     deleteInvite,
     deleteSession,
     isEmptySessions,
-    checkSession,
+    lookupSession,
     checkInvite,
     createSession,
     UserName (..),
@@ -104,8 +104,8 @@ isEmptySessions sessions = Map.null <$> readTVar sessions.sessions
 checkInvite :: Sessions -> InviteID -> STM Bool
 checkInvite sessions inviteID = Map.member inviteID <$> readMemoryVar sessions.invitations
 
-checkSession :: Sessions -> SessionID -> STM (Maybe Session)
-checkSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
+lookupSession :: Sessions -> SessionID -> STM (Maybe Session)
+lookupSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
 
 addSessionDB :: Sessions -> Session -> ProcessIO ()
 addSessionDB sessions session = do

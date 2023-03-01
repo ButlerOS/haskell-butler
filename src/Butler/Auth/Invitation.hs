@@ -53,8 +53,8 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
     indexRoute :: AuthResult SessionID -> Maybe InviteID -> ProcessIO (Html ())
     indexRoute ar mInvite = liftIO $ case ar of
         Authenticated sessionID -> do
-            isSessionValid <- atomically (checkSession sessions sessionID)
-            case isSessionValid of
+            mSession <- atomically (lookupSession sessions sessionID)
+            case mSession of
                 Just _ -> do
                     pure $ mkIndexHtml (websocketHtml pathPrefix sessionID)
                 Nothing -> loginPage
@@ -116,5 +116,5 @@ invitationAuthApp mkIndexHtml sessions = do
     let app = Servant.serveWithContextT (Proxy @AuthAPI) cfg (liftIO . runProcessIO env.os env.process) authSrv
         getSession = \case
             Nothing -> pure Nothing
-            Just sessionID -> atomically $ checkSession sessions sessionID
+            Just sessionID -> atomically $ lookupSession sessions sessionID
     pure $ AuthApplication app getSession

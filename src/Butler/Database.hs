@@ -4,7 +4,6 @@ module Butler.Database (
     withDatabase,
     DatabaseMigration (..),
     dbSimpleCreate,
-    withDbTransaction,
     dbExecute,
     dbQuery,
 
@@ -57,11 +56,6 @@ dbSetup (Database mvConn) databaseSetup = withMVar mvConn \conn ->
             (\m d -> runInIO (databaseSetup.migrateUp m . Database =<< newMVar d))
             (\m d -> runInIO (databaseSetup.migrateDown m . Database =<< newMVar d))
             conn
-
-withDbTransaction :: MonadUnliftIO m => Database -> m a -> m a
-withDbTransaction (Database mvConn) action = withMVar mvConn \conn ->
-    withRunInIO \runInIO ->
-        withTransaction conn (runInIO action)
 
 dbExecute :: MonadUnliftIO m => Database -> Query -> [NamedParam] -> m ()
 dbExecute (Database mvConn) q args = withMVar mvConn \conn -> liftIO (executeNamed conn q args)

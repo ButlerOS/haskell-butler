@@ -9,7 +9,7 @@ import Lucid.XStatic
 publicDisplayApp :: DisplayApplication
 publicDisplayApp = DisplayApplication auth
   where
-    auth xfiles = const . pure . guestAuthApp $ htmlMain xfiles "Standalone GUI"
+    auth xfiles sessions = pure . guestAuthApp sessions $ htmlMain xfiles "Standalone GUI"
 
 htmlMain :: [XStaticFile] -> Text -> Html ()
 htmlMain xfiles title = do
