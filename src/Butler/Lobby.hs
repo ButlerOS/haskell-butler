@@ -141,7 +141,7 @@ lobbyWsListHtml wss =
                                 clients <- lift (getClients desktop.clients)
                                 attr "clients" do
                                     with div_ [class_ "flex"] do
-                                        traverse_ (\c -> userIcon c.session.username) clients
+                                        traverse_ (\c -> userIcon =<< lift (readTVar c.session.username)) clients
                                 wins <- IM.size . (.windows) <$> lift (readMemoryVar desktop.wm.windows)
                                 attr "wins" (toHtml (show wins))
 
@@ -206,6 +206,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
                                 script_ $ "window.location.pathname = \"/" <> cleanWS <> "\""
             _ -> logError "unknown welcome event" ["ev" .= ev]
     Nothing -> case ev ^? key "message" . _String of
-        Just msg ->
-            atomically $ addUserMessage chat (MkMessage client.session.username msg)
+        Just msg -> atomically do
+            username <- readTVar client.session.username
+            addUserMessage chat (MkMessage username msg)
         Nothing -> logError "missing ws" ["ev" .= ev]

@@ -49,7 +49,7 @@ demoChat srv = do
 handleDisplayEvent :: ChatServer -> DisplayEvent -> STM ()
 handleDisplayEvent srv = \case
     UserConnected _ client -> do
-        let user = client.session.username
+        user <- readTVar client.session.username
         added <- stateTVar srv.users $ \users ->
             if Set.member user users
                 then (False, users)
@@ -58,7 +58,7 @@ handleDisplayEvent srv = \case
             let ev = UserJoined user
             broadcast srv.events ev
     UserDisconnected _ client -> do
-        let user = client.session.username
+        user <- readTVar client.session.username
         removed <- null . fromMaybe [] . Map.lookup client.session.sessionID <$> readTVar srv.allClients
         when removed do
             let ev = UserLeft user
@@ -96,10 +96,11 @@ appendUser wid client user = do
 
 renderUser :: WinID -> DisplayClient -> UserName -> HtmlT STM ()
 renderUser wid client user = do
-    with li_ (highlightSelf [id_ (withWID wid ("chat-" <> from user))]) $ userIcon user
+    username <- lift (readTVar client.session.username)
+    with li_ (highlightSelf username [id_ (withWID wid ("chat-" <> from user))]) $ userIcon user
   where
-    highlightSelf
-        | client.session.username == user = (class_ "font-bold border border-black rounded-full" :)
+    highlightSelf username
+        | username == user = (class_ "font-bold border border-black rounded-full" :)
         | otherwise = id
 
 inputHtml :: HtmlT STM ()
@@ -143,7 +144,9 @@ startChatApp srv ctx = do
 
     let handleGuiEvent ev =
             case ev.body ^? key "message" . _String of
-                Just msg -> atomically $ addUserMessage srv (MkMessage ev.client.session.username msg)
+                Just msg -> atomically do
+                    username <- readTVar ev.client.session.username
+                    addUserMessage srv (MkMessage username msg)
                 Nothing -> logError "bad chat ev" ["ev" .= ev]
 
     forever do

@@ -40,7 +40,7 @@ renderSM display wid = do
             thead_ $ tr_ $ traverse_ th_ ["User", "Live", "ID"]
             tbody_ $ forM_ sessions \session -> do
                 with' tr_ "odd:bg-stone-100 even:bg-stone-200" do
-                    td_ (toHtml session.username)
+                    td_ (toHtml =<< lift (readTVar session.username))
                     with' td_ "text-center" (toHtml $ into @Text $ show $ length $ fromMaybe [] $ Map.lookup session.sessionID clients)
                     with' td_ "pl-2 text-right" do
                         toHtml (Text.takeWhile (/= '-') $ from session.sessionID)

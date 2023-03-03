@@ -9,6 +9,7 @@ module Butler.Database (
 
     -- * re-export
     NamedParam ((:=)),
+    Only (..),
 )
 where
 

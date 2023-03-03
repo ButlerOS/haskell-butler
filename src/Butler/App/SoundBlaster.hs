@@ -48,8 +48,9 @@ startSoundCard ctx = do
             AppData de -> soundHandler sc de.client de.buffer
             ev -> logError "Unknown ev" ["ev" .= ev]
 
-renderAudioToggle :: WinID -> UserName -> Bool -> HtmlT STM ()
-renderAudioToggle wid username enabled = do
+renderAudioToggle :: WinID -> TVar UserName -> Bool -> HtmlT STM ()
+renderAudioToggle wid tvUsername enabled = do
+    username <- lift (readTVar tvUsername)
     renderToggle
         "ri-volume-up-line"
         [ userColorStyle username
@@ -121,7 +122,7 @@ soundCardInfoHtml sc = with div_ [id_ "sc-info"] do
             _ -> do
                 with div_ [class_ "text-sm font-bold"] "Connected: "
                 forM_ clients \client -> do
-                    userIcon client.session.username
+                    userIcon =<< lift (readTVar client.session.username)
 
     drawList sc.channels "Playing:" (soundChannelHtml sc)
     drawList sc.receivers "Receiving:" soundReceiverHtml
@@ -147,12 +148,12 @@ soundChannelHtml sc chan = do
         mClientStatus <- lift (getSoundChannelClient chan client)
         forM_ mClientStatus \clientStatus -> do
             with span_ [class_ "mr-2"] do
-                userIcon client.session.username
+                userIcon =<< lift (readTVar client.session.username)
                 clientStatusHtml clientStatus
 
 soundReceiverHtml :: SoundReceiver -> HtmlT STM ()
 soundReceiverHtml receiver = do
-    userIcon receiver.client.session.username
+    userIcon =<< lift (readTVar receiver.client.session.username)
     ": "
     counter <- lift (readTVar receiver.counter)
     toHtml (show counter)

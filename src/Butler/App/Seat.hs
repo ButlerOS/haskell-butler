@@ -41,8 +41,8 @@ newSeat client resolution = Seat client <$> newTVar resolution <*> newTVar (0, 0
 
 renderSeat :: Seat -> HtmlT STM ()
 renderSeat seat = do
-    let user = seat.client.session.username
-        Pid idx = seat.client.process.pid
+    let Pid idx = seat.client.process.pid
+    user <- lift (readTVar seat.client.session.username)
     with span_ [id_ ("seat-" <> showT idx)] $ userIcon user
     createSeatCursor user idx
 
@@ -79,7 +79,8 @@ renderSeatTray session wid seats = do
         script_ $ seatClient wid
         with div_ [id_ "current-seats"] do
             traverse_ renderSeat =<< lift (getSeats seats)
-        renderCursorToggle wid session.username True
+        username <- lift (readTVar session.username)
+        renderCursorToggle wid username True
 
 data SeatEvent
     = SeatEventResolution Int Int
@@ -153,10 +154,11 @@ startSeatApp ctx = do
                     Nothing -> pure ()
             AppData de -> dataHandler de.client de.buffer
             AppTrigger ge -> case ge.trigger of
-                "toggle-cursor" ->
+                "toggle-cursor" -> do
+                    username <- readTVarIO ge.client.session.username
                     let running = fromMaybe True (ge.body ^? key "running" . _Bool)
-                        btn = renderCursorToggle wid ge.client.session.username (not running)
-                     in atomically $ sendHtml ge.client btn
+                        btn = renderCursorToggle wid username (not running)
+                    atomically $ sendHtml ge.client btn
                 _ -> logError "Invalid ev" ["ev" .= ev]
             _ -> pure ()
 

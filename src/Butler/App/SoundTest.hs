@@ -80,7 +80,7 @@ soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
         DelayPlayback _process client -> do
             div_ do
                 "Now playing back: "
-                toHtml (client.session.username)
+                toHtml =<< lift (readTVar client.session.username)
             with button_ [id_ (withWID wid "stop"), wsSend, hxTrigger_ "click", class_ "bg-red-500 hover:bg-red-700 text-white font-bold p-1 rounded"] "stop"
         Streaming _process -> do
             span_ "Streaming "

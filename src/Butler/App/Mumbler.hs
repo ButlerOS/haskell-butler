@@ -41,8 +41,9 @@ newMumblerState client = MumblerState client <$> newTVar Muted <*> newTVar 0 <*>
 
 mumblerStateHtml :: MumblerState -> HtmlT STM ()
 mumblerStateHtml ms = do
-    userIcon ms.client.session.username
-    toHtml ms.client.session.username
+    username <- lift (readTVar ms.client.session.username)
+    userIcon username
+    toHtml username
     ": "
     icon <- mumblerStatusClass <$> lift (readTVar ms.status)
     with i_ [class_ (icon <> " pr-3")] mempty
@@ -217,7 +218,8 @@ startMumbler ctx = do
                     -- User is ready
                     (_, Just sc) -> pure (Just sc)
                     (_, Nothing) -> do
-                        let name = SoundChannelName $ showT wid <> "-mumbler-" <> from ms.client.session.username
+                        username <- readTVar ms.client.session.username
+                        let name = SoundChannelName $ showT wid <> "-mumbler-" <> from username
                         let filterSelf c = c.process.pid /= ms.client.process.pid
                         sc <- startSoundChannelKeep filterSelf soundCard wid name
                         setSoundChannelClient sc SoundClientMuted ms.client
