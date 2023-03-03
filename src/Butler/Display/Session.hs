@@ -52,9 +52,8 @@ data Session = Session
 instance ToJSON Session where
     toJSON s = toJSON s.sessionID
 
-newInvite :: MonadIO m => Sessions -> m ()
-newInvite sessions = do
-    invite <- InviteID <$> liftIO UUID.nextRandom
+newInvite :: MonadIO m => Sessions -> InviteID -> m ()
+newInvite sessions invite = do
     atomically $ modifyMemoryVar sessions.invitations (Map.insert invite [])
 
 deleteInvite :: Sessions -> InviteID -> STM ()
@@ -72,9 +71,9 @@ data Sessions = Sessions
     , invitations :: MemoryVar (Map InviteID [SessionID])
     }
 
-newtype InviteID = InviteID UUID
+newtype InviteID = InviteID Text
     deriving (Ord, Eq, Generic, Show)
-    deriving (ToJSON, FromJSON, ToHtml, FromHttpApiData, Serialise) via JsonUID
+    deriving newtype (ToJSON, FromJSON, ToHtml, FromHttpApiData, Serialise, IsString)
 
 newtype SessionID = SessionID UUID
     deriving (Ord, Eq, Generic, Show)

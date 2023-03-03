@@ -2,7 +2,6 @@ module Butler.App.SessionManager where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
-import Data.UUID qualified as UUID
 
 import Butler
 import Butler.Core.Memory
@@ -73,7 +72,7 @@ renderSM display wid = do
                                 [ class_ "ri-clipboard-line top-0.5 relative pl-2"
                                 , hyper_ $
                                     "on click writeText(window.location.origin + '?invite="
-                                        <> UUID.toText (coerce invite)
+                                        <> coerce @InviteID @Text invite
                                         <> "') into the navigator's clipboard "
                                         <> "then call Swal.fire({text: 'Invite URL copied to the clipboard', toast: true, position: 'bottom-end', timer: 5000, showConfirmButton: false, width: '430px'})"
                                 ]
@@ -90,14 +89,18 @@ renderSM display wid = do
                                 ]
                                 mempty
         with' div_ "w-full text-center" do
-            with
-                i_
-                [ class_ "relative rounded-xl text-2xl text-slate-900 ri-add-circle-fill cursor-pointer"
-                , hxTrigger_ "click"
-                , wsSend
-                , id_ (withWID wid "new-invite")
-                ]
-                mempty
+            with form_ [wid_ wid "new-invite", wsSend, hxTrigger_ "submit"] do
+                with div_ [class_ "flex flex-row mx-2 my-1"] do
+                    with (input_ mempty) [id_ "invite-input", class_ inputClass, name_ "name", placeholder_ "invite-name", type_ "text"]
+                    with
+                        button_
+                        [ class_ "relative rounded-xl text-2xl text-slate-900 ri-add-circle-fill cursor-pointer"
+                        , type_ "submit"
+                        ]
+                        mempty
+
+inputClass :: Text
+inputClass = "bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
 
 smApp :: App
 smApp =
@@ -113,9 +116,14 @@ startSMApp ctx = do
         display = ctx.shared.display
     let handleGuiEvent ev = do
             resp <- case ev.trigger of
-                "new-invite" -> do
-                    newInvite display.sessions
-                    pure $ renderSM display wid
+                "new-invite" -> case ev.body ^? key "name" . _String of
+                    Nothing -> logError "invalid invite" [] >> pure mempty
+                    Just (InviteID -> mInvite) -> do
+                        let invite = case mInvite of
+                                "" -> "butler"
+                                _ -> mInvite
+                        newInvite display.sessions invite
+                        pure $ renderSM display wid
                 "delete-invite" -> case ev.body ^? key "uuid" . _JSON of
                     Just invite -> atomically do
                         deleteInvite display.sessions invite
