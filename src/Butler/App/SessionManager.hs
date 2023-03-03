@@ -39,7 +39,17 @@ renderSM display wid = do
             thead_ $ tr_ $ traverse_ th_ ["User", "Live", "ID"]
             tbody_ $ forM_ sessions \session -> do
                 with' tr_ "odd:bg-stone-100 even:bg-stone-200" do
-                    td_ (toHtml =<< lift (readTVar session.username))
+                    td_ do
+                        with form_ [wid_ wid "edit", wsSend, hxTrigger_ "submit"] do
+                            with
+                                button_
+                                [ class_ "relative rounded-xl text-sm text-slate-900 cursor-pointer"
+                                , type_ "submit"
+                                ]
+                                "📝"
+
+                            with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
+                            toHtml =<< lift (readTVar session.username)
                     with' td_ "text-center" (toHtml $ into @Text $ show $ length $ fromMaybe [] $ Map.lookup session.sessionID clients)
                     with' td_ "pl-2 text-right" do
                         toHtml (Text.takeWhile (/= '-') $ from session.sessionID)
@@ -102,6 +112,11 @@ renderSM display wid = do
 inputClass :: Text
 inputClass = "bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
 
+cancelClass :: Text
+cancelClass = "bg-blue-500 hover:bg-blue-700 text-white font-bold p-1 rounded"
+okClass :: Text
+okClass = "bg-green-500 hover:bg-green-700 text-white font-bold p-1 rounded"
+
 smApp :: App
 smApp =
     (defaultApp "user-manager" startSMApp)
@@ -109,16 +124,66 @@ smApp =
         , description = "Manage sessions"
         }
 
+data AppState = Listing Display | Editing Session
+
+renderEditForm :: Session -> WinID -> HtmlT STM ()
+renderEditForm session wid = with div_ [id_ (withWID wid "w")] do
+    with form_ [wid_ wid "save", wsSend, hxTrigger_ "submit"] do
+        div_ do
+            with label_ [class_ "block mb-2 text-sm font-medium text-gray-900 dark:text-white"] "Username"
+            username <- into @Text <$> lift (readTVar session.username)
+            with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
+            with (input_ mempty) [class_ inputClass, name_ "username", type_ "text", value_ username]
+        with div_ [class_ "flex flex-row items-center"] do
+            button_
+                [ class_ cancelClass
+                , wsSend
+                , wid_ wid "listing"
+                ]
+                "Cancel"
+            button_
+                [ class_ okClass
+                , type_ "submit"
+                ]
+                "Save"
+
+renderApp :: TVar AppState -> WinID -> HtmlT STM ()
+renderApp state wid =
+    lift (readTVar state) >>= \case
+        Listing display -> renderSM display wid
+        Editing session -> renderEditForm session wid
+
 startSMApp :: AppContext -> ProcessIO ()
 startSMApp ctx = do
     let clients = ctx.clients
         wid = ctx.wid
         display = ctx.shared.display
+    state <- newTVarIO $ Listing display
     let handleGuiEvent ev = do
             resp <- case ev.trigger of
-                "new-invite" -> case ev.body ^? key "name" . _String of
+                "listing" -> do
+                    atomically $ writeTVar state (Listing display)
+                    pure $ renderSM display wid
+                "edit" -> case ev.body ^? key "name" . _JSON of
+                    Nothing -> logError "invalid edit action" ["ev" .= ev] >> pure mempty
+                    Just sessionID -> do
+                        atomically (lookupSession display.sessions sessionID) >>= \case
+                            Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
+                            Just session -> do
+                                atomically $ writeTVar state (Editing session)
+                                pure $ renderApp state wid
+                "save" -> case (ev.body ^? key "name" . _JSON, ev.body ^? key "username" . _JSON) of
+                    (Just sessionID, Just username) -> do
+                        atomically (lookupSession display.sessions sessionID) >>= \case
+                            Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
+                            Just session -> do
+                                _ <- changeUsername display.sessions session username
+                                atomically $ writeTVar state (Listing display)
+                                pure $ renderApp state wid
+                    _ -> logError "invalid save action" ["ev" .= ev] >> pure mempty
+                "new-invite" -> case ev.body ^? key "name" . _JSON of
                     Nothing -> logError "invalid invite" [] >> pure mempty
-                    Just (InviteID -> mInvite) -> do
+                    Just mInvite -> do
                         let invite = case mInvite of
                                 "" -> "butler"
                                 _ -> mInvite
@@ -155,6 +220,6 @@ startSMApp ctx = do
             sendsHtml clients resp
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            ae@(AppDisplay _) -> sendHtmlOnConnect (renderSM display wid) ae
+            ae@(AppDisplay _) -> sendHtmlOnConnect (renderApp state wid) ae
             AppTrigger ge -> handleGuiEvent ge
             _ -> pure ()
