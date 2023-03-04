@@ -75,10 +75,10 @@ demoDashboard = serveDashboardApps publicDisplayApp [clockApp, clockApp]
 
 -- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
 multiDesktop :: IO ()
-multiDesktop = run demoDesktop
+multiDesktop = run (demoDesktop [])
 
-demoDesktop :: ProcessIO Void
-demoDesktop = do
+demoDesktop :: [App] -> ProcessIO Void
+demoDesktop extraApps = do
     let authApp = invitationAuthApp indexHtml
     desktop <- superviseProcess "desktop" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
@@ -124,7 +124,7 @@ demoDesktop = do
         atomically . addDesktopApp desktop =<< startApp seatApp desktop.shared desktop.clients (WinID 2)
 
     mkAppSet chat desktop =
-        newAppSet
+        newAppSet $
             [ chatApp chat
             , clockApp
             , logViewerApp
@@ -137,6 +137,7 @@ demoDesktop = do
             , tabletopApp
             , mineSweeperApp
             ]
+                <> extraApps
 
     xfiles', xfiles :: [XStaticFile]
     xfiles =
@@ -163,4 +164,4 @@ main = runMain do
         ["vnc"] -> run vncServer
         ["app"] -> run demoApp
         ["dashboard"] -> run demoDashboard
-        _ -> run demoDesktop
+        _ -> run (demoDesktop [])
