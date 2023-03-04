@@ -111,7 +111,7 @@ websocketHtml :: Text -> SessionID -> Html ()
 websocketHtml pathPrefix sessionID = do
     let wsUrl = pathPrefix <> "/ws/htmx" <> queryArgs
     with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
-        with div_ [id_ "display-root", class_ "h-full"] mempty
+        with div_ [id_ "display-wins", class_ "h-full"] mempty
         -- script to get extra websocket url from javascript
         script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '" <> queryArgs <> "';"
   where

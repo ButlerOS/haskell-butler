@@ -121,7 +121,7 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
         Killed -> liftIO do
             -- TODO: check for SocketClosed exception here
             WS.sendTextData connection $ renderText do
-                with div_ [id_ "display-root", class_ "h-full w-full", hxSwapOob_ "afterbegin"] dcSplash
+                with div_ [id_ "display-wins", class_ "h-full w-full", hxSwapOob_ "afterbegin"] dcSplash
             WS.sendClose connection ("see you next time!" :: ByteString)
         _ -> pure ()
 

@@ -169,7 +169,7 @@ delWin desktop wid = do
 desktopHtml :: Windows -> HtmlT STM ()
 desktopHtml windows = do
     wids <- lift (getWindowIDs windows)
-    div_ [id_ "display-root", class_ "flex flex-col min-h-full"] do
+    div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
         script_ clientScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
         with div_ [id_ "win-root", class_ "flex grow min-h-full"] do

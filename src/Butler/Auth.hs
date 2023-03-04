@@ -9,10 +9,10 @@ import Lucid.XStatic
 publicDisplayApp :: DisplayApplication
 publicDisplayApp = DisplayApplication auth
   where
-    auth xfiles sessions = pure . guestAuthApp sessions $ htmlMain xfiles "Standalone GUI"
+    auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles "Standalone GUI"
 
-htmlMain :: [XStaticFile] -> Text -> Html ()
-htmlMain xfiles title = do
+htmlMain :: [XStaticFile] -> Text -> Html () -> Html ()
+htmlMain xfiles title body = do
     doctypehtml_ do
         head_ do
             title_ (toHtml title)
@@ -21,6 +21,4 @@ htmlMain xfiles title = do
             xstaticScripts xfiles
 
         with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
-            with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" "/ws/htmx"] do
-                with div_ [id_ "display-wins"] do
-                    mempty
+            body

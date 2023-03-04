@@ -80,9 +80,9 @@ lobbyHandler dm chat = \case
     UserConnected "htmx" client -> do
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
-        atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Loading..."))
+        atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Loading..."))
         sleep 100
-        atomically $ sendHtml client (with div_ [id_ "display-root"] (splashHtml "Getting workspaces..."))
+        atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Getting workspaces..."))
         sleep 60
         wss <- readMVar dm.desktops
         chatChan <- atomically (newChatReader chat)
@@ -150,7 +150,7 @@ btn = "rounded-none px-4 py-2 font-semibold text-sm bg-sky-500 text-white rounde
 
 lobbyHtml :: Map Workspace DesktopStatus -> HtmlT STM () -> HtmlT STM ()
 lobbyHtml wss chat =
-    with div_ [id_ "display-root"] do
+    with div_ [id_ "display-wins"] do
         script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
         splashHtml do
             with div_ [class_ "flex"] do
@@ -194,7 +194,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
                     pure wss
             "enter-ws" -> do
                 atomically $ sendHtml client do
-                    with div_ [id_ "display-root"] do
+                    with div_ [id_ "display-wins"] do
                         script_ $ "window.location.pathname = \"/" <> wsTxt <> "\""
             "new-ws" -> do
                 let cleanWS = Text.takeWhile (\c -> isAlphaNum c || c == '-') wsTxt
@@ -202,7 +202,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
                     "" -> logError "invalid ws" ["ws" .= cleanWS]
                     _ -> do
                         atomically $ sendHtml client do
-                            with div_ [id_ "display-root"] do
+                            with div_ [id_ "display-wins"] do
                                 script_ $ "window.location.pathname = \"/" <> cleanWS <> "\""
             _ -> logError "unknown welcome event" ["ev" .= ev]
     Nothing -> case ev ^? key "message" . _String of
