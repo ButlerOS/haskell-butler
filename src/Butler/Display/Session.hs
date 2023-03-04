@@ -33,6 +33,7 @@ import Servant.Auth.JWT (FromJWT, ToJWT)
 
 import Butler.Core
 import Butler.Core.Memory
+import Butler.Core.Storage
 import Butler.Database
 import Butler.Display.User
 
@@ -81,6 +82,9 @@ newtype SessionID = SessionID UUID
 
 instance From SessionID Text where
     from (SessionID uuid) = UUID.toText uuid
+
+instance From SessionID StorageAddress where
+    from sess = StorageAddress $ encodeUtf8 $ into @Text sess
 
 instance FromJWT SessionID
 instance ToJWT SessionID

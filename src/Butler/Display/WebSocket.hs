@@ -14,6 +14,7 @@ import Servant
 import Servant.API.WebSocket
 
 import Butler.Core
+import Butler.Core.Storage
 import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Prelude
@@ -24,6 +25,9 @@ newtype Workspace = Workspace Text
 
 instance From Workspace Text where
     from (Workspace n) = n
+
+instance From Workspace StorageAddress where
+    from (Workspace n) = StorageAddress (encodeUtf8 n)
 
 type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
 

@@ -13,6 +13,7 @@ module Butler.Core (
     -- * Memory api
     getPath,
     newProcessMemory,
+    chroot,
 
     -- * Processor api
     spawnProcess,
@@ -136,6 +137,13 @@ newProcessMemory addr initialize = do
     os <- asks os
     p <- asks process
     liftIO $ newMemoryVar os.storage addr (runProcessIO os p initialize)
+
+-- | Change the root storage directory of a process.
+chroot :: StorageAddress -> ProcessIO a -> ProcessIO a
+chroot addr action = do
+    os <- asks os
+    localStorage <- scopeStorage os.storage addr
+    local (#os . #storage .~ localStorage) action
 
 runExternalProcess :: Text -> ProcessConfig stdin stdout0 stderr0 -> ProcessIO ()
 runExternalProcess name cmd = do

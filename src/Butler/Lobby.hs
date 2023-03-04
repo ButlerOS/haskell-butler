@@ -14,7 +14,6 @@ import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Logger
 import Butler.Core.Memory
-import Butler.Core.Storage
 import Butler.Desktop
 import Butler.Display
 import Butler.Display.GUI
@@ -56,9 +55,7 @@ lobbyProgram mkAppSet xinit chat display = do
             mDesktopStatus -> do
                 desktopMVar <- newEmptyMVar
                 let desktopID = "desktop-" <> from name
-                os <- asks os
-                desktopStorage <- scopeStorage os.storage (from desktopID)
-                void $ spawnProcess (ProgramName desktopID) $ local (#os . #storage .~ desktopStorage) do
+                void $ spawnProcess (ProgramName desktopID) $ chroot (from desktopID) do
                     startDesktop desktopMVar mkAppSet xinit display name
 
                 desktop <- takeMVar desktopMVar
@@ -66,7 +63,7 @@ lobbyProgram mkAppSet xinit chat display = do
                     atomically $ modifyMemoryVar dm.desktopsList (name :)
                 pure (Map.insert name (DesktopRunning desktop) wss, desktop)
 
-    pure \case
+    pure \_ -> \case
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
         name -> do
             desktop <- getDesktop name

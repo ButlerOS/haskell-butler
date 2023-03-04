@@ -36,6 +36,7 @@ import Butler.Core
 import Butler.Core.Logger
 import Butler.Core.Network
 import Butler.Core.Process
+import Butler.Core.Storage
 import Butler.Display.Client
 import Butler.Display.Session
 import Butler.Display.WebSocket
@@ -44,7 +45,7 @@ import Butler.Window
 import System.Posix.Env.ByteString (getEnv)
 import XStatic.Butler
 
-type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
+type OnClient = (Session -> Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
 newDisplay :: Sessions -> STM Display
 newDisplay sessions = Display sessions <$> newTVar mempty
@@ -96,7 +97,7 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
         progName = "client-" <> cn
         name = ProgramName $ progName <> "-" <> clientAddr
         endpoint = Endpoint clientAddr
-    (processEnv, handler) <- onClient workspaceM
+    (processEnv, handler) <- onClient session workspaceM
     clientM <- newEmptyMVar
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
@@ -188,7 +189,7 @@ serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
             startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
-                pure $ \_ws -> do
+                pure $ \session _ws -> chroot (StorageAddress "sess-" <> into session.sessionID) do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
                     clients <- atomically newDisplayClients
@@ -210,7 +211,7 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
             startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
                 clients <- atomically newDisplayClients
                 shared <- startApps apps display clients
-                pure $ \_ws -> do
+                pure $ \_session _ws -> do
                     env <- ask
                     pure (env, staticClientHandler (pure ()) clients shared)
     error "Display exited?!"
