@@ -80,7 +80,7 @@ multiDesktop = run demoDesktop
 demoDesktop :: ProcessIO Void
 demoDesktop = do
     let authApp = invitationAuthApp indexHtml
-    desktop <- superviseProcess "desktop" $ startDisplay 8080 xfiles' authApp $ \display -> do
+    desktop <- superviseProcess "desktop" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
         lobbyProgram (mkAppSet chat) xinit chat display
     void $ waitProcess desktop

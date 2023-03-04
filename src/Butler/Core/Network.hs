@@ -23,6 +23,7 @@ data WebProtocol
     = Http
     | -- Https (Maybe (crt data, key data)). On Nothing, 'webService' generates a self-signed certificate.
       Https (Maybe (ByteString, ByteString))
+    deriving (Eq)
 
 getKeys :: ProcessIO (ByteString, ByteString)
 getKeys = fst <$> newProcessMemory "tls.key" genKeys

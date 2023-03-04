@@ -104,6 +104,7 @@ library
   build-depends:
       PyF
     , aeson
+    , attoparsec
     , base <5
     , binary
     , bytestring
@@ -204,6 +205,7 @@ executable butler
   build-depends:
       PyF
     , aeson
+    , attoparsec
     , base <5
     , binary
     , butler
@@ -313,6 +315,7 @@ test-suite spec
   build-depends:
       PyF
     , aeson
+    , attoparsec
     , base <5
     , binary
     , butler

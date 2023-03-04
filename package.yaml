@@ -70,6 +70,7 @@ dependencies:
   - unliftio
   - random
   - typed-process
+  - attoparsec
 
   - ki
   - ki-unlifted

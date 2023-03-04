@@ -20,6 +20,31 @@ by simulating a traditional computer.
 
 To validate the abstractions, the project also feature some proof of concept demos:
 
+## HTML5 GUI
+
+Serve gui app behind nginx with:
+
+```
+upstream butler {
+     server 127.0.0.1:8042;
+}
+
+server {
+    location / {
+      proxy_pass http://butler/;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "Upgrade";
+      proxy_set_header Host $host;
+    }
+}
+```
+
+Start service with:
+
+```
+BUTLER_ADDR=http:8042 cabal run
+```
 
 ## Multiplayer Desktop
 

@@ -1,6 +1,7 @@
 -- | This module contains the logic to enable user access through HTTP.
 module Butler.Display (
     Display (..),
+    DisplayAddr (..),
     AuthApplication (..),
     OnClient,
     startDisplay,
@@ -19,6 +20,7 @@ import Codec.Serialise.Decoding (decodeBytes)
 import Codec.Serialise.Encoding (encodeBytes)
 import Crypto.JOSE.JWK qualified as JOSE
 import Data.Aeson (decodeStrict')
+import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Lucid
@@ -39,6 +41,7 @@ import Butler.Display.Session
 import Butler.Display.WebSocket
 import Butler.Prelude
 import Butler.Window
+import System.Posix.Env.ByteString (getEnv)
 import XStatic.Butler
 
 type OnClient = (Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
@@ -130,8 +133,33 @@ data AuthApplication = AuthApplication
     , getSession :: Maybe SessionID -> ProcessIO (Maybe Session)
     }
 
-startDisplay :: Port -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
-startDisplay port xfiles mkAuthApp withDisplay = withSessions \sessions -> do
+data DisplayAddr = DisplayAddr WebProtocol Port
+    deriving (Eq)
+
+defaultAddr :: DisplayAddr
+defaultAddr = DisplayAddr (Https Nothing) 8085
+
+{- | Parse listening addr
+-- >>> displayAddrFromEnv "http:8080" @?= DisplayAddr Http 8080
+-}
+displayAddrFromEnv :: Maybe ByteString -> DisplayAddr
+displayAddrFromEnv = \case
+    Nothing -> defaultAddr
+    Just env -> case P.parseOnly addrParser env of
+        Left e -> error $ "Invalid addr: " <> e
+        Right x -> x
+  where
+    addrParser :: P.Parser DisplayAddr
+    addrParser =
+        DisplayAddr
+            <$> (Http <$ "http:" <|> Https Nothing <$ "https:")
+            <*> P.decimal
+
+startDisplay :: Maybe DisplayAddr -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
+startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions \sessions -> do
+    DisplayAddr proto port <- case mAddr of
+        Nothing -> displayAddrFromEnv <$> liftIO (getEnv "BUTLER_ADDR")
+        Just addr -> pure addr
     display <- atomically (newDisplay sessions)
     authApp <- mkAuthApp sessions
     onClient <- withDisplay display
@@ -147,7 +175,7 @@ startDisplay port xfiles mkAuthApp withDisplay = withSessions \sessions -> do
                     _ -> resp wsResp
              in wsApp req wsRespHandler
 
-    webService xfiles glApp port (Https Nothing)
+    webService xfiles glApp port proto
 
 newtype DisplayApplication
     = DisplayApplication
@@ -159,7 +187,7 @@ serveApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
+            startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
                 pure $ \_ws -> do
                     env <- ask
                     -- The list of clients and the app instance is re-created per client
@@ -179,7 +207,7 @@ serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveDashboardApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay 8085 xfiles (mkAuth xfiles) $ \display -> do
+            startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
                 clients <- atomically newDisplayClients
                 shared <- startApps apps display clients
                 pure $ \_ws -> do
