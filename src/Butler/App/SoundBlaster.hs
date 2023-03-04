@@ -659,6 +659,8 @@ function setupSoundClient(chan) {
         butlerRecorder.stream.getTracks().forEach(function(track) {
           track.stop();
         });
+        butlerRecorder.mediaRecorder = null;
+        butlerRecorder.stream = null;
       }
       setTimeout(stopRecordIfNeeded, 1000)
     }
