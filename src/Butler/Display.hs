@@ -192,17 +192,14 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
 staticClientHandler :: ProcessIO () -> DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
 staticClientHandler onDisconnect clients shared displayEvent = case displayEvent of
     UserConnected "htmx" client -> do
-        logInfo "Client connected" ["client" .= client]
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
         atomically $ addClient clients client
-        logInfo "Sending html" []
         appInstances <- atomically (getApps shared.apps)
         atomically $ sendHtml client do
             with div_ [id_ "display-wins", class_ "flex"] do
                 forM_ appInstances \appInstance -> do
                     with div_ [wid_ appInstance.wid "w"] mempty
-        logInfo "Pinging instances" []
         forM_ appInstances \appInstance -> writePipe appInstance.pipeAE (AppDisplay displayEvent)
         forever do
             dataMessage <- recvData client

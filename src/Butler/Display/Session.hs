@@ -164,7 +164,7 @@ createSession sessions username mInvite = withMVar sessions.lock \() -> do
                         Just xs -> Just (sessionID : xs)
                         Nothing -> Just [sessionID]
                 modifyMemoryVar sessions.invitations (Map.alter alter invite)
-            if firstSession || validInvite
+            if firstSession || validInvite || username == "guest"
                 then do
                     session <- Session sessionID <$> newTVar username
                     modifyTVar' sessions.sessions (Map.insert session.sessionID session)
