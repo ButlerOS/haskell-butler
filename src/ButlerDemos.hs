@@ -29,6 +29,7 @@ import Butler.App.Terminal
 
 import Lucid.XStatic
 import XStatic.Butler as XStatic
+import XStatic.Hyperscript qualified as XStatic
 import XStatic.NoVNC qualified as XStatic
 import XStatic.PcmPlayer qualified as XStatic
 import XStatic.Remixicon qualified as XStatic
@@ -147,6 +148,7 @@ demoDesktop = do
                , XStatic.xtermFitAddonJs
                , XStatic.xtermFitAddonJsMap
                , XStatic.winboxCss
+               , XStatic.hyperscript
                ]
             <> XStatic.xterm
             <> XStatic.pcmPlayer

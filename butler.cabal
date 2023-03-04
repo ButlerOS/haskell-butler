@@ -160,6 +160,7 @@ library
     , with-utf8
     , xstatic
     , xstatic-htmx
+    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon
@@ -260,6 +261,7 @@ executable butler
     , with-utf8
     , xstatic
     , xstatic-htmx
+    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon
@@ -371,6 +373,7 @@ test-suite spec
     , with-utf8
     , xstatic
     , xstatic-htmx
+    , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
     , xstatic-remixicon

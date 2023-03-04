@@ -55,7 +55,7 @@ renderSM display wid = do
                         toHtml (Text.takeWhile (/= '-') $ from session.sessionID)
                         with
                             i_
-                            [ id_ (withWID wid "terminate-session")
+                            [ wid_ wid "terminate-session"
                             , encodeVal ["uuid" .= into @Text session.sessionID]
                             , class_ "ri-delete-bin-2-fill text-red-500 px-2 cursor-pointer top-0.5 relative"
                             , wsSend
@@ -91,7 +91,7 @@ renderSM display wid = do
                             toHtml invite
                             with
                                 i_
-                                [ id_ (withWID wid "delete-invite")
+                                [ wid_ wid "delete-invite"
                                 , encodeVal ["uuid" .= invite]
                                 , class_ "ri-delete-bin-2-fill text-red-500 px-2 cursor-pointer top-0.5 relative"
                                 , wsSend

@@ -127,6 +127,7 @@ dependencies:
   - xstatic-tailwind
   - xstatic-sweetalert2
   - xstatic-remixicon
+  - xstatic-hyperscript
   - xstatic-xterm
   - xstatic-novnc
   - xstatic-winbox
