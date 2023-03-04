@@ -116,6 +116,7 @@
       ];
 
     in {
+      haskellExtend = haskellExtend;
       packages."x86_64-linux".default = pkg-exe;
 
       packages."x86_64-linux".containerBase = mkContainer "base" [ ];
