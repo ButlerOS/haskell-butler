@@ -327,6 +327,7 @@ function startTabletop(wid, initialObjects, startingObjects) {
   startingObjects.forEach(obj => {
     const elt = document.getElementById(mkElementID(obj.oid))
     setupObject(elt);
+    elt.butlerOID = obj.oid;
     elt.style.position = 'absolute';
     setPosition(elt, obj.x, obj.y);
   });
