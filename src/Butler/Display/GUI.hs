@@ -21,6 +21,11 @@ module Butler.Display.GUI (
     -- * Widget
     renderToggle,
 
+    -- * CSS class
+    inputClass,
+    okClass,
+    cancelClass,
+
     -- * Re-exports
     makeAttribute,
 ) where
@@ -151,3 +156,12 @@ renderToggle icon attrs enabled onScript offScript = do
         )
         do
             script_ $ if enabled then onScript else offScript
+
+inputClass :: Text
+inputClass = "bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+
+cancelClass :: Text
+cancelClass = "bg-blue-500 hover:bg-blue-700 text-white font-bold p-1 rounded"
+
+okClass :: Text
+okClass = "bg-green-500 hover:bg-green-700 text-white font-bold p-1 rounded"

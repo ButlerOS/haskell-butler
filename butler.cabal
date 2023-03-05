@@ -36,6 +36,7 @@ library
       Butler.App.Mumbler
       Butler.App.NoVnc
       Butler.App.ProcessExplorer
+      Butler.App.QRTest
       Butler.App.Seat
       Butler.App.SessionManager
       Butler.App.SoundBlaster
@@ -135,6 +136,8 @@ library
     , optparse-applicative
     , posix-pty
     , process
+    , qrcode-core
+    , qrcode-juicypixels
     , random
     , retry
     , serialise
@@ -237,6 +240,8 @@ executable butler
     , optparse-applicative
     , posix-pty
     , process
+    , qrcode-core
+    , qrcode-juicypixels
     , random
     , retry
     , serialise
@@ -348,6 +353,8 @@ test-suite spec
     , optparse-applicative
     , posix-pty
     , process
+    , qrcode-core
+    , qrcode-juicypixels
     , random
     , retry
     , serialise

@@ -113,6 +113,9 @@ dependencies:
   - retry
   - ebml
 
+  - qrcode-juicypixels
+  - qrcode-core
+
   # html
   - lucid
   - lucid-htmx

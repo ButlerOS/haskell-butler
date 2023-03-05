@@ -20,6 +20,7 @@ import Butler.App.MineSweeper
 import Butler.App.Mumbler
 import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
+import Butler.App.QRTest
 import Butler.App.Seat
 import Butler.App.SessionManager
 import Butler.App.SoundBlaster
@@ -67,7 +68,7 @@ vncServer = do
 
 -- | Demonstrate apps deployment
 demoApp :: ProcessIO Void
-demoApp = serveApps publicDisplayApp [mineSweeperApp, clockApp]
+demoApp = serveApps publicDisplayApp [qrApp, clockApp]
 
 -- | Demonstrate dashboard apps deployment
 demoDashboard :: ProcessIO Void
@@ -133,6 +134,7 @@ demoDesktop extraApps = do
             , mumblerApp
             , peApp desktop
             , vncApp
+            , qrApp
             , smApp
             , tabletopApp
             , mineSweeperApp
