@@ -68,7 +68,7 @@ vncServer = do
 
 -- | Demonstrate apps deployment
 demoApp :: ProcessIO Void
-demoApp = serveApps publicDisplayApp [qrApp, clockApp]
+demoApp = serveApps publicDisplayApp [tabletopApp, qrApp, clockApp]
 
 -- | Demonstrate dashboard apps deployment
 demoDashboard :: ProcessIO Void

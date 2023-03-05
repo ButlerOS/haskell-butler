@@ -189,7 +189,7 @@ renderWindow (WinID idx, Window (x, y) (w, h) title) = do
         handlers = map handler ["resize", "move", "focus"]
      in Text.intercalate ";\n" ([mkObj, rs] <> handlers) <> ";\n"
 
--- This needs to be kept in sync with the Butler.Frame.clientScript javascript implementation 'withWID'
+-- This needs to be kept in sync with the Butler.Frame.butlerHelpersScript javascript implementation 'withWID'
 withWID :: WinID -> Text -> Text
 withWID winID n = n <> "-" <> showT winID
 

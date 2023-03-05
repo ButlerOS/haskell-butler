@@ -170,7 +170,7 @@ desktopHtml :: Windows -> HtmlT STM ()
 desktopHtml windows = do
     wids <- lift (getWindowIDs windows)
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
-        script_ clientScript
+        script_ butlerHelpersScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
         with div_ [id_ "win-root", class_ "flex grow min-h-full"] do
             mempty

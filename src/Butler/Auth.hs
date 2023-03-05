@@ -4,6 +4,7 @@ module Butler.Auth where
 import Butler.Auth.Guest
 import Butler.Display
 import Butler.Prelude
+import Butler.Frame
 import Lucid.XStatic
 
 publicDisplayApp :: DisplayApplication
@@ -19,6 +20,7 @@ htmlMain xfiles title body = do
             meta_ [charset_ "utf-8"]
             meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
             xstaticScripts xfiles
+            script_ butlerHelpersScript
 
         with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
             body

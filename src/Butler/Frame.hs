@@ -7,7 +7,7 @@ module Butler.Frame (
     -- * helper
     encodeMessageL,
     decodeMessage,
-    clientScript,
+    butlerHelpersScript,
 ) where
 
 import Butler.Core.Logger
@@ -40,8 +40,8 @@ decodeMessage buf = decodeChan <$> BS.uncons buf
   where
     decodeChan (x, xs) = (WinID (from x), xs)
 
-clientScript :: Text
-clientScript =
+butlerHelpersScript :: Text
+butlerHelpersScript =
     [raw|
 // Helpers
 globalThis.decodeJSON = buf => JSON.parse(new TextDecoder().decode(buf));
