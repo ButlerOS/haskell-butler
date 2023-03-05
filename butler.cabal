@@ -41,6 +41,7 @@ library
       Butler.App.SessionManager
       Butler.App.SoundBlaster
       Butler.App.SoundTest
+      Butler.App.SshAgent
       Butler.App.Tabletop
       Butler.App.Terminal
       Butler.Auth

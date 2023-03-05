@@ -53,7 +53,7 @@ controlWin = WinID 0
 newDesktopIO :: Display -> Workspace -> ProcessIO Desktop
 newDesktopIO display ws = do
     processEnv <- ask
-    wm <- newWindowManager (WinID 2) -- the first wid are reserved
+    wm <- newWindowManager (WinID 3) -- the first wid are reserved
     atomically (newDesktop processEnv display ws wm)
 
 deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App

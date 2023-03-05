@@ -25,6 +25,7 @@ import Butler.App.Seat
 import Butler.App.SessionManager
 import Butler.App.SoundBlaster
 import Butler.App.SoundTest
+import Butler.App.SshAgent
 import Butler.App.Tabletop
 import Butler.App.Terminal
 
@@ -123,6 +124,7 @@ demoDesktop extraApps = do
     xinit desktop = do
         atomically . addDesktopApp desktop =<< startApp soundCardApp desktop.shared desktop.clients (WinID 1)
         atomically . addDesktopApp desktop =<< startApp seatApp desktop.shared desktop.clients (WinID 2)
+        atomically . addDesktopApp desktop =<< startApp sshAgentApp desktop.shared desktop.clients (WinID 3)
 
     mkAppSet chat desktop =
         newAppSet $

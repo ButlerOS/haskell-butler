@@ -2,10 +2,12 @@ module Butler.Core.Network (
     WaiApplication,
     webService,
     WebProtocol (..),
+    unixService,
 ) where
 
 import Data.ByteString qualified as BS
 import Network.HTTP.Types.Status qualified as HTTP
+import Network.Socket qualified as Socket
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Handler.WarpTLS qualified as Warp
@@ -13,6 +15,7 @@ import System.Process.Typed
 
 import Butler.Core
 import Butler.Prelude
+import System.Directory (removeFile)
 import System.FilePath ((</>))
 import UnliftIO.Directory (withCurrentDirectory)
 
@@ -39,6 +42,18 @@ getKeys = fst <$> newProcessMemory "tls.key" genKeys
             crtData <- BS.readFile crtPath
             keyData <- BS.readFile keyPath
             pure (crtData, keyData)
+
+withSocket :: (Socket -> ProcessIO a) -> ProcessIO a
+withSocket =
+    bracket (liftIO $ Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol) (liftIO . Socket.close)
+
+unixService :: FilePath -> (Socket -> ProcessIO ()) -> ProcessIO Void
+unixService fp cb = withSocket \socket ->
+    bracket_ (liftIO $ Socket.bind socket (Socket.SockAddrUnix fp)) (ignoringExceptions (liftIO $ removeFile fp)) do
+        liftIO $ Socket.listen socket 5
+        forever do
+            (client, _) <- liftIO $ Socket.accept socket
+            cb client
 
 webService :: [XStaticFile] -> WaiApplication -> Port -> WebProtocol -> ProcessIO Void
 webService xs app port = \case

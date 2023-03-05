@@ -85,6 +85,9 @@ instance From Natural TriggerName where
 newtype WinID = WinID Int
     deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
 
+instance From WinID Natural where
+    from (WinID n) = unsafeFrom n
+
 with' :: With a => a -> Text -> a
 with' x n = with x [class_ n]
 

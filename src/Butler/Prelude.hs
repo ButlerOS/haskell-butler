@@ -7,6 +7,9 @@ module Butler.Prelude (
     putTextLn,
     whenM,
     unlessM,
+    ignoringExceptions,
+    sktRecv,
+    sktSendAll,
 
     -- * ki
     module Ki.Unlifted,
@@ -85,6 +88,9 @@ module Butler.Prelude (
     Data.Time.Clock.UTCTime,
     Data.Time.Clock.getCurrentTime,
 
+    -- * network
+    Network.Socket.Socket,
+
     -- * text bytestring containers
     Data.Sequence.Seq,
     Data.Text.Text,
@@ -149,7 +155,7 @@ import Data.Aeson qualified
 import Data.Aeson.Lens qualified
 import Data.Bifunctor
 import Data.Bool (bool)
-import Data.ByteString qualified
+import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified
 import Data.ByteString.Short qualified
 import Data.Char
@@ -188,6 +194,8 @@ import Ki.Unlifted
 import Lucid
 import Lucid.Base (makeAttribute)
 import Lucid.Htmx
+import Network.Socket
+import Network.Socket.ByteString qualified
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.WebSockets qualified as WS
 import Numeric.Natural qualified
@@ -238,3 +246,14 @@ instance Witch.From WS.DataMessage LByteString where
     from = \case
         WS.Binary lbs -> lbs
         WS.Text lbs _ -> lbs
+
+-- | Run an IO action, ignoring synchronous exceptions
+ignoringExceptions :: MonadUnliftIO m => m () -> m ()
+ignoringExceptions action =
+    action `catchAny` \_ -> pure ()
+
+sktRecv :: MonadIO m => Network.Socket.Socket -> Int -> m Data.ByteString.ByteString
+sktRecv skt = liftIO . Network.Socket.ByteString.recv skt
+
+sktSendAll :: MonadIO m => Network.Socket.Socket -> Data.ByteString.ByteString -> m ()
+sktSendAll skt = liftIO . Network.Socket.ByteString.sendAll skt
