@@ -17,4 +17,12 @@ test_memory = testCase "Memory" do
     rm <- atomically $ readMemoryVar mv
     rm @?= True
 
+    -- update memory
+    atomically $ modifyMemoryVar mv (const False)
+
+    -- check if creating a new memory var get last data
+    (_, mv2) <- newMemoryVar storage "test" (pure True)
+    rm2 <- atomically $ readMemoryVar mv2
+    rm2 @?= False
+
 -- todo: check storage

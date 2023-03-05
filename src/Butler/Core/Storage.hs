@@ -81,9 +81,14 @@ getStoragePath storage (StorageAddress n) = storage.rootDir <> n
 readStorage :: MonadIO m => Storage -> StorageAddress -> m (Maybe LByteString)
 readStorage storage addr = liftIO do
     let fp = getStoragePath storage addr
-    fileExist fp >>= \case
-        False -> pure Nothing
-        True -> Just . from <$> BS.readFile (from $ decodeUtf8 fp)
+    -- Check if path is in journal to be written to disk
+    Map.lookup fp <$> readTVarIO storage.journal >>= \case
+        Just bs -> pure (Just bs)
+        Nothing ->
+            -- Check if path is on disk
+            fileExist fp >>= \case
+                False -> pure Nothing
+                True -> Just . from <$> BS.readFile (from $ decodeUtf8 fp)
 
 writeStorage :: Storage -> StorageAddress -> LByteString -> STM ()
 writeStorage storage addr obj = do

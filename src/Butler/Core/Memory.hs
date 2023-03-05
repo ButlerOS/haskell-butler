@@ -4,9 +4,6 @@ module Butler.Core.Memory (
     readMemoryVar,
     modifyMemoryVar,
     stateMemoryVar,
-
-    -- * re-export
-    Storage,
 ) where
 
 import Butler.Core.Storage

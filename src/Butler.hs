@@ -35,6 +35,11 @@ module Butler (
     -- * Network API
     module Butler.Core.Network,
 
+    -- * Storage API
+    newProcessMemory,
+    module Butler.Core.Memory,
+    StorageAddress (..),
+
     -- * Display API
     module Butler.Display.Client,
     DisplayEvent (..),
@@ -68,7 +73,9 @@ import Butler.App
 import Butler.Auth
 import Butler.Core
 import Butler.Core.Clock
+import Butler.Core.Memory
 import Butler.Core.Network
+import Butler.Core.Storage
 import Butler.Core.Pipe
 import Butler.Display
 import Butler.Display.Client

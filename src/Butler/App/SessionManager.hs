@@ -4,7 +4,6 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 
 import Butler
-import Butler.Core.Memory
 import Butler.Display
 import Butler.Display.Session
 
