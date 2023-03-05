@@ -239,7 +239,7 @@ desktopHandler appSet desktop event = do
 
             if chan == "htmx"
                 then handleNewUser chan client
-                else spawnThread_ (pingThread client)
+                else void $ pingThread client
         UserDisconnected chan client -> do
             atomically do
                 when (chan == "htmx") do

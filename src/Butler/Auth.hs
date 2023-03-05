@@ -3,8 +3,8 @@ module Butler.Auth where
 
 import Butler.Auth.Guest
 import Butler.Display
-import Butler.Prelude
 import Butler.Frame
+import Butler.Prelude
 import Lucid.XStatic
 
 publicDisplayApp :: DisplayApplication

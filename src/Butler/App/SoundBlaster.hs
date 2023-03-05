@@ -39,6 +39,7 @@ startSoundCard ctx = do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserDisconnected "htmx" client) -> atomically (delSoundClient sc client)
             AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client (mountUI client))
+            AppDisplay _ -> pure ()
             AppTrigger ge
                 | ge.trigger == "toggle-audio" ->
                     let running = fromMaybe True (ge.body ^? key "running" . _Bool)
@@ -46,7 +47,6 @@ startSoundCard ctx = do
                      in atomically $ sendHtml ge.client btn
                 | otherwise -> logError "Invalid ev" ["ev" .= ge]
             AppData de -> soundHandler sc de.client de.buffer
-            ev -> logError "Unknown ev" ["ev" .= ev]
 
 renderAudioToggle :: WinID -> TVar UserName -> Bool -> HtmlT STM ()
 renderAudioToggle wid tvUsername enabled = do
