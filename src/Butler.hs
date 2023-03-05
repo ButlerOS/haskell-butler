@@ -75,8 +75,8 @@ import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Memory
 import Butler.Core.Network
-import Butler.Core.Storage
 import Butler.Core.Pipe
+import Butler.Core.Storage
 import Butler.Display
 import Butler.Display.Client
 import Butler.Display.GUI

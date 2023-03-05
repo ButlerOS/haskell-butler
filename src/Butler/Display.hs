@@ -33,6 +33,7 @@ import Servant
 
 import Butler.App
 import Butler.Core
+import Butler.Core.Clock
 import Butler.Core.Logger
 import Butler.Core.Network
 import Butler.Core.Process
@@ -183,22 +184,73 @@ newtype DisplayApplication
         ( [XStaticFile] -> (Sessions -> ProcessIO AuthApplication)
         )
 
+data SessionApps = SessionApps
+    { env :: ProcessEnv
+    , clients :: DisplayClients
+    , shared :: AppSharedContext
+    }
+
+-- | Group apps per session.
+newtype AllSessionApps = AllSessionApps (MVar (Map SessionID SessionApps))
+
+startSessionApps :: AllSessionApps -> Display -> SessionID -> [App] -> ProcessIO SessionApps
+startSessionApps (AllSessionApps mv) display sessionID apps =
+    modifyMVar mv \allSessionApps -> case Map.lookup sessionID allSessionApps of
+        Just sa -> pure (allSessionApps, sa)
+        Nothing -> do
+            clients <- atomically newDisplayClients
+            -- Create a MVar so that the process can pass the created AppSharedContext
+            mvShared <- newEmptyMVar
+            -- Create a new process to manage a given session
+            process <- doStartSessionApps clients mvShared
+            -- Read the AppSharedContext
+            shared <- takeMVar mvShared
+            -- Create the SessionApps
+            os <- asks os
+            let sessionEnv = ProcessEnv os process
+                sa = SessionApps sessionEnv clients shared
+            pure (Map.insert sessionID sa allSessionApps, sa)
+  where
+    processName = ProgramName $ "sess-" <> into @Text sessionID
+    storageAddr = StorageAddress "sess-" <> into sessionID
+
+    doStartSessionApps clients mvShared = spawnProcess processName $ chroot storageAddr do
+        -- Start the apps
+        shared <- startApps apps display clients
+        -- Pass the created AppSharedContext
+        putMVar mvShared shared
+        -- Wait until all clients disconnected
+        waitForDisconnect clients
+        -- Remove the sa
+        modifyMVar_ mv (pure . Map.delete sessionID)
+
+    waitForDisconnect clients = fix \loop -> do
+        sleep 5_000
+        atomically (getClients clients) >>= \case
+            (_ : _) ->
+                -- clients are still connected, keep on waiting.
+                loop
+            [] -> do
+                -- clients are disconnected, wait 5 more seconds.
+                sleep 5_000
+                atomically (getClients clients) >>= \case
+                    (_ : _) ->
+                        -- a client connected back, likely a refresh, keep on waiting.
+                        loop
+                    [] ->
+                        -- this is the end, exit the scope
+                        pure ()
+
 -- | Serve applications with one instance per client.
 serveApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
             startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
-                pure $ \session _ws -> chroot (StorageAddress "sess-" <> into session.sessionID) do
-                    env <- ask
-                    -- The list of clients and the app instance is re-created per client
-                    clients <- atomically newDisplayClients
-                    shared <- startApps apps display clients
-                    let onDisconnect = do
-                            appInstances <- atomically (getApps shared.apps)
-                            forM_ appInstances \appInstance -> do
-                                void $ killProcess appInstance.process.pid
-                    pure (env, staticClientHandler onDisconnect clients shared)
+                allSessionApps <- AllSessionApps <$> newMVar mempty
+                pure $ \session _ws -> do
+                    sa <- startSessionApps allSessionApps display session.sessionID apps
+                    pure (sa.env, staticClientHandler sa.clients sa.shared)
     error "Display exited?!"
   where
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
@@ -213,13 +265,13 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
                 shared <- startApps apps display clients
                 pure $ \_session _ws -> do
                     env <- ask
-                    pure (env, staticClientHandler (pure ()) clients shared)
+                    pure (env, staticClientHandler clients shared)
     error "Display exited?!"
   where
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
-staticClientHandler :: ProcessIO () -> DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
-staticClientHandler onDisconnect clients shared displayEvent = case displayEvent of
+staticClientHandler :: DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
+staticClientHandler clients shared displayEvent = case displayEvent of
     UserConnected "htmx" client -> do
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
@@ -243,5 +295,4 @@ staticClientHandler onDisconnect clients shared displayEvent = case displayEvent
         appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> do
             writePipe appInstance.pipeAE (AppDisplay displayEvent)
-        onDisconnect
     _ -> logError "Unknown event" ["ev" .= displayEvent]
