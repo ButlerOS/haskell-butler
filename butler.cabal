@@ -37,11 +37,8 @@ library
       Butler.App.NoVnc
       Butler.App.ProcessExplorer
       Butler.App.QRTest
-      Butler.App.Seat
       Butler.App.SessionManager
-      Butler.App.SoundBlaster
       Butler.App.SoundTest
-      Butler.App.SshAgent
       Butler.App.Tabletop
       Butler.App.Terminal
       Butler.Auth
@@ -72,6 +69,10 @@ library
       Butler.Frame
       Butler.Lobby
       Butler.Prelude
+      Butler.Service
+      Butler.Service.Pointer
+      Butler.Service.SoundBlaster
+      Butler.Service.SshAgent
       Butler.Window
       ButlerDemos
       XStatic.Butler

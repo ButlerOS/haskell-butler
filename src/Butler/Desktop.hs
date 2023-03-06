@@ -18,19 +18,13 @@ import Data.Map.Strict qualified as Map
 import Lucid
 import Lucid.Htmx
 
+import Butler
 import Butler.App
 import Butler.Core
-import Butler.Core.Clock
 import Butler.Core.Logger
-import Butler.Core.Memory
-import Butler.Core.Pipe
 import Butler.Core.Processor
-import Butler.Display
-import Butler.Display.GUI
 import Butler.Display.WebSocket
 import Butler.Frame
-import Butler.Prelude
-import Butler.Window
 
 data Desktop = Desktop
     { env :: ProcessEnv
@@ -50,10 +44,12 @@ newDesktop processEnv display ws wm = do
 controlWin :: WinID
 controlWin = WinID 0
 
-newDesktopIO :: Display -> Workspace -> ProcessIO Desktop
-newDesktopIO display ws = do
+newDesktopIO :: Display -> Workspace -> [Service] -> ProcessIO Desktop
+newDesktopIO display ws services = do
     processEnv <- ask
-    wm <- newWindowManager (WinID 3) -- the first wid are reserved
+    -- reserve wid for services
+    let minWID = WinID (length services)
+    wm <- newWindowManager minWID
     atomically (newDesktop processEnv display ws wm)
 
 deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App
@@ -94,14 +90,15 @@ deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
     broadcastSize wid (x, y) =
         broadcastWinMessage ["w" .= wid, "ev" .= ("resize" :: Text), "x" .= x, "y" .= y]
 
-startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> (Desktop -> ProcessIO ()) -> Display -> Workspace -> ProcessIO ()
-startDesktop desktopMVar mkAppSet xinit display name = do
-    desktop <- newDesktopIO display name
+startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> [Service] -> Display -> Workspace -> ProcessIO ()
+startDesktop desktopMVar mkAppSet services display name = do
+    desktop <- newDesktopIO display name services
     let appSet = mkAppSet desktop
 
     let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.shared desktop.clients
 
-    xinit desktop
+    forM_ (zip [1 ..] services) \(wid, Service service) -> do
+        atomically . addDesktopApp desktop =<< startApp service desktop.shared desktop.clients (WinID wid)
 
     apps <- atomically $ readMemoryVar desktop.wm.apps
     case Map.toList apps of

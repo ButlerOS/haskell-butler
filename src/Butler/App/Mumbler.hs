@@ -6,9 +6,9 @@ import Butler
 import Butler.Core.Logger
 import Butler.Core.NatMap qualified as NM
 
-import Butler.App.SoundBlaster
 import Butler.Display.Session
 import Butler.Display.User
+import Butler.Service.SoundBlaster
 
 mumblerApp :: App
 mumblerApp =

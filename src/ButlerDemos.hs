@@ -7,7 +7,6 @@ import System.Process.Typed hiding (Process)
 import Butler
 import Butler.App
 import Butler.Core
-import Butler.Desktop
 import Butler.Display
 import Butler.Lobby
 
@@ -21,13 +20,14 @@ import Butler.App.Mumbler
 import Butler.App.NoVnc
 import Butler.App.ProcessExplorer
 import Butler.App.QRTest
-import Butler.App.Seat
 import Butler.App.SessionManager
-import Butler.App.SoundBlaster
 import Butler.App.SoundTest
-import Butler.App.SshAgent
 import Butler.App.Tabletop
 import Butler.App.Terminal
+
+import Butler.Service.Pointer
+import Butler.Service.SoundBlaster
+import Butler.Service.SshAgent
 
 import Lucid.XStatic
 import XStatic.Butler as XStatic
@@ -84,7 +84,7 @@ demoDesktop extraApps = do
     let authApp = invitationAuthApp indexHtml
     desktop <- superviseProcess "desktop" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram (mkAppSet chat) xinit chat display
+        lobbyProgram (mkAppSet chat) services chat display
     void $ waitProcess desktop
     error "oops"
   where
@@ -121,10 +121,11 @@ demoDesktop extraApps = do
     });
     |]
 
-    xinit desktop = do
-        atomically . addDesktopApp desktop =<< startApp soundCardApp desktop.shared desktop.clients (WinID 1)
-        atomically . addDesktopApp desktop =<< startApp seatApp desktop.shared desktop.clients (WinID 2)
-        atomically . addDesktopApp desktop =<< startApp sshAgentApp desktop.shared desktop.clients (WinID 3)
+    services =
+        [ soundBlasterService
+        , pointerService
+        , sshAgentService
+        ]
 
     mkAppSet chat desktop =
         newAppSet $

@@ -9,19 +9,15 @@ import Data.Text qualified as Text
 import Lucid
 import Lucid.Htmx
 
+import Butler
 import Butler.App (AppSet)
 import Butler.Core
-import Butler.Core.Clock
 import Butler.Core.Logger
-import Butler.Core.Memory
 import Butler.Desktop
 import Butler.Display
-import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Display.User
 import Butler.Display.WebSocket
-import Butler.Prelude
-import Butler.Window
 
 import Butler.App.Chat
 
@@ -32,16 +28,14 @@ data Lobby = Lobby
 
 data DesktopStatus = DesktopOffline | DesktopRunning Desktop
 
-type Xinit = Desktop -> ProcessIO ()
-
 newLobby :: ProcessIO Lobby
 newLobby = do
     (savedList, desktopsList) <- newProcessMemory "desktops.bin" (pure mempty)
     let initialMap = Map.fromList $ map (\name -> (name, DesktopOffline)) savedList
     Lobby <$> newMVar initialMap <*> pure desktopsList
 
-lobbyProgram :: (Desktop -> AppSet) -> Xinit -> ChatServer -> Display -> ProcessIO OnClient
-lobbyProgram mkAppSet xinit chat display = do
+lobbyProgram :: (Desktop -> AppSet) -> [Service] -> ChatServer -> Display -> ProcessIO OnClient
+lobbyProgram mkAppSet services chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
     dmProcess <- spawnProcess "welcome-desktop" do
@@ -56,7 +50,7 @@ lobbyProgram mkAppSet xinit chat display = do
                 desktopMVar <- newEmptyMVar
                 let desktopID = "desktop-" <> from name
                 void $ spawnProcess (ProgramName desktopID) $ chroot (from desktopID) do
-                    startDesktop desktopMVar mkAppSet xinit display name
+                    startDesktop desktopMVar mkAppSet services display name
 
                 desktop <- takeMVar desktopMVar
                 when (isNothing mDesktopStatus) do

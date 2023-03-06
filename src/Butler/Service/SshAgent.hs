@@ -1,15 +1,16 @@
-module Butler.App.SshAgent (sshAgentApp) where
+module Butler.Service.SshAgent (sshAgentService) where
 
 import Butler
 import Butler.Core.NatMap qualified as NM
 import Butler.Frame
 
-sshAgentApp :: App
-sshAgentApp =
-    (defaultApp "ssh-agent" startApp)
-        { tags = fromList ["Utility"]
-        , description = "Share ssh secrets"
-        }
+sshAgentService :: Service
+sshAgentService =
+    Service $
+        (defaultApp "ssh-agent" startApp)
+            { tags = fromList ["Utility"]
+            , description = "Share ssh secrets"
+            }
 
 data Request = Request
     { socket :: Socket

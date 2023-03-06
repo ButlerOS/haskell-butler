@@ -1,4 +1,4 @@
-module Butler.App.SoundBlaster where
+module Butler.Service.SoundBlaster where
 
 import Codec.EBML qualified as EBML
 import Data.Aeson.KeyMap qualified as KM
@@ -7,26 +7,19 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Lucid
 
-import Butler.App
-import Butler.Core
-import Butler.Core.Clock
+import Butler
 import Butler.Core.Dynamic
 import Butler.Core.Logger
 import Butler.Core.NatMap qualified as NM
-import Butler.Core.Pipe
-import Butler.Display
-import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Display.User
 import Butler.Frame
-import Butler.Prelude
-import Butler.Window
 
 -------------------------------------------------------------------------------
 -- Sound Card app
 -------------------------------------------------------------------------------
-soundCardApp :: App
-soundCardApp = defaultApp "sound-blaster" startSoundCard
+soundBlasterService :: Service
+soundBlasterService = Service $ defaultApp "sound-blaster" startSoundCard
 
 startSoundCard :: AppContext -> ProcessIO ()
 startSoundCard ctx = do
