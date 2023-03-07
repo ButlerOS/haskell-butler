@@ -201,7 +201,7 @@ welcomeWin appSet wid = do
             with span_ [class_ "font-bold"] "ButlerOS"
         div_ do
             "Press start!"
-        with div_ [class_ "m-2 border border-gray-500 rounded-md"] do
+        with div_ [class_ "m-2"] do
             appSetHtml wid appSet
 
 menuWin :: Monad m => AppSet -> WinID -> HtmlT m ()

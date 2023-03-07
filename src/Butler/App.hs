@@ -2,6 +2,7 @@
 module Butler.App where
 
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Lucid
 import Lucid.Htmx
 import Network.WebSockets qualified as WS
@@ -35,7 +36,7 @@ instance Show DisplayEvent where
 -- | Application tag.
 newtype AppTag = AppTag Text
     deriving (Show, Generic)
-    deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON)
+    deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON, ToHtml)
 
 -- | The type of event an app receive
 data AppEvent
@@ -164,13 +165,32 @@ startApps apps display clients = do
         appInstance <- startApp app shared clients wid
         atomically (registerApp shared.apps appInstance)
 
+tagIcon :: AppTag -> Maybe Text
+tagIcon = \case
+    "Communication" -> Just "ri-signal-tower-fill"
+    "Development" -> Just "ri-terminal-box-line"
+    "Game" -> Just "ri-gamepad-line"
+    "Graphic" -> Just "ri-palette-line"
+    "Sound" -> Just "ri-volume-up-line"
+    "System" -> Just "ri-settings-3-line"
+    "Utility" -> Just "ri-tools-line"
+    _ -> Nothing
+
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
-    with ul_ [class_ "list-disc"] do
-        forM_ (Map.elems apps) \app -> mkLauncher app.name
+    ul_ do
+        forM_ cats \cat -> do
+            with li_ [class_ "mb-2"] do
+                forM_ (tagIcon cat) \icon ->
+                    with i_ [class_ $ icon <> " text-blue-600 mr-2 text-xl relative top-1"] mempty
+                toHtml cat
+                with ul_ [class_ "pl-2 border-solid rounded border-l-2 border-slate-500"] do
+                    forM_ (appInCat cat) \app -> mkLauncher app.description app.name
   where
-    mkLauncher :: ProgramName -> _
-    mkLauncher prog =
+    appInCat cat = filter (\app -> Set.member cat app.tags) $ Map.elems apps
+    cats = foldMap (\app -> app.tags) (Map.elems apps)
+    mkLauncher :: Text -> ProgramName -> _
+    mkLauncher description prog = do
         with
             li_
             [ wid_ wid "win-swap"
@@ -179,4 +199,9 @@ appSetHtml wid (AppSet apps) = do
             , wsSend
             , hxTrigger_ "click"
             ]
-            (toHtml prog)
+            do
+                toHtml prog
+                span_ do
+                    " ("
+                    toHtml description
+                    ")"
