@@ -132,7 +132,7 @@
         type = "app";
         script = pkgs.writers.writeBash "butler-electron.sh" ''
           set -xe
-          exec ${pkgs.nixGLIntel}/bin/nixGLIntel ${pkgs.electron}/bin/electron ${self}/bin/electron.js $*
+          exec ${pkgs.electron}/bin/electron ${self}/bin/electron.js $*
         '';
         program = builtins.toString script;
       };

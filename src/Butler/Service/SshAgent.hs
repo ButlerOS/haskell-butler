@@ -33,7 +33,8 @@ startApp ctx = do
             request <- atomically (Request sock <$> newEmptyTMVar)
             reqID <- atomically (NM.add requests request)
 
-            -- TODO: Ask provider to accept the request
+            let sendMessage = encodeMessage (from ctx.wid) . encodeMessage reqID
+            sendsBinary ctx.clients $ sendMessage ""
 
             baton <- newEmptyTMVarIO
             void $ spawnThread do
@@ -44,7 +45,7 @@ startApp ctx = do
                     if buf == mempty
                         then atomically (putTMVar baton ())
                         else do
-                            atomically $ sendBinary provider (from buf)
+                            atomically $ sendBinary provider (sendMessage $ from buf)
                             loop
 
             -- wait for the completion
@@ -58,7 +59,9 @@ startApp ctx = do
             -- Deregister the request
             atomically (NM.delete requests reqID)
 
-        mountUI = "TODO: <insert-agent-script>"
+        mountUI =
+            with div_ [wid_ ctx.wid "tray"] do
+                script_ (sshAgentProvider ctx.wid)
 
     spawnThread_ (unixService "/tmp/butler.sock" handler)
     forever do
@@ -83,3 +86,28 @@ startApp ctx = do
                                 sktSendAll request.socket buf
                             _ -> pure ()
                 _ -> logError "Unknown data" ["ev" .= de]
+
+sshAgentProvider :: WinID -> Text
+sshAgentProvider wid =
+    [raw|
+async function setupSshAgentProvider(wid) {
+  if (typeof butlerElectron !== "undefined" && await butlerElectron.hasSshAgent()) {
+    sendTrigger(wid, "new-provider", {})
+
+    butlerDataHandlers[wid] = buf => decodeDataMessage(buf, (chan, data) => {
+      if (data.length == 0) {
+        console.log("New ssh-agent request", chan)
+        butlerElectron.connectSshAgent(chan, data => {
+          sendBinaryMessage2(wid, chan, data)
+        })
+        sendTrigger(wid, "accept-request", {req: chan})
+      } else {
+        butlerElectron.sendSshAgent(chan, data)
+      }
+    })
+  }
+}
+|]
+        <> "\nsetupSshAgentProvider("
+        <> showT wid
+        <> ");"

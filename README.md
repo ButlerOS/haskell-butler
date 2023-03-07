@@ -53,8 +53,8 @@ A window-xp clone with support for multiple "seats":
 - [x] Simple invitation system to share the session with other users.
 - [x] Dekstop with a menu and tray bar
 - [x] Window manager
-- [ ] Per user cursor and audio channel
-- [ ] Xterm and Vnc gateway
+- [x] Per user cursor and audio channel
+- [x] Xterm and Vnc gateway
 
 Usage:
 
@@ -64,7 +64,7 @@ Usage:
 firefox https://localhost:8080
 ```
 
-Start electron client (Alt-F4 to quit):
+Use the electron client to forward your ssh-agent and enables Ctrl-T and Ctrl-N key code:
 
 ```ShellSession
 nix run .#electron https://localhost:8080

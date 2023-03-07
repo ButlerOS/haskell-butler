@@ -6,6 +6,7 @@ module Butler.Frame (
 
     -- * helper
     encodeMessageL,
+    encodeMessage,
     decodeMessage,
     butlerHelpersScript,
 ) where
@@ -29,11 +30,14 @@ instance ToJSON DataEvent where
     toJSON de = object ["client" .= de.client, "data" .= BSLog de.rawBuffer]
 
 encodeMessageL :: WinID -> LByteString -> LByteString
-encodeMessageL (WinID wid) = LBS.cons chan
+encodeMessageL wid = encodeMessage (from wid)
+
+encodeMessage :: Natural -> LByteString -> LByteString
+encodeMessage chan = LBS.cons b
   where
-    chan
-        | wid < 255 = unsafeFrom wid
-        | otherwise = error $ "wid is too big " <> show wid
+    b
+        | chan < 255 = unsafeFrom chan
+        | otherwise = error "Chan > 255 not implemented"
 
 decodeMessage :: ByteString -> Maybe (WinID, ByteString)
 decodeMessage buf = decodeChan <$> BS.uncons buf
@@ -52,6 +56,32 @@ globalThis.encodeDataMessage = (chan, obj) => {
   buf[0] = chan;
   buf.set(new Uint8Array(dataBuf), 1)
   return buf
+}
+
+// Send a binary message.
+globalThis.sendBinaryMessage = (chan, arr) => {
+    let msg = new Uint8Array(1 + arr.length);
+    msg[0] = chan
+    msg.set(arr, 1);
+    butlerDataSocket.send(msg);
+}
+
+// Send a binary message with 2 channels.
+globalThis.sendBinaryMessage2 = (c1, c2, arr) => {
+    let msg = new Uint8Array(2 + arr.length);
+    msg[0] = c1
+    msg[1] = c2
+    msg.set(arr, 2);
+    butlerDataSocket.send(msg);
+}
+globalThis.decodeDataMessage = (buf, cb) => {
+  if (buf.length > 0) {
+    const chan = buf[0]
+    const tail = buf.slice(1)
+    cb(chan, tail)
+  } else {
+    console.error("Invalid data message", buf)
+  }
 }
 globalThis.sendTrigger = (wid, name, obj) => {
   obj["HEADERS"] = {"HX-Trigger": withWID(wid, name)}

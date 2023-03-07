@@ -244,7 +244,7 @@ lookupSoundChannel sc k = NM.lookup sc.channels (from k)
 feedChannel :: SoundCard -> SoundChannel -> ByteString -> Maybe EBML.StreamFrame -> STM ()
 feedChannel sc soundChannel buf mFrame = do
     let initSegments = from $ maybe mempty (\frame -> frame.initialization <> frame.media) mFrame
-        mkBuffer = encodeMessageL sc.wid . encodeMessageL (from soundChannel.id)
+        mkBuffer = encodeMessage (from sc.wid) . encodeMessage (from soundChannel.id)
         initBuffer = mkBuffer initSegments
         arrBuffer = mkBuffer (from buf)
 

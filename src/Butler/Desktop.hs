@@ -181,8 +181,11 @@ desktopHtml windows = do
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
                     forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
-                    with span_ [id_ "tray-0"] mempty
+                    -- TODO: draw tray from [service] list.
+                    with span_ [id_ "tray-3"] mempty
+                    with span_ [id_ "tray-2"] mempty
                     with span_ [id_ "tray-1"] mempty
+                    with span_ [id_ "tray-0"] mempty
                     statusHtml False
 
         with div_ [id_ "reconnect_script"] mempty

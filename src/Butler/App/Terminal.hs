@@ -76,11 +76,14 @@ startTermApp name ctx = do
                     _ -> logError "invalid dim" ["ev" .= de]
 
     let sess = from ("butler-" <> name <> "-" <> showT wid)
-    let (prog, args) = ("tmux", ["attach", "-t", sess])
+        (prog, args) = ("tmux", ["attach", "-t", sess])
+        env = ["TERM=xterm", "SSH_AUTH_SOCK=/tmp/butler.sock"]
+        cmd = "env" : "-" : env <> ["bash"]
+        tmuxCmd = ["new-session", "-d", "-s", sess] <> cmd
 
-    let mkProc =
+        mkProc =
             spawnProcess (ProgramName prog <> "-pty") do
-                void $ System.Process.Typed.runProcess $ System.Process.Typed.proc "tmux" ["new-session", "-d", "-s", sess, "env", "-", "TERM=xterm", "bash"]
+                void $ System.Process.Typed.runProcess $ System.Process.Typed.proc "tmux" tmuxCmd
                 logInfo "spawning" ["prog" .= prog]
                 dim <- fromMaybe (80, 25) <$> readTVarIO server.dimension
                 (pty, phandle) <- liftIO (Pty.spawnWithPty Nothing True (from prog) args dim)
