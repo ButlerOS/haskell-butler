@@ -127,13 +127,13 @@ renderEditForm session wid = with div_ [id_ (withWID wid "w")] do
             with (input_ mempty) [class_ inputClass, name_ "username", type_ "text", value_ username]
         with div_ [class_ "flex flex-row items-center"] do
             button_
-                [ class_ cancelClass
+                [ class_ btnBlueClass
                 , wsSend
                 , wid_ wid "listing"
                 ]
                 "Cancel"
             button_
-                [ class_ okClass
+                [ class_ btnGreenClass
                 , type_ "submit"
                 ]
                 "Save"

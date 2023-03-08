@@ -31,6 +31,8 @@ library
       Butler.App
       Butler.App.Chat
       Butler.App.Clock
+      Butler.App.FileManager
+      Butler.App.FileViewer
       Butler.App.Launcher
       Butler.App.LogViewer
       Butler.App.MineSweeper
@@ -50,6 +52,7 @@ library
       Butler.Core.Clock
       Butler.Core.Dynamic
       Butler.Core.Events
+      Butler.Core.File
       Butler.Core.History
       Butler.Core.Logger
       Butler.Core.Memory
@@ -68,10 +71,11 @@ library
       Butler.Display.User
       Butler.Display.WebSocket
       Butler.Frame
+      Butler.GUI.File
       Butler.Lobby
       Butler.Prelude
       Butler.Service
-      Butler.Service.FileSystem
+      Butler.Service.FileService
       Butler.Service.Pointer
       Butler.Service.SoundBlaster
       Butler.Service.SshAgent
@@ -108,6 +112,7 @@ library
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods
   build-depends:
       PyF
+    , SHA
     , aeson
     , attoparsec
     , base <5
@@ -133,6 +138,7 @@ library
     , lucid-xstatic
     , migrant-core
     , migrant-sqlite-simple
+    , mime-types
     , mtl
     , network
     , network-run
@@ -159,6 +165,7 @@ library
     , unix
     , unix-time
     , unliftio
+    , unordered-containers
     , uuid
     , wai
     , warp
@@ -211,6 +218,7 @@ executable butler
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
   build-depends:
       PyF
+    , SHA
     , aeson
     , attoparsec
     , base <5
@@ -237,6 +245,7 @@ executable butler
     , lucid-xstatic
     , migrant-core
     , migrant-sqlite-simple
+    , mime-types
     , mtl
     , network
     , network-run
@@ -263,6 +272,7 @@ executable butler
     , unix
     , unix-time
     , unliftio
+    , unordered-containers
     , uuid
     , wai
     , warp
@@ -323,6 +333,7 @@ test-suite spec
       tasty-discover:tasty-discover
   build-depends:
       PyF
+    , SHA
     , aeson
     , attoparsec
     , base <5
@@ -350,6 +361,7 @@ test-suite spec
     , lucid-xstatic
     , migrant-core
     , migrant-sqlite-simple
+    , mime-types
     , mtl
     , network
     , network-run
@@ -378,6 +390,7 @@ test-suite spec
     , unix
     , unix-time
     , unliftio
+    , unordered-containers
     , uuid
     , wai
     , warp

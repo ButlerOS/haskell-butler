@@ -2,7 +2,6 @@ module Butler.Service.SoundBlaster where
 
 import Codec.EBML qualified as EBML
 import Data.Aeson.KeyMap qualified as KM
-import Data.Aeson.Types (Pair)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Lucid
@@ -40,6 +39,7 @@ startSoundCard ctx = do
                      in atomically $ sendHtml ge.client btn
                 | otherwise -> logError "Invalid ev" ["ev" .= ge]
             AppData de -> soundHandler sc de.client de.buffer
+            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
 
 renderAudioToggle :: WinID -> TVar UserName -> Bool -> HtmlT STM ()
 renderAudioToggle wid tvUsername enabled = do
@@ -359,7 +359,7 @@ soundHandler sc client msg = do
             logInfo "audio receiver stopped" ["client" .= client]
             atomically $ delSoundReceiver sc client
         Just (0, bs) | BS.length bs == 2 -> case decodeMessage bs of
-            Just (from -> channelID, ev) -> do
+            Just (SoundChannelID -> channelID, ev) -> do
                 mSoundChannel <- atomically (lookupSoundChannel sc channelID)
                 case mSoundChannel of
                     Just soundChannel -> soundChannelHandler soundChannel ev

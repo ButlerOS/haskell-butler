@@ -34,11 +34,13 @@ module Butler.Prelude (
     -- * aeson
     (.=),
     Data.Aeson.Value (Object, String),
+    Data.Aeson.Types.Pair,
     Data.Aeson.decode',
-    Data.Aeson.FromJSON,
+    Data.Aeson.FromJSON (parseJSON),
     Data.Aeson.fromJSON,
     Data.Aeson.ToJSON,
     Data.Aeson.toJSON,
+    Data.Aeson.withText,
     Data.Aeson.Result (..),
     encodeJSON,
     decodeJSON,
@@ -101,6 +103,7 @@ module Butler.Prelude (
     Data.IntSet.IntSet,
     Data.Set.Set,
     Data.Map.Strict.Map,
+    Data.HashMap.Strict.HashMap,
     Warp.Port,
     Data.Hashable.Hashable,
     module Data.Text.Encoding,
@@ -150,9 +153,9 @@ import Control.Exception hiding (Handler)
 import Control.Lens hiding ((.=))
 import Control.Monad
 import Control.Monad.Reader
-import Data.Aeson ((.=))
-import Data.Aeson qualified
+import Data.Aeson
 import Data.Aeson.Lens qualified
+import Data.Aeson.Types qualified
 import Data.Bifunctor
 import Data.Bool (bool)
 import Data.ByteString (ByteString)
@@ -165,6 +168,7 @@ import Data.Either
 import Data.Foldable qualified
 import Data.Functor.Identity qualified
 import Data.Generics.Labels ()
+import Data.HashMap.Strict qualified
 import Data.Hashable qualified
 import Data.Int
 import Data.IntMap.Strict qualified
@@ -202,6 +206,7 @@ import Numeric.Natural qualified
 import Options.Applicative.Types qualified
 import PyF
 import Servant.API
+import System.Posix
 import System.Posix.ByteString (RawFilePath)
 import System.Process.Typed qualified as ProcessTyped
 import Text.Read (readMaybe)
@@ -246,6 +251,12 @@ instance Witch.From WS.DataMessage LByteString where
     from = \case
         WS.Binary lbs -> lbs
         WS.Text lbs _ -> lbs
+
+instance Witch.From Numeric.Natural.Natural System.Posix.COff where
+    from = COff . Witch.unsafeFrom
+
+instance Witch.From System.Posix.COff Data.Text.Text where
+    from (COff v) = Witch.from (show v)
 
 -- | Run an IO action, ignoring synchronous exceptions
 ignoringExceptions :: MonadUnliftIO m => m () -> m ()

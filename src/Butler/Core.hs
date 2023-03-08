@@ -62,7 +62,6 @@ import Butler.Prelude
 
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.OneLine (renderObject)
-import Data.Aeson.Types (Pair)
 import Ki.Unlifted qualified as Ki
 import System.IO.Error (isEOFError)
 

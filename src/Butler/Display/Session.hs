@@ -18,8 +18,6 @@ module Butler.Display.Session (
 
 import Butler.Prelude
 
-import Data.Aeson
-
 import Codec.Serialise.Decoding (decodeBytes)
 import Codec.Serialise.Encoding (encodeBytes)
 import Data.Binary (Binary (get, put))

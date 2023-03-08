@@ -72,8 +72,10 @@ dependencies:
   - typed-process
   - attoparsec
 
+  - unordered-containers
   - ki
   - ki-unlifted
+  - SHA
   - witch
 
   # Lens
@@ -89,6 +91,7 @@ dependencies:
   - http-api-data
   - network
   - network-run
+  - mime-types
   - websockets
   - wai
   - warp

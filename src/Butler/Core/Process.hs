@@ -76,6 +76,9 @@ newtype ProgramName = ProgramName Text
 instance From Text ProgramName where
     from = ProgramName
 
+instance From ProgramName Text where
+    from (ProgramName t) = t
+
 instance From Natural ProgramName where
     from = ProgramName . from . show
 

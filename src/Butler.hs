@@ -39,6 +39,8 @@ module Butler (
     newProcessMemory,
     module Butler.Core.Memory,
     StorageAddress (..),
+    getPath,
+    module Butler.Core.File,
 
     -- * Display API
     module Butler.Display.Client,
@@ -74,6 +76,7 @@ import Butler.App
 import Butler.Auth
 import Butler.Core
 import Butler.Core.Clock
+import Butler.Core.File
 import Butler.Core.Memory
 import Butler.Core.Network
 import Butler.Core.Pipe

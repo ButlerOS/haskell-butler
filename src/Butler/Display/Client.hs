@@ -90,20 +90,20 @@ recvBinary client = do
 -- | Send Html to a client.
 sendHtml :: DisplayClient -> HtmlT STM () -> STM ()
 sendHtml client htmlT = do
-    body <- renderBST htmlT
+    !body <- renderBST htmlT
     writeTChan client.sendChannel (WS.Text body Nothing)
 
 -- | Send Html to all clients.
 sendsHtml :: DisplayClients -> HtmlT STM () -> ProcessIO ()
 sendsHtml clients htmlT = do
-    body <- atomically $ renderBST htmlT
+    !body <- atomically $ renderBST htmlT
     xs <- atomically $ getClients clients
     forM_ xs \client -> atomically (writeTChan client.sendChannel (WS.Text body Nothing))
 
 -- | Send Html to all clients except the provided one (self).
 sendsHtmlButSelf :: DisplayClient -> DisplayClients -> HtmlT STM () -> ProcessIO ()
 sendsHtmlButSelf self clients htmlT = do
-    body <- atomically $ renderBST htmlT
+    !body <- atomically $ renderBST htmlT
     xs <- atomically $ getClients clients
     forM_ xs $ \client ->
         when (client.endpoint /= self.endpoint) do
@@ -111,17 +111,17 @@ sendsHtmlButSelf self clients htmlT = do
 
 -- | Send binary to a client.
 sendBinary :: DisplayClient -> LByteString -> STM ()
-sendBinary client buf = writeTChan client.sendChannel (WS.Binary buf)
+sendBinary client !buf = writeTChan client.sendChannel (WS.Binary buf)
 
 -- | Send binary to all clients.
 sendsBinary :: DisplayClients -> LByteString -> ProcessIO ()
-sendsBinary clients buf = do
+sendsBinary clients !buf = do
     xs <- atomically $ getClients clients
     forM_ xs $ \client -> atomically $ sendBinary client buf
 
 -- | Send binary to all clients except the provided one (self).
 sendsBinaryButSelf :: DisplayClient -> DisplayClients -> LByteString -> ProcessIO ()
-sendsBinaryButSelf self clients buf = do
+sendsBinaryButSelf self clients !buf = do
     xs <- atomically $ getClients clients
     forM_ xs $ \client ->
         when (client.endpoint /= self.endpoint) do
@@ -133,7 +133,7 @@ clientsDraw clients draw = do
     xs <- atomically (getClients clients)
     forM_ xs $ \client -> do
         htmlT <- draw client
-        body <- atomically $ renderBST htmlT
+        !body <- atomically $ renderBST htmlT
         atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
 newtype Endpoint = Endpoint Text

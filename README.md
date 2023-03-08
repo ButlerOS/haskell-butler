@@ -17,6 +17,8 @@ by simulating a traditional computer.
 - [x] Websocket session for authentication
 - [x] Display for html5 gui
 - [x] Audio channel
+- [x] File upload
+- [ ] File download
 
 To validate the abstractions, the project also feature some proof of concept demos:
 

@@ -14,6 +14,8 @@ import Butler.Auth.Invitation
 
 import Butler.App.Chat
 import Butler.App.Clock
+import Butler.App.FileManager
+import Butler.App.FileViewer
 import Butler.App.Launcher
 import Butler.App.LogViewer
 import Butler.App.MineSweeper
@@ -26,7 +28,7 @@ import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
 
-import Butler.Service.FileSystem
+import Butler.Service.FileService
 import Butler.Service.Pointer
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
@@ -127,7 +129,7 @@ demoDesktop extraApps = do
         [ soundBlasterService
         , pointerService
         , sshAgentService
-        , fileSystemService
+        , fileService
         ]
 
     mkAppSet chat desktop =
@@ -144,6 +146,8 @@ demoDesktop extraApps = do
             , smApp
             , tabletopApp
             , mineSweeperApp
+            , fileManagerApp
+            , fileViewerApp
             ]
                 <> extraApps
 

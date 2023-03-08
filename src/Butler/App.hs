@@ -10,6 +10,7 @@ import Network.WebSockets qualified as WS
 
 import Butler.Core
 import Butler.Core.Dynamic
+import Butler.Core.File
 import Butler.Core.Pipe
 import Butler.Display.Client
 import Butler.Display.GUI
@@ -17,7 +18,6 @@ import Butler.Display.Session
 import Butler.Display.WebSocket (ChannelName)
 import Butler.Frame
 import Butler.Prelude
-import Butler.Window
 
 data Display = Display
     { sessions :: Sessions
@@ -47,6 +47,8 @@ data AppEvent
       AppTrigger GuiEvent
     | -- | A data event (e.g. for raw data)
       AppData DataEvent
+    | -- | A file event (e.g. a new file opened)
+      AppFile Directory (Maybe File)
     deriving (Generic, ToJSON)
 
 eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
@@ -58,7 +60,7 @@ eventFromMessage client = \case
     WS.Binary lbs -> do
         let rawBuf = from lbs
         (wid, buf) <- decodeMessage rawBuf
-        pure (wid, AppData (DataEvent client buf rawBuf))
+        pure (WinID $ unsafeFrom wid, AppData (DataEvent client buf rawBuf))
 
 -- | A graphical application definition.
 data App = App

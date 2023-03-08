@@ -5,6 +5,14 @@ module Butler.Display.GUI (
     TriggerName (..),
     HtmxEvent (..),
     decodeTriggerName,
+    renderOnChange,
+
+    -- * triggers
+    wid_,
+    withTrigger,
+    withTrigger_,
+    withoutWID,
+    withWID,
 
     -- * helpers
     with',
@@ -23,21 +31,34 @@ module Butler.Display.GUI (
 
     -- * CSS class
     inputClass,
-    okClass,
-    cancelClass,
+    btnGreenClass,
+    btnRedClass,
+    btnBlueClass,
 
     -- * Re-exports
     makeAttribute,
 ) where
 
 import Butler.Prelude
-import Data.Aeson (FromJSON (parseJSON), withObject, (.:))
-import Data.Aeson.Types (Pair)
+import Data.Aeson (withObject, (.:))
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text
 
 import Butler.Display.Client
 import Butler.Display.Session
+
+-- | Callback when the html change, e.g. on TVar update.
+renderOnChange :: MonadIO m => HtmlT STM () -> (HtmlT STM () -> m ()) -> m Void
+renderOnChange html cb = go mempty
+  where
+    go prev = do
+        rawHtml <- atomically do
+            newHtml <- renderBST html
+            when (newHtml == prev) retrySTM
+            pure newHtml
+        unless (prev == mempty) do
+            cb (toHtmlRaw rawHtml)
+        go rawHtml
 
 data HtmxEvent = HtmxEvent
     { trigger :: Text
@@ -83,13 +104,30 @@ instance From Natural TriggerName where
     from = TriggerName . from . show
 
 newtype WinID = WinID Int
-    deriving newtype (Eq, Ord, Show, ToJSON, Serialise)
+    deriving newtype (Eq, Ord, Show, ToJSON, Serialise, FromJSON)
 
 instance From WinID Natural where
     from (WinID n) = unsafeFrom n
 
 with' :: With a => a -> Text -> a
 with' x n = with x [class_ n]
+
+-- This needs to be kept in sync with the Butler.Frame.butlerHelpersScript javascript implementation 'withWID'
+withWID :: WinID -> Text -> Text
+withWID winID n = n <> "-" <> showT winID
+
+withoutWID :: TriggerName -> TriggerName
+withoutWID (TriggerName n) = TriggerName $ Text.dropWhileEnd (== '-') . Text.dropWhileEnd isDigit $ n
+
+wid_ :: WinID -> Text -> _
+wid_ wid n = id_ (withWID wid n)
+
+withTrigger_ :: With a => Text -> WinID -> TriggerName -> a -> [Attribute] -> a
+withTrigger_ hxTrigger wid (TriggerName trigger) elt attrs =
+    with elt (wid_ wid trigger : wsSend : hxTrigger_ hxTrigger : attrs)
+
+withTrigger :: With a => Text -> WinID -> TriggerName -> [Pair] -> a -> [Attribute] -> a
+withTrigger hxTrigger wid trigger vals elt attrs = withTrigger_ hxTrigger wid trigger elt (encodeVal vals : attrs)
 
 wsSend :: Attribute
 wsSend = makeAttribute "ws-send" ""
@@ -163,8 +201,11 @@ renderToggle icon attrs enabled onScript offScript = do
 inputClass :: Text
 inputClass = "bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
 
-cancelClass :: Text
-cancelClass = "bg-blue-500 hover:bg-blue-700 text-white font-bold p-1 rounded"
+btnBlueClass :: Text
+btnBlueClass = "bg-blue-500 hover:bg-blue-700 text-white font-bold p-1 rounded"
 
-okClass :: Text
-okClass = "bg-green-500 hover:bg-green-700 text-white font-bold p-1 rounded"
+btnRedClass :: Text
+btnRedClass = "bg-red-500 hover:bg-red-700 text-white font-bold p-1 rounded"
+
+btnGreenClass :: Text
+btnGreenClass = "bg-green-500 hover:bg-green-700 text-white font-bold p-1 rounded"

@@ -167,6 +167,7 @@ startTabletopApp ctx = do
             AppData de -> clientHandler de
             AppTrigger ge -> logError "Unknown gui event" ["ev" .= ge]
             AppDisplay _ -> sendHtmlOnConnect (renderTable tableState wid) ev
+            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
 
 tabletopClient :: WinID -> [Text] -> Text
 tabletopClient wid startingObjects =

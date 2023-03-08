@@ -15,6 +15,7 @@ module Butler.Desktop (
 ) where
 
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
 import Lucid
 import Lucid.Htmx
 
@@ -25,8 +26,9 @@ import Butler.Core.Logger
 import Butler.Core.Processor
 import Butler.Display.WebSocket
 import Butler.Frame
+import Butler.GUI.File
 
-import Butler.Service.FileSystem
+import Butler.Service.FileService
 
 data Desktop = Desktop
     { env :: ProcessEnv
@@ -35,6 +37,7 @@ data Desktop = Desktop
     , wm :: WindowManager
     , clients :: DisplayClients
     , shared :: AppSharedContext
+    , directory :: TVar (Maybe Directory)
     }
 
 newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
@@ -42,6 +45,7 @@ newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
         <$> newDisplayClients
         <*> newAppSharedContext display
+        <*> newTVar Nothing
 
 controlWin :: WinID
 controlWin = WinID 0
@@ -74,6 +78,14 @@ startDesktop desktopMVar mkAppSet services display name = do
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
         atomically . addDesktopApp desktop =<< startApp "srv-" service desktop.shared desktop.clients (WinID wid)
+
+    dir <- getVolumeDirectory desktop.shared (Just "Desktop")
+    atomically do
+        writeTVar desktop.directory (Just dir)
+
+    spawnThread_ $ renderOnChange (renderFileIcons controlWin dir) \newHtml -> do
+        logInfo "Updating desktop directory ui" []
+        sendsHtml desktop.clients newHtml
 
     apps <- atomically $ readMemoryVar desktop.wm.apps
     case Map.toList apps of
@@ -140,14 +152,21 @@ delWin desktop wid = do
         Just prevApp -> delApp desktop prevApp
     delWindowApp desktop.wm wid
 
-desktopHtml :: [Service] -> Windows -> HtmlT STM ()
-desktopHtml services windows = do
+desktopHtml :: Desktop -> [Service] -> Windows -> HtmlT STM ()
+desktopHtml desktop services windows = do
     wids <- lift (getWindowIDs windows)
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
         script_ butlerHelpersScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
         with div_ [id_ "win-root", class_ "flex grow min-h-full"] do
-            filesUploadButton (WinID 0)
+            with div_ [class_ "flex flex-col"] do
+                with div_ [class_ "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer", wsSend, wid_ controlWin "file-open"] do
+                    with i_ [class_ "ri-computer-line"] mempty
+                lift (readTVar desktop.directory) >>= \case
+                    Nothing -> pure ()
+                    Just dir -> do
+                        renderFileIcons controlWin dir
+                        filesUploadButton (WinID 0) (getFileLoc dir Nothing)
 
         -- bottom bar
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white shrink sticky bottom-0 z-50"] do
@@ -156,7 +175,7 @@ desktopHtml services windows = do
                 with span_ [id_ "display-bar"] do
                     forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
             with' div_ "display-bar-right" do
-                with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
+                with span_ [id_ "display-tray", class_ "flex h-full w-full align-center justify-center"] do
                     forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
                     with span_ [wid_ (WinID 0) "tray"] mempty
                     forM_ (zip [1 ..] services) \(WinID -> wid, _) ->
@@ -201,7 +220,7 @@ desktopHandler appSet services desktop event = do
                 when (chan == "htmx") do
                     addClient desktop.clients client
                     -- Send the desktop body
-                    sendHtml client (desktopHtml services desktop.wm.windows)
+                    sendHtml client (desktopHtml desktop services desktop.wm.windows)
 
             -- Notify each apps
             forwardDisplayEvent event
@@ -292,21 +311,41 @@ handleDesktopEvent appSet desktop = \case
 handleDesktopGuiEvent :: AppSet -> Desktop -> DisplayClient -> TriggerName -> Value -> ProcessIO ()
 handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
     "wm-start" -> do
-        createNewWindow
+        createNewWindow "launcher" Nothing
+    "file-open" -> do
+        desktopDir <- fromMaybe (error "missing root dir") <$> readTVarIO desktop.directory
+        let rootDir = getRootDir desktopDir
+        mObj <- atomically do
+            case value ^? key "fp" . _JSON of
+                Nothing -> pure $ Just (rootDir, Nothing)
+                Just name
+                    | -- FP is a global FileLoc
+                      '/' `Text.elem` from name ->
+                        resolveFileLoc rootDir (from name)
+                    | otherwise ->
+                        let toLookupResult = \case
+                                Directory d -> (d, Nothing)
+                                File file -> (desktopDir, Just file)
+                         in fmap toLookupResult <$> lookupChild desktopDir name
+        case mObj of
+            Just (dir, Nothing) -> createNewWindow "file-manager" (Just $ AppFile dir Nothing)
+            Just (dir, file) -> createNewWindow "file-viewer" (Just $ AppFile dir file)
+            Nothing -> logError "Unknown file" ["value" .= value]
     _otherwise -> logError "Unknown ev" ["v" .= value]
   where
-    createNewWindow :: ProcessIO ()
-    createNewWindow = do
+    createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
+    createNewWindow name mEvent = do
         (wid, script) <- atomically do
-            (winId, win) <- newWindow desktop.wm.windows "REPL"
+            (winId, win) <- newWindow desktop.wm.windows (from name)
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        mGuiApp <- asProcess desktop.env (launchApp appSet "launcher" desktop.shared desktop.clients wid)
+        mGuiApp <- asProcess desktop.env (launchApp appSet name desktop.shared desktop.clients wid)
         forM_ mGuiApp \guiApp -> do
             atomically $ addApp desktop guiApp
             renderNewWindow wid script
             clients <- atomically $ getClients desktop.clients
+            forM_ mEvent $ writePipe guiApp.pipeAE
             forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
 
     renderNewWindow wid script = do

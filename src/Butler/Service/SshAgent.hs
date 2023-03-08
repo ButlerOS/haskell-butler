@@ -79,13 +79,14 @@ startApp ctx = do
                             logError "Request already accepted" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             AppData de -> case decodeMessage de.buffer of
-                Just (into @Natural -> reqID, buf) ->
+                Just (reqID, buf) ->
                     withRequest reqID ["data" .= de] \request -> do
                         atomically (tryReadTMVar request.provider) >>= \case
                             Just provider | provider.endpoint == de.client.endpoint -> do
                                 sktSendAll request.socket buf
                             _ -> pure ()
                 _ -> logError "Unknown data" ["ev" .= de]
+            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
 
 sshAgentProvider :: WinID -> Text
 sshAgentProvider wid =

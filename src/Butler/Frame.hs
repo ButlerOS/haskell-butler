@@ -39,10 +39,12 @@ encodeMessage chan = LBS.cons b
         | chan < 255 = unsafeFrom chan
         | otherwise = error "Chan > 255 not implemented"
 
-decodeMessage :: ByteString -> Maybe (WinID, ByteString)
+decodeMessage :: ByteString -> Maybe (Natural, ByteString)
 decodeMessage buf = decodeChan <$> BS.uncons buf
   where
-    decodeChan (x, xs) = (WinID (from x), xs)
+    decodeChan (x, xs)
+        | x > 126 = error "Chan > 126 not implemented"
+        | otherwise = (from x, xs)
 
 butlerHelpersScript :: Text
 butlerHelpersScript =
