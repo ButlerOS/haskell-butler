@@ -191,13 +191,13 @@ appSetHtml wid (AppSet apps) = do
                     forM_ (appInCat cat) \app -> mkLauncher app.description app.name
   where
     appInCat cat = filter (\app -> Set.member cat app.tags) $ Map.elems apps
-    cats = foldMap (\app -> app.tags) (Map.elems apps)
+    cats = foldMap (.tags) (Map.elems apps)
     mkLauncher :: Text -> ProgramName -> _
     mkLauncher description prog = do
         with
             li_
             [ wid_ wid "win-swap"
-            , encodeVal ["win" .= wid, "prog" .= ("app-" <> prog)]
+            , encodeVal ["prog" .= prog]
             , class_ "cursor-pointer"
             , wsSend
             , hxTrigger_ "click"

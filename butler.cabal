@@ -31,6 +31,7 @@ library
       Butler.App
       Butler.App.Chat
       Butler.App.Clock
+      Butler.App.Launcher
       Butler.App.LogViewer
       Butler.App.MineSweeper
       Butler.App.Mumbler

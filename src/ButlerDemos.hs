@@ -14,6 +14,7 @@ import Butler.Auth.Invitation
 
 import Butler.App.Chat
 import Butler.App.Clock
+import Butler.App.Launcher
 import Butler.App.LogViewer
 import Butler.App.MineSweeper
 import Butler.App.Mumbler
@@ -130,7 +131,7 @@ demoDesktop extraApps = do
         ]
 
     mkAppSet chat desktop =
-        newAppSet $
+        withLauncherApp $
             [ chatApp chat
             , clockApp
             , logViewerApp

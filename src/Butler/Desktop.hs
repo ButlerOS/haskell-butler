@@ -60,37 +60,10 @@ deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
     startWelcomeApp ctx = forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw ctx.wid)
-            AppTrigger te -> case te.trigger of
-                "win-swap" ->
-                    case (te.body ^? key "prog" . _String, te.body ^? key "win" . _Integer) of
-                        (Just (ProgramName -> appName), Just (WinID . unsafeFrom -> winId)) -> do
-                            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.shared ctx.clients winId)
-                            case mGuiApp of
-                                Just guiApp -> swapWindow winId guiApp
-                                Nothing -> logInfo "unknown win-swap prog" ["v" .= te.body]
-                        _ -> logInfo "unknown win-swap" ["v" .= te.body]
-                _ -> logInfo "unknown ev" ["ev" .= te]
+            AppTrigger ge -> case ge.trigger of
+                "win-swap" -> handleWinSwap appSet desktop ctx.wid ge
+                _ -> logInfo "unknown ev" ["ev" .= ge]
             _ -> pure ()
-
-    swapWindow :: WinID -> AppInstance -> ProcessIO ()
-    swapWindow wid guiApp = do
-        clients <- atomically do
-            swapApp desktop guiApp
-            getClients desktop.clients
-        forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
-        broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
-        case guiApp.app.size of
-            Just size -> do
-                broadcastSize wid size
-                void $ atomically $ updateWindow desktop.wm.windows wid (#size .~ size)
-            Nothing -> pure ()
-
-    broadcastWinMessage body =
-        sendsBinary desktop.clients (encodeMessageL controlWin (encodeJSON $ object body))
-
-    broadcastSize :: WinID -> (Int, Int) -> ProcessIO ()
-    broadcastSize wid (x, y) =
-        broadcastWinMessage ["w" .= wid, "ev" .= ("resize" :: Text), "x" .= x, "y" .= y]
 
 startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> [Service] -> Display -> Workspace -> ProcessIO ()
 startDesktop desktopMVar mkAppSet services display name = do
@@ -112,7 +85,7 @@ startDesktop desktopMVar mkAppSet services display name = do
             forM_ xs $ \(wid, prog) -> do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
-                    "app-launcher" -> Just <$> mkDeskApp (menuWin appSet) wid
+                    "app-launcher" -> launchApp appSet "launcher" desktop.shared desktop.clients wid
                     _ -> launchApp appSet prog desktop.shared desktop.clients wid
                 case mApp of
                     Just app -> do
@@ -205,11 +178,6 @@ welcomeWin appSet wid = do
         with div_ [class_ "m-2"] do
             appSetHtml wid appSet
 
-menuWin :: Monad m => AppSet -> WinID -> HtmlT m ()
-menuWin appSet wid = do
-    with div_ [wid_ wid "w"] do
-        appSetHtml wid appSet
-
 statusHtml :: Monad m => Bool -> HtmlT m ()
 statusHtml s =
     let cls = bool "bg-sky-400" "bg-sky-300" s
@@ -270,6 +238,8 @@ desktopHandler appSet services desktop event = do
                 dataMessage <- recvData client
                 case eventFromMessage client dataMessage of
                     Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
+                    Just (wid, AppTrigger ge)
+                        | ge.trigger == "win-swap" -> handleWinSwap appSet desktop wid ge
                     Just (wid, ae)
                         | wid == controlWin -> handleDesktopEvent appSet desktop ae
                         | otherwise ->
@@ -277,6 +247,36 @@ desktopHandler appSet services desktop event = do
                                 Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
                                 Just appInstance -> writePipe appInstance.pipeAE ae
         _ -> logError "unknown channel" ["channel" .= channel]
+
+handleWinSwap :: AppSet -> Desktop -> WinID -> GuiEvent -> ProcessIO ()
+handleWinSwap appSet desktop wid ge =
+    case ge.body ^? key "prog" . _JSON of
+        Just appName -> do
+            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.shared desktop.clients wid)
+            case mGuiApp of
+                Just guiApp -> swapWindow guiApp
+                Nothing -> logInfo "unknown win-swap prog" ["v" .= ge.body]
+        _ -> logInfo "unknown win-swap" ["ev" .= ge]
+  where
+    swapWindow :: AppInstance -> ProcessIO ()
+    swapWindow guiApp = do
+        clients <- atomically do
+            swapApp desktop guiApp
+            getClients desktop.clients
+        forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
+        broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
+        case guiApp.app.size of
+            Just size -> do
+                broadcastSize size
+                void $ atomically $ updateWindow desktop.wm.windows wid (#size .~ size)
+            Nothing -> pure ()
+
+    broadcastWinMessage body =
+        sendsBinary desktop.clients (encodeMessageL controlWin (encodeJSON $ object body))
+
+    broadcastSize :: (Int, Int) -> ProcessIO ()
+    broadcastSize (x, y) =
+        broadcastWinMessage ["w" .= wid, "ev" .= ("resize" :: Text), "x" .= x, "y" .= y]
 
 handleDesktopEvent :: AppSet -> Desktop -> AppEvent -> ProcessIO ()
 handleDesktopEvent appSet desktop = \case
@@ -302,13 +302,17 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- asProcess desktop.env (startApp "app-" (deskApp desktop appSet $ menuWin appSet) desktop.shared desktop.clients wid)
-        atomically $ addApp desktop guiApp
+        mGuiApp <- asProcess desktop.env (launchApp appSet "launcher" desktop.shared desktop.clients wid)
+        forM_ mGuiApp \guiApp -> do
+            atomically $ addApp desktop guiApp
+            renderNewWindow wid script
+            clients <- atomically $ getClients desktop.clients
+            forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
 
+    renderNewWindow wid script = do
         sendsHtml desktop.clients do
             with div_ [id_ "backstore", hxSwapOob_ "beforeend"] do
-                with div_ [id_ (withWID wid "w")] do
-                    menuWin appSet wid
+                with div_ [id_ (withWID wid "w")] mempty
                 with (script_ script) [type_ "module"]
             with div_ [id_ "display-bar", hxSwapOob_ "afterbegin"] do
                 with span_ [id_ (withWID wid "bar")] mempty
