@@ -76,10 +76,11 @@ newWindow :: Windows -> Text -> STM (WinID, Window)
 newWindow ws title = stateMemoryVar ws $ \s ->
     let WinID prev = s.maxID
         next = prev + 1
+        current = IM.size s.windows
         wid = WinID next
         win =
             Window
-                (0 + 23 * next, 0 + 23 * next)
+                (0 + 23 * current, 0 + 23 * current)
                 (640, 420)
                 title
      in ((wid, win), s & (#maxID .~ wid) . (#windows %~ IM.insert next win))

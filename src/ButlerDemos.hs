@@ -25,6 +25,7 @@ import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
 
+import Butler.Service.FileSystem
 import Butler.Service.Pointer
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
@@ -125,6 +126,7 @@ demoDesktop extraApps = do
         [ soundBlasterService
         , pointerService
         , sshAgentService
+        , fileSystemService
         ]
 
     mkAppSet chat desktop =

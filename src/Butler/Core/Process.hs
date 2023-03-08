@@ -73,6 +73,9 @@ newtype ProgramName = ProgramName Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON, ToHtml)
 
+instance From Text ProgramName where
+    from = ProgramName
+
 instance From Natural ProgramName where
     from = ProgramName . from . show
 

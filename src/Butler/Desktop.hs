@@ -26,6 +26,8 @@ import Butler.Core.Processor
 import Butler.Display.WebSocket
 import Butler.Frame
 
+import Butler.Service.FileSystem
+
 data Desktop = Desktop
     { env :: ProcessEnv
     , display :: Display
@@ -95,10 +97,10 @@ startDesktop desktopMVar mkAppSet services display name = do
     desktop <- newDesktopIO display name services
     let appSet = mkAppSet desktop
 
-    let mkDeskApp draw = startApp (deskApp desktop appSet draw) desktop.shared desktop.clients
+    let mkDeskApp draw = startApp "app-" (deskApp desktop appSet draw) desktop.shared desktop.clients
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
-        atomically . addDesktopApp desktop =<< startApp service desktop.shared desktop.clients (WinID wid)
+        atomically . addDesktopApp desktop =<< startApp "srv-" service desktop.shared desktop.clients (WinID wid)
 
     apps <- atomically $ readMemoryVar desktop.wm.apps
     case Map.toList apps of
@@ -117,7 +119,9 @@ startDesktop desktopMVar mkAppSet services display name = do
                         whenM (isNothing <$> atomically (lookupWindow desktop.wm.windows wid)) do
                             logError "Missing window for app" ["prog" .= prog]
                             atomically $ addWindowApp desktop.wm wid app.process
-                        atomically $ addDesktopApp desktop app
+                        if coerce wid <= length services
+                            then logError "Can't restore app, conflict with services" ["app" .= prog, "wid" .= wid]
+                            else atomically $ addDesktopApp desktop app
                     Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
 
     putMVar desktopMVar desktop
@@ -163,14 +167,14 @@ delWin desktop wid = do
         Just prevApp -> delApp desktop prevApp
     delWindowApp desktop.wm wid
 
-desktopHtml :: Windows -> HtmlT STM ()
-desktopHtml windows = do
+desktopHtml :: [Service] -> Windows -> HtmlT STM ()
+desktopHtml services windows = do
     wids <- lift (getWindowIDs windows)
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
         script_ butlerHelpersScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
         with div_ [id_ "win-root", class_ "flex grow min-h-full"] do
-            mempty
+            filesUploadButton (WinID 0)
 
         -- bottom bar
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white shrink sticky bottom-0 z-50"] do
@@ -181,12 +185,9 @@ desktopHtml windows = do
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center jusity-center"] do
                     forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
-                    -- TODO: draw tray from [service] list.
-                    with span_ [id_ "tray-3"] mempty
-                    with span_ [id_ "tray-2"] mempty
-                    with span_ [id_ "tray-1"] mempty
-                    with span_ [id_ "tray-0"] mempty
-                    statusHtml False
+                    with span_ [wid_ (WinID 0) "tray"] mempty
+                    forM_ (zip [1 ..] services) \(WinID -> wid, _) ->
+                        with span_ [wid_ wid "tray"] mempty
 
         with div_ [id_ "reconnect_script"] mempty
 
@@ -221,8 +222,8 @@ statusHtml s =
             ]
             mempty
 
-desktopHandler :: AppSet -> Desktop -> DisplayEvent -> ProcessIO ()
-desktopHandler appSet desktop event = do
+desktopHandler :: AppSet -> [Service] -> Desktop -> DisplayEvent -> ProcessIO ()
+desktopHandler appSet services desktop event = do
     -- update desktop state with display event
     case event of
         UserConnected chan client -> do
@@ -232,7 +233,7 @@ desktopHandler appSet desktop event = do
                 when (chan == "htmx") do
                     addClient desktop.clients client
                     -- Send the desktop body
-                    sendHtml client (desktopHtml desktop.wm.windows)
+                    sendHtml client (desktopHtml services desktop.wm.windows)
 
             -- Notify each apps
             forwardDisplayEvent event
@@ -301,7 +302,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             let script = renderWindow (winId, win)
             pure (winId, script)
 
-        guiApp <- asProcess desktop.env (startApp (deskApp desktop appSet $ menuWin appSet) desktop.shared desktop.clients wid)
+        guiApp <- asProcess desktop.env (startApp "app-" (deskApp desktop appSet $ menuWin appSet) desktop.shared desktop.clients wid)
         atomically $ addApp desktop guiApp
 
         sendsHtml desktop.clients do

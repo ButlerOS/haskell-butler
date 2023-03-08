@@ -3,6 +3,7 @@ module Butler.App where
 
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
+import Data.Text qualified as Text
 import Lucid
 import Lucid.Htmx
 import Network.WebSockets qualified as WS
@@ -137,19 +138,21 @@ sendHtmlOnConnect htmlT = \case
     _ -> pure ()
 
 newAppSet :: [App] -> AppSet
-newAppSet = AppSet . Map.fromList . map (\app -> ("app-" <> app.name, app))
+newAppSet = AppSet . Map.fromList . map (\app -> (app.name, app))
 
 launchApp :: AppSet -> ProgramName -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) name shared clients wid = case Map.lookup name apps of
-    Just app -> Just <$> startApp app shared clients wid
+launchApp (AppSet apps) (ProgramName name) shared clients wid = case Map.lookup (ProgramName appName) apps of
+    Just app -> Just <$> startApp "app-" app shared clients wid
     Nothing -> pure Nothing
+  where
+    appName = fromMaybe name $ Text.stripPrefix "app-" name
 
-startApp :: App -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO AppInstance
-startApp app shared clients wid = do
+startApp :: Text -> App -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO AppInstance
+startApp prefix app shared clients wid = do
     -- Start app process
     pipeAE <- atomically newPipe
     let ctx = AppContext clients wid pipeAE shared
-    process <- spawnProcess ("app-" <> app.name) do
+    process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
 
     pure $ AppInstance{app, process, wid, pipeAE}
@@ -162,7 +165,7 @@ startApps apps display clients = do
   where
     go shared (i, app) = do
         let wid = WinID i
-        appInstance <- startApp app shared clients wid
+        appInstance <- startApp "app-" app shared clients wid
         atomically (registerApp shared.apps appInstance)
 
 tagIcon :: AppTag -> Maybe Text
