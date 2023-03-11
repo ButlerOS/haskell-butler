@@ -71,11 +71,11 @@ vncServer = do
 
 -- | Demonstrate apps deployment
 demoApp :: ProcessIO Void
-demoApp = serveApps publicDisplayApp [tabletopApp, qrApp, clockApp]
+demoApp = serveApps (publicDisplayApp "Demo app" Nothing) [tabletopApp, qrApp, clockApp]
 
 -- | Demonstrate dashboard apps deployment
 demoDashboard :: ProcessIO Void
-demoDashboard = serveDashboardApps publicDisplayApp [clockApp, clockApp]
+demoDashboard = serveDashboardApps (publicDisplayApp "Demo dashboard" Nothing) [clockApp, clockApp]
 
 -- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
 multiDesktop :: IO ()
