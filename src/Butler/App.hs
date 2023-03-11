@@ -66,6 +66,8 @@ data App = App
     -- ^ The application name.
     , tags :: Set AppTag
     -- ^ Its categories.
+    , title :: Text
+    -- ^ Its title.
     , description :: Text
     -- ^ A description.
     , size :: Maybe (Int, Int)
@@ -81,6 +83,7 @@ defaultApp name start =
     App
         { name
         , tags = mempty
+        , title = mempty
         , description = mempty
         , size = Nothing
         , xfiles = []
