@@ -44,7 +44,7 @@ newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
 newDesktop processEnv display ws wm = do
     Desktop processEnv display ws wm
         <$> newDisplayClients
-        <*> newAppSharedContext display
+        <*> newAppSharedContext display processEnv
         <*> newTVar Nothing
 
 controlWin :: WinID
@@ -69,10 +69,9 @@ deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
                 _ -> logInfo "unknown ev" ["ev" .= ge]
             _ -> pure ()
 
-startDesktop :: MVar Desktop -> (Desktop -> AppSet) -> [Service] -> Display -> Workspace -> ProcessIO ()
-startDesktop desktopMVar mkAppSet services display name = do
+startDesktop :: MVar Desktop -> AppSet -> [Service] -> Display -> Workspace -> ProcessIO ()
+startDesktop desktopMVar appSet services display name = do
     desktop <- newDesktopIO display name services
-    let appSet = mkAppSet desktop
 
     let mkDeskApp draw = startApp "app-" (deskApp desktop appSet draw) desktop.shared desktop.clients
 
@@ -111,13 +110,13 @@ startDesktop desktopMVar mkAppSet services display name = do
 
     putMVar desktopMVar desktop
 
-    -- TODO: watch running app and handle crash gracefully
-
     -- This act as a ping thread
     let updateStatus s = do
             sendsHtml desktop.clients $ statusHtml s
             sleep 5_000
             updateStatus (not s)
+
+    -- TODO: watch running app and handle crash gracefully
     _ <- updateStatus True
     error "update status crashed?"
 

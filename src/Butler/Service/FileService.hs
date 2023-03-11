@@ -30,7 +30,7 @@ newtype VolumeName = VolumeName FileName
 -- | 'getVolumeDirectory' enables app to get access to the File API.
 getVolumeDirectory :: AppSharedContext -> Maybe VolumeName -> ProcessIO Directory
 getVolumeDirectory shared mVolume =
-    waitDynamic 150 shared.devices "file-service" >>= \case
+    waitDynamic 150 shared.dynamics "file-service" >>= \case
         WaitCompleted sc -> getVolumeDir sc
         WaitTimeout -> error "file-system service is not running"
   where
@@ -124,7 +124,7 @@ startFileService ctx = do
                         atomically $ NM.delete uploads pui
                 Nothing -> logError "Unknown upload req" ["ev" .= pui]
 
-    withDynamic ctx.shared.devices "file-service" rootDir $ forever do
+    withDynamic ctx.shared.dynamics "file-service" rootDir $ forever do
         atomically (readPipe ctx.pipe) >>= \case
             ae@(AppDisplay{}) -> sendHtmlOnConnect mountUI ae
             AppTrigger ev -> case ev.trigger of

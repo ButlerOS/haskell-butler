@@ -132,7 +132,7 @@ demoDesktop extraApps = do
         , fileService
         ]
 
-    mkAppSet chat desktop =
+    mkAppSet chat =
         withLauncherApp $
             [ chatApp chat
             , clockApp
@@ -140,7 +140,7 @@ demoDesktop extraApps = do
             , termApp "xterm"
             , soundTestApp
             , mumblerApp
-            , peApp desktop
+            , peApp
             , vncApp
             , qrApp
             , smApp

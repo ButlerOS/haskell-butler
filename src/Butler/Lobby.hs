@@ -34,8 +34,8 @@ newLobby = do
     let initialMap = Map.fromList $ map (\name -> (name, DesktopOffline)) savedList
     Lobby <$> newMVar initialMap <*> pure desktopsList
 
-lobbyProgram :: (Desktop -> AppSet) -> [Service] -> ChatServer -> Display -> ProcessIO OnClient
-lobbyProgram mkAppSet services chat display = do
+lobbyProgram :: AppSet -> [Service] -> ChatServer -> Display -> ProcessIO OnClient
+lobbyProgram appSet services chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
     dmProcess <- spawnProcess "welcome-desktop" do
@@ -50,7 +50,7 @@ lobbyProgram mkAppSet services chat display = do
                 desktopMVar <- newEmptyMVar
                 let desktopID = "desktop-" <> from name
                 void $ spawnProcess (ProgramName desktopID) $ chroot (from desktopID) do
-                    startDesktop desktopMVar mkAppSet services display name
+                    startDesktop desktopMVar appSet services display name
 
                 desktop <- takeMVar desktopMVar
                 when (isNothing mDesktopStatus) do
@@ -61,7 +61,7 @@ lobbyProgram mkAppSet services chat display = do
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
         name -> do
             desktop <- getDesktop name
-            pure (desktop.env, desktopHandler (mkAppSet desktop) services desktop)
+            pure (desktop.env, desktopHandler appSet services desktop)
 
 chatWin :: WinID
 chatWin = WinID 0

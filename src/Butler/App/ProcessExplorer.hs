@@ -3,7 +3,6 @@ module Butler.App.ProcessExplorer where
 import Butler
 import Butler.Core
 import Butler.Core.Logger
-import Butler.Desktop
 
 import Butler.Core.Processor
 import Data.Aeson (Value (Number))
@@ -53,8 +52,8 @@ renderPE os stV wid = do
             ]
             mempty
 
-peApp :: Desktop -> App
-peApp desktop =
+peApp :: App
+peApp =
     (defaultApp "ps" startPE)
         { name = "ps"
         , tags = fromList ["System"]
@@ -64,7 +63,7 @@ peApp desktop =
     startPE ctx = do
         let clients = ctx.clients
             wid = ctx.wid
-        stV <- newTVarIO (PEScopped desktop.env.process.pid)
+        stV <- newTVarIO (PEScopped ctx.shared.processEnv.process.pid)
         os <- asks os
         let doRender = renderPE os stV wid
             handleEvent ev =
@@ -76,7 +75,7 @@ peApp desktop =
                         "ps-toggle" -> do
                             st <- readTVarIO stV
                             atomically $ writeTVar stV $ case st of
-                                PEAll -> PEScopped desktop.env.process.pid
+                                PEAll -> PEScopped ctx.shared.processEnv.process.pid
                                 PEScopped _ -> PEAll
                             sendsHtml clients doRender
                         _ -> logError "unknown event" ["ev" .= ev]

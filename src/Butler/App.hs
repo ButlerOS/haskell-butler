@@ -105,12 +105,13 @@ data AppContext = AppContext
 
 data AppSharedContext = AppSharedContext
     { display :: Display
-    , devices :: Dynamics
+    , processEnv :: ProcessEnv
+    , dynamics :: Dynamics
     , apps :: Apps
     }
 
-newAppSharedContext :: Display -> STM AppSharedContext
-newAppSharedContext display = AppSharedContext display <$> newDynamics <*> newApps
+newAppSharedContext :: Display -> ProcessEnv -> STM AppSharedContext
+newAppSharedContext display processEnv = AppSharedContext display processEnv <$> newDynamics <*> newApps
 
 newtype Apps = Apps (TVar (Map WinID AppInstance))
 
@@ -164,7 +165,8 @@ startApp prefix app shared clients wid = do
 
 startApps :: [App] -> Display -> DisplayClients -> ProcessIO AppSharedContext
 startApps apps display clients = do
-    shared <- atomically (newAppSharedContext display)
+    processEnv <- ask
+    shared <- atomically (newAppSharedContext display processEnv)
     traverse_ (go shared) (zip [0 ..] apps)
     pure shared
   where
