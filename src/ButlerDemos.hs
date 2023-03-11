@@ -133,7 +133,7 @@ demoDesktop extraApps = do
         ]
 
     mkAppSet chat =
-        withLauncherApp $
+        newAppSet $
             [ chatApp chat
             , clockApp
             , logViewerApp
@@ -148,6 +148,7 @@ demoDesktop extraApps = do
             , mineSweeperApp
             , fileManagerApp
             , fileViewerApp
+            , launcherApp
             ]
                 <> extraApps
 

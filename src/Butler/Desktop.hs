@@ -40,40 +40,40 @@ data Desktop = Desktop
     , directory :: TVar (Maybe Directory)
     }
 
-newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> STM Desktop
-newDesktop processEnv display ws wm = do
+newDesktop :: ProcessEnv -> Display -> Workspace -> WindowManager -> AppSet -> STM Desktop
+newDesktop processEnv display ws wm appSet = do
     Desktop processEnv display ws wm
         <$> newDisplayClients
-        <*> newAppSharedContext display processEnv
+        <*> newAppSharedContext display processEnv appSet
         <*> newTVar Nothing
 
 controlWin :: WinID
 controlWin = WinID 0
 
-newDesktopIO :: Display -> Workspace -> [Service] -> ProcessIO Desktop
-newDesktopIO display ws services = do
+newDesktopIO :: Display -> Workspace -> [Service] -> AppSet -> ProcessIO Desktop
+newDesktopIO display ws services appSet = do
     processEnv <- ask
     -- reserve wid for services
     let minWID = WinID (length services)
     wm <- newWindowManager minWID
-    atomically (newDesktop processEnv display ws wm)
+    atomically (newDesktop processEnv display ws wm appSet)
 
-deskApp :: Desktop -> AppSet -> (WinID -> HtmlT STM ()) -> App
-deskApp desktop appSet draw = defaultApp "welcome" startWelcomeApp
+deskApp :: Desktop -> (WinID -> HtmlT STM ()) -> App
+deskApp desktop draw = defaultApp "welcome" startWelcomeApp
   where
     startWelcomeApp ctx = forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw ctx.wid)
             AppTrigger ge -> case ge.trigger of
-                "win-swap" -> handleWinSwap appSet desktop ctx.wid ge
+                "win-swap" -> handleWinSwap desktop.shared.appSet desktop ctx.wid ge
                 _ -> logInfo "unknown ev" ["ev" .= ge]
             _ -> pure ()
 
 startDesktop :: MVar Desktop -> AppSet -> [Service] -> Display -> Workspace -> ProcessIO ()
 startDesktop desktopMVar appSet services display name = do
-    desktop <- newDesktopIO display name services
+    desktop <- newDesktopIO display name services appSet
 
-    let mkDeskApp draw = startApp "app-" (deskApp desktop appSet draw) desktop.shared desktop.clients
+    let mkDeskApp draw = startApp "app-" (deskApp desktop draw) desktop.shared desktop.clients
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
         atomically . addDesktopApp desktop =<< startApp "srv-" service desktop.shared desktop.clients (WinID wid)

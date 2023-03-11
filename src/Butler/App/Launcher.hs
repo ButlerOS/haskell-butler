@@ -1,4 +1,4 @@
-module Butler.App.Launcher (withLauncherApp, launcherApp) where
+module Butler.App.Launcher (launcherApp) where
 
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -7,22 +7,19 @@ import Data.Text qualified as Text
 import Butler
 import Butler.App
 
-withLauncherApp :: [App] -> AppSet
-withLauncherApp apps = newAppSet $ launcherApp (newAppSet apps) : apps
-
-launcherApp :: AppSet -> App
-launcherApp appSet =
-    (defaultApp "launcher" (startLauncherApp appSet))
+launcherApp :: App
+launcherApp =
+    (defaultApp "launcher" startLauncherApp)
         { description = "Start apps"
         , tags = fromList ["Utility"]
         }
 
-startLauncherApp :: AppSet -> AppContext -> ProcessIO ()
-startLauncherApp appSet ctx = do
+startLauncherApp :: AppContext -> ProcessIO ()
+startLauncherApp ctx = do
     vFilter <- newTVarIO (mempty :: Text)
     let filterAppSet txt
-            | txt == mempty = appSet
-            | otherwise = AppSet $ Map.filter appMatch (coerce appSet)
+            | txt == mempty = ctx.shared.appSet
+            | otherwise = AppSet $ Map.filter appMatch (coerce ctx.shared.appSet)
           where
             appMatch app =
                 Text.isInfixOf txt (coerce app.name)
