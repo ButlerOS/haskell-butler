@@ -7,20 +7,25 @@ import Butler.Frame
 import Butler.Prelude
 import Lucid.XStatic
 
-publicDisplayApp :: DisplayApplication
-publicDisplayApp = DisplayApplication auth
-  where
-    auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles "Standalone GUI"
+newtype PageTitle = PageTitle Text
+    deriving newtype (IsString, ToHtml)
 
-htmlMain :: [XStaticFile] -> Text -> Html () -> Html ()
-htmlMain xfiles title body = do
+newtype PageDesc = PageDesc Text
+    deriving newtype (IsString)
+
+publicDisplayApp :: PageTitle -> Maybe PageDesc -> DisplayApplication
+publicDisplayApp appTitle appDescM = DisplayApplication auth
+  where
+    auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles appTitle appDescM
+
+htmlMain :: [XStaticFile] -> PageTitle -> Maybe PageDesc -> Html () -> Html ()
+htmlMain xfiles title descM body = do
     doctypehtml_ do
         head_ do
             title_ (toHtml title)
+            forM_ descM (\(PageDesc desc) -> meta_ [name_ "description", content_ desc])
             meta_ [charset_ "utf-8"]
             meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
             xstaticScripts xfiles
             script_ butlerHelpersScript
-
-        with body_ [class_ "font-mono cursor-default bg-stone-100 h-screen"] do
             body
