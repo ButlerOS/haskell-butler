@@ -5,7 +5,6 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Lucid
-import Lucid.Htmx
 import Network.WebSockets qualified as WS
 
 import Butler.Core
@@ -76,6 +75,7 @@ data App = App
     -- ^ An optional size.
     , xfiles :: [XStaticFile]
     -- ^ Required XStaticFile
+    , acceptFiles :: Maybe ContentType
     , start :: AppContext -> ProcessIO ()
     -- ^ Start action.
     }
@@ -89,6 +89,7 @@ defaultApp name start =
         , description = mempty
         , size = Nothing
         , xfiles = []
+        , acceptFiles = Nothing
         , start
         }
 
@@ -137,6 +138,9 @@ data AppInstance = AppInstance
     deriving (Generic)
 
 newtype AppSet = AppSet (Map ProgramName App)
+
+appSetApps :: AppSet -> [App]
+appSetApps (AppSet m) = Map.elems m
 
 -- | A convenient helper to mount the UI when a new user connect.
 sendHtmlOnConnect :: HtmlT STM () -> AppEvent -> ProcessIO ()
@@ -187,6 +191,11 @@ tagIcon = \case
     "Utility" -> Just "ri-tools-line"
     _ -> Nothing
 
+startAppScript :: App -> [Pair] -> Text
+startAppScript app args = "sendTrigger(0, \"start-app\", " <> decodeUtf8 (from obj) <> ")"
+  where
+    obj = encodeJSON (object (["name" .= app.name] <> args))
+
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
     ul_ do
@@ -196,23 +205,19 @@ appSetHtml wid (AppSet apps) = do
                     with i_ [class_ $ icon <> " text-blue-600 mr-2 text-xl relative top-1"] mempty
                 toHtml cat
                 with ul_ [class_ "pl-2 border-solid rounded border-l-2 border-slate-500"] do
-                    forM_ (appInCat cat) \app -> mkLauncher app.description app.name
+                    forM_ (appInCat cat) mkLauncher
   where
     appInCat cat = filter (\app -> Set.member cat app.tags) $ Map.elems apps
     cats = foldMap (.tags) (Map.elems apps)
-    mkLauncher :: Text -> ProgramName -> _
-    mkLauncher description prog = do
+    mkLauncher app = do
         with
             li_
-            [ wid_ wid "win-swap"
-            , encodeVal ["prog" .= prog]
+            [ onclick_ (startAppScript app ["wid" .= wid])
             , class_ "cursor-pointer"
-            , wsSend
-            , hxTrigger_ "click"
             ]
             do
-                toHtml prog
+                toHtml app.name
                 span_ do
                     " ("
-                    toHtml description
+                    toHtml app.description
                     ")"

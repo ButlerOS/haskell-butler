@@ -34,6 +34,10 @@ module Butler.Core.File (
     createPartialFile,
     appendPartialFile,
     finalizePartialFile,
+
+    -- * Mime API
+    ContentType (..),
+    fileContentType,
 ) where
 
 import Butler.Prelude
@@ -352,3 +356,34 @@ finalizePartialFile (PartialFile dir name fp) size = do
     file <- MkFile name <$> newTVarIO size
     atomically (addFile dir file)
     pure file
+
+data ContentType
+    = BinaryContent
+    | ImageContent
+    | VideoContent
+    | TextContent
+    | ArchiveContent
+    deriving (Enum, Eq, Ord, Show)
+
+allContentTypeExtensions :: [(ContentType, [RawFilePath])]
+allContentTypeExtensions =
+    [ (ImageContent, ["png", "jpg", "jpeg", "gif"])
+    , (VideoContent, ["webm", "mkv", "avi"])
+    , (TextContent, ["txt", "md", "hs"])
+    , (ArchiveContent, ["zip", "tar"])
+    ]
+
+takeExtension :: RawFilePath -> RawFilePath
+takeExtension fp = case BS.takeWhileEnd (/= unsafeFrom (fromEnum '.')) fp of
+    "gz" -> takeExtension (BS.dropEnd 3 fp)
+    "bz2" -> takeExtension (BS.dropEnd 4 fp)
+    ext -> ext
+
+fileContentType :: File -> ContentType
+fileContentType file = getFileContent allContentTypeExtensions
+  where
+    ext = takeExtension file.name
+    getFileContent [] = BinaryContent
+    getFileContent ((content, exts) : rest)
+        | ext `elem` exts = content
+        | otherwise = getFileContent rest

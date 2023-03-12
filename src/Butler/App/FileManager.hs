@@ -11,6 +11,7 @@ fileManagerApp =
     (defaultApp "file-manager" startFileManagerApp)
         { tags = fromList ["System"]
         , description = "Manage files"
+        , acceptFiles = Just ArchiveContent
         }
 
 startFileManagerApp :: AppContext -> ProcessIO ()
@@ -76,10 +77,11 @@ startFileManagerApp ctx = do
                                  in withTrigger "" ctx.wid "file-rename" ["fp" .= fn] (input_ attrs) []
                             else -- the file text
 
-                                let (wid, fp) = case child of
-                                        Directory{} -> (ctx.wid, into @Text fn)
-                                        File file -> (WinID 0, into @Text (getFileLoc dir (Just file)))
-                                 in withTrigger "click" wid "file-open" ["fp" .= fp] span_ [class_ "cursor-pointer"] (toHtml name)
+                            case child of
+                                Directory{} -> withTrigger "click" ctx.wid "chdir" ["fp" .= fn] span_ [class_ "cursor-pointer"] (toHtml name)
+                                File file ->
+                                    let vals = ["name" .= ProgramName "file-viewer", "fp" .= getFileLoc dir (Just file)]
+                                     in withTrigger "click" (WinID 0) "start-app" vals span_ [class_ "cursor-pointer"] (toHtml name)
 
         renderMoveTarget :: Directory -> HtmlT STM ()
         renderMoveTarget dir = do
@@ -214,7 +216,7 @@ startFileManagerApp ctx = do
             AppTrigger ev -> do
                 case ev.trigger of
                     -- Navigation events
-                    "file-open" -> withFileName ev openDir
+                    "chdir" -> withFileName ev openDir
                     "back-crum" -> withFileName ev openFileLoc
                     -- Selection events
                     "select-file" -> withFileName ev toggleSelection

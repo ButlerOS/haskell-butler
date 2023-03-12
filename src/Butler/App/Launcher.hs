@@ -27,9 +27,6 @@ startLauncherApp ctx = do
         drawAppList filterText = do
             with div_ [wid_ ctx.wid "app-list"] do
                 appSetHtml ctx.wid (filterAppSet filterText)
-        startAppScript name = do
-            with div_ [wid_ ctx.wid "app-list"] do
-                script_ $ "sendTrigger(" <> showT ctx.wid <> ", \"win-swap\", {prog: \"" <> coerce @ProgramName @Text name <> "\"})"
         mountUI = do
             with div_ [wid_ ctx.wid "w"] do
                 filterText <- lift (readTVar vFilter)
@@ -63,7 +60,7 @@ startLauncherApp ctx = do
                     Just filterText -> case Map.elems (coerce $ filterAppSet filterText) of
                         [app :: App] -> do
                             logInfo "Launching" ["app" .= app.name]
-                            atomically $ sendHtml ev.client (startAppScript app.name)
+                            atomically $ sendHtml ev.client (script_ $ startAppScript app [])
                         _ -> do
                             atomically $ writeTVar vFilter mempty
                             sendsHtml ctx.clients mountUI

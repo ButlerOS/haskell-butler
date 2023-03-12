@@ -15,6 +15,7 @@ noterApp =
         { tags = fromList ["Utility", "Development"]
         , description = "Text editor"
         , start = startNoterApp
+        , acceptFiles = Just TextContent
         }
 
 data Editor = Editor

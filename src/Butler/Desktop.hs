@@ -58,22 +58,19 @@ newDesktopIO display ws services appSet = do
     wm <- newWindowManager minWID
     atomically (newDesktop processEnv display ws wm appSet)
 
-deskApp :: Desktop -> (WinID -> HtmlT STM ()) -> App
-deskApp desktop draw = defaultApp "welcome" startWelcomeApp
+deskApp :: AppSet -> App
+deskApp appSet = defaultApp "welcome" startWelcomeApp
   where
     startWelcomeApp ctx = forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (draw ctx.wid)
-            AppTrigger ge -> case ge.trigger of
-                "win-swap" -> handleWinSwap desktop.shared.appSet desktop ctx.wid ge
-                _ -> logInfo "unknown ev" ["ev" .= ge]
+            ae@AppDisplay{} -> sendHtmlOnConnect (welcomeWin appSet ctx.wid) ae
             _ -> pure ()
 
 startDesktop :: MVar Desktop -> AppSet -> [Service] -> Display -> Workspace -> ProcessIO ()
 startDesktop desktopMVar appSet services display name = do
     desktop <- newDesktopIO display name services appSet
 
-    let mkDeskApp draw = startApp "app-" (deskApp desktop draw) desktop.shared desktop.clients
+    let startDeskApp = startApp "app-" (deskApp appSet) desktop.shared desktop.clients
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
         atomically . addDesktopApp desktop =<< startApp "srv-" service desktop.shared desktop.clients (WinID wid)
@@ -90,12 +87,12 @@ startDesktop desktopMVar appSet services display name = do
     case Map.toList apps of
         [] -> do
             (wid, _) <- atomically $ newWindow desktop.wm.windows "Welcome"
-            atomically . addApp desktop =<< mkDeskApp (welcomeWin appSet) wid
+            atomically . addApp desktop =<< startDeskApp wid
         xs -> do
             logInfo "Restoring apps" ["apps" .= xs]
             forM_ xs $ \(wid, prog) -> do
                 mApp <- case prog of
-                    "app-welcome" -> Just <$> mkDeskApp (welcomeWin appSet) wid
+                    "app-welcome" -> Just <$> startDeskApp wid
                     "app-launcher" -> launchApp appSet "launcher" desktop.shared desktop.clients wid
                     _ -> launchApp appSet prog desktop.shared desktop.clients wid
                 case mApp of
@@ -159,7 +156,8 @@ desktopHtml desktop services windows = do
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
         with div_ [id_ "win-root", class_ "flex grow min-h-full"] do
             with div_ [class_ "flex flex-col"] do
-                with div_ [class_ "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer", wsSend, wid_ controlWin "file-open"] do
+                let deskDiv = "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer"
+                withTrigger "click" controlWin "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
                     with i_ [class_ "ri-computer-line"] mempty
                 lift (readTVar desktop.directory) >>= \case
                     Nothing -> pure ()
@@ -256,8 +254,6 @@ desktopHandler appSet services desktop event = do
                 dataMessage <- recvData client
                 case eventFromMessage client dataMessage of
                     Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
-                    Just (wid, AppTrigger ge)
-                        | ge.trigger == "win-swap" -> handleWinSwap appSet desktop wid ge
                     Just (wid, ae)
                         | wid == controlWin -> handleDesktopEvent appSet desktop ae
                         | otherwise ->
@@ -266,21 +262,19 @@ desktopHandler appSet services desktop event = do
                                 Just appInstance -> writePipe appInstance.pipeAE ae
         _ -> logError "unknown channel" ["channel" .= channel]
 
-handleWinSwap :: AppSet -> Desktop -> WinID -> GuiEvent -> ProcessIO ()
-handleWinSwap appSet desktop wid ge =
-    case ge.body ^? key "prog" . _JSON of
-        Just appName -> do
-            mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.shared desktop.clients wid)
-            case mGuiApp of
-                Just guiApp -> swapWindow guiApp
-                Nothing -> logInfo "unknown win-swap prog" ["v" .= ge.body]
-        _ -> logInfo "unknown win-swap" ["ev" .= ge]
+handleWinSwap :: AppSet -> Desktop -> WinID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
+handleWinSwap appSet desktop wid appName mEvent = do
+    mGuiApp <- asProcess desktop.env (launchApp appSet appName desktop.shared desktop.clients wid)
+    case mGuiApp of
+        Just guiApp -> swapWindow guiApp
+        Nothing -> logInfo "unknown win-swap prog" ["v" .= appName]
   where
     swapWindow :: AppInstance -> ProcessIO ()
     swapWindow guiApp = do
         clients <- atomically do
             swapApp desktop guiApp
             getClients desktop.clients
+        forM_ mEvent $ writePipe guiApp.pipeAE
         forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
         broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
         case guiApp.app.size of
@@ -309,29 +303,30 @@ handleDesktopEvent appSet desktop = \case
 
 handleDesktopGuiEvent :: AppSet -> Desktop -> DisplayClient -> TriggerName -> Value -> ProcessIO ()
 handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
-    "wm-start" -> do
-        createNewWindow "launcher" Nothing
-    "file-open" -> do
-        desktopDir <- fromMaybe (error "missing root dir") <$> readTVarIO desktop.directory
-        let rootDir = getRootDir desktopDir
-        mObj <- atomically do
-            case value ^? key "fp" . _JSON of
-                Nothing -> pure $ Just (rootDir, Nothing)
-                Just name
-                    | -- FP is a global FileLoc
-                      '/' `Text.elem` from name ->
-                        resolveFileLoc rootDir (from name)
-                    | otherwise ->
-                        let toLookupResult = \case
-                                Directory d -> (d, Nothing)
-                                File file -> (desktopDir, Just file)
-                         in fmap toLookupResult <$> lookupChild desktopDir name
-        case mObj of
-            Just (dir, Nothing) -> createNewWindow "file-manager" (Just $ AppFile dir Nothing)
-            Just (dir, file) -> createNewWindow "file-viewer" (Just $ AppFile dir file)
-            Nothing -> logError "Unknown file" ["value" .= value]
+    "wm-start" -> createNewWindow "launcher" Nothing
+    "start-app" -> handleNewApp
     _otherwise -> logError "Unknown ev" ["v" .= value]
   where
+    handleNewApp = case value ^? key "name" . _JSON of
+        Just name -> do
+            desktopDir <- fromMaybe (error "missing root dir") <$> readTVarIO desktop.directory
+            let rootDir = getRootDir desktopDir
+            mEvent <- atomically do
+                case value ^? key "fp" . _JSON of
+                    Nothing -> pure $ Just (AppFile rootDir Nothing)
+                    Just fp
+                        | -- FP is a global FileLoc
+                          '/' `Text.elem` from fp ->
+                            fmap (uncurry AppFile) <$> resolveFileLoc rootDir (from fp)
+                        | otherwise ->
+                            let toLookupResult = \case
+                                    Directory d -> AppFile d Nothing
+                                    File file -> AppFile desktopDir (Just file)
+                             in fmap toLookupResult <$> lookupChild desktopDir fp
+            case value ^? key "wid" . _JSON of
+                Just wid -> handleWinSwap appSet desktop wid name mEvent
+                Nothing -> createNewWindow name mEvent
+        Nothing -> logError "missing name" ["ev" .= value]
     createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
     createNewWindow name mEvent = do
         (wid, script) <- atomically do
