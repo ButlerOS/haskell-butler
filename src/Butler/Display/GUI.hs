@@ -40,7 +40,6 @@ module Butler.Display.GUI (
 ) where
 
 import Butler.Prelude
-import Data.Aeson (withObject, (.:))
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text
 

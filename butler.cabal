@@ -37,7 +37,9 @@ library
       Butler.App.LogViewer
       Butler.App.MineSweeper
       Butler.App.Mumbler
+      Butler.App.Noter
       Butler.App.NoVnc
+      Butler.App.Painter
       Butler.App.ProcessExplorer
       Butler.App.QRTest
       Butler.App.SessionManager
@@ -111,7 +113,8 @@ library
       PartialTypeSignatures
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods
   build-depends:
-      PyF
+      JuicyPixels
+    , PyF
     , SHA
     , aeson
     , attoparsec
@@ -160,6 +163,7 @@ library
     , sqlite-simple
     , stm
     , text
+    , text-rope
     , time
     , typed-process
     , unix
@@ -217,7 +221,8 @@ executable butler
       PartialTypeSignatures
   ghc-options: -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures -fwrite-ide-info -Wno-missing-methods -threaded -rtsopts -with-rtsopts=-T
   build-depends:
-      PyF
+      JuicyPixels
+    , PyF
     , SHA
     , aeson
     , attoparsec
@@ -267,6 +272,7 @@ executable butler
     , sqlite-simple
     , stm
     , text
+    , text-rope
     , time
     , typed-process
     , unix
@@ -332,7 +338,8 @@ test-suite spec
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
-      PyF
+      JuicyPixels
+    , PyF
     , SHA
     , aeson
     , attoparsec
@@ -385,6 +392,7 @@ test-suite spec
     , tasty
     , tasty-hunit
     , text
+    , text-rope
     , time
     , typed-process
     , unix

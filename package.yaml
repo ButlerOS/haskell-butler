@@ -118,6 +118,8 @@ dependencies:
 
   - qrcode-juicypixels
   - qrcode-core
+  - JuicyPixels
+  - text-rope
 
   # html
   - lucid

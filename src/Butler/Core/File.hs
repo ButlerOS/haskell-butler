@@ -124,9 +124,9 @@ getFilePath dir file = from $ decodeUtf8 (mconcat [dir.path, "/", file.name])
 readFileBS :: MonadIO m => Directory -> File -> m ByteString
 readFileBS dir file = liftIO $ BS.readFile (getFilePath dir file)
 
-createFile :: MonadIO m => Directory -> RawFilePath -> ByteString -> m File
+createFile :: MonadIO m => Directory -> FileName -> ByteString -> m File
 createFile dir name buf = do
-    file <- MkFile name <$> newTVarIO 0
+    file <- MkFile (from name) <$> newTVarIO 0
     atomically (addFile dir file)
     writeFileBS dir file buf
     pure file

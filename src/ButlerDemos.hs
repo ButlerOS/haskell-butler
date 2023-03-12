@@ -21,6 +21,8 @@ import Butler.App.LogViewer
 import Butler.App.MineSweeper
 import Butler.App.Mumbler
 import Butler.App.NoVnc
+import Butler.App.Noter
+import Butler.App.Painter
 import Butler.App.ProcessExplorer
 import Butler.App.QRTest
 import Butler.App.SessionManager
@@ -149,6 +151,8 @@ demoDesktop extraApps = do
             , fileManagerApp
             , fileViewerApp
             , launcherApp
+            , noterApp
+            , painterApp
             ]
                 <> extraApps
 
