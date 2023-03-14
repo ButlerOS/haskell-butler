@@ -30,8 +30,8 @@ import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Terminal
 
+import Butler.Service.Cursor
 import Butler.Service.FileService
-import Butler.Service.Pointer
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
 
@@ -88,7 +88,7 @@ multiDesktop = run (demoDesktop [])
 demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = do
     let authApp = invitationAuthApp indexHtml
-    desktop <- superviseProcess "desktop" $ startDisplay Nothing xfiles' authApp $ \display -> do
+    desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
         lobbyProgram (mkAppSet chat) services chat display
     void $ waitProcess desktop
@@ -129,7 +129,7 @@ demoDesktop extraApps = do
 
     services =
         [ soundBlasterService
-        , pointerService
+        , cursorService
         , sshAgentService
         , fileService
         ]

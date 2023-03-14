@@ -38,7 +38,7 @@ newVncServer h p = VncServer (from h) (show p) <$> newTVar (800, 600)
 vncApp :: App
 vncApp =
     (defaultApp "vnc" startVncApp)
-        { tags = fromList ["Graphic", "Development"]
+        { tags = fromList ["Development"]
         , description = "NoVNC client"
         , xfiles = XStatic.noVNC
         }

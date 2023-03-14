@@ -38,7 +38,7 @@ lobbyProgram :: AppSet -> [Service] -> ChatServer -> Display -> ProcessIO OnClie
 lobbyProgram appSet services chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
-    dmProcess <- spawnProcess "welcome-desktop" do
+    dmProcess <- spawnProcess "lobby" do
         void $ waitProcess displayProcess
     rootOS <- asks os
     let dmEnv = ProcessEnv rootOS dmProcess

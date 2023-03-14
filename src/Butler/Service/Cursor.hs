@@ -1,4 +1,4 @@
-module Butler.Service.Pointer (pointerService) where
+module Butler.Service.Cursor (cursorService) where
 
 import Butler
 import Butler.Core.Logger
@@ -96,8 +96,8 @@ instance FromJSON SeatEvent where
             (Nothing, Just w) -> SeatEventResolution w <$> obj .: "h"
             _ -> fail "x or w attribute missing"
 
-pointerService :: Service
-pointerService = Service $ defaultApp "pointer" startSeatApp
+cursorService :: Service
+cursorService = Service $ defaultApp "cursor" startSeatApp
 
 startSeatApp :: AppContext -> ProcessIO ()
 startSeatApp ctx = do

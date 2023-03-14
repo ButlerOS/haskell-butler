@@ -77,8 +77,8 @@ library
       Butler.Lobby
       Butler.Prelude
       Butler.Service
+      Butler.Service.Cursor
       Butler.Service.FileService
-      Butler.Service.Pointer
       Butler.Service.SoundBlaster
       Butler.Service.SshAgent
       Butler.Window
