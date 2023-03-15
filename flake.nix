@@ -93,7 +93,7 @@
             extraCommands = "${createPasswd} && ${fixCABundle} && ${rwHome}";
           };
         in pkgs.dockerTools.buildLayeredImage (pkgs.lib.recursiveUpdate {
-          name = "ghcr.io/TristanCacqueray/haskell-butler";
+          name = "ghcr.io/butleros/haskell-butler";
           contents = [ pkg-exe pkgs.openssl ] ++ extra-pkgs;
           tag = "${name}-latest";
           created = "now";
@@ -101,7 +101,7 @@
           config.WorkingDir = "/${home}";
           config.Labels = {
             "org.opencontainers.image.source" =
-              "https://github.com/TristanCacqueray/haskell-butler";
+              "https://github.com/ButlerOS/haskell-butler";
           };
         } extra-config);
 
@@ -144,8 +144,8 @@
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
         buildInputs = with pkgs;
-          [ sqlite ghcid haskell-language-server pkgs.gst_all_1.gstreamer ] ++ desktop
-          ++ baseTools;
+          [ sqlite ghcid haskell-language-server pkgs.gst_all_1.gstreamer ]
+          ++ desktop ++ baseTools;
         GST_PLUGIN_PATH =
           "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
       };

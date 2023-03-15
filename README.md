@@ -75,7 +75,7 @@ nix run .#electron https://localhost:8080
 Container usage:
 
 ```ShellSession
-podman run -p 8080:8080 -v butler-data:/var/lib/butler ghcr.io/tristancacqueray/haskell-butler:term-latest
+podman run -p 8080:8080 -v butler-data:/var/lib/butler ghcr.io/butleros/haskell-butler:term-latest
 ```
 
 ## Contribute
