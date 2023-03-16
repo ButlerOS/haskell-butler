@@ -1,3 +1,3 @@
-{ roots = [ "^Main.main\$", "^ButlerDemos.*\$", "^Paths_.*", ".*\\.test_" ]
+{ roots = [ "Main.main", "ButlerDemos.multiDesktop", "^Paths_.*" ]
 , type-class-roots = True
 }

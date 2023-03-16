@@ -1,9 +1,8 @@
 # haskell-butler
 
-> Note that this is a work in progress, please get in touch if you are interested.
+This library provides a virtual operating system to run Haskell App.
+Checkout the introduction [blog post](https://tristancacqueray.github.io/blog/introducing-butler).
 
-This library provides a virtual operating system to run your Haskell program.
-Checkout the git history to see the available modules.
 
 ## Project Status
 
@@ -19,12 +18,15 @@ by simulating a traditional computer.
 - [x] Audio channel
 - [x] File upload
 - [ ] File download
+- [ ] Application testing
+- [ ] Mailbox and notification
 
 To validate the abstractions, the project also feature some proof of concept demos:
 
+
 ## HTML5 GUI
 
-Serve gui app behind nginx with:
+Serve App behind nginx with:
 
 ```
 upstream butler {
@@ -42,11 +44,12 @@ server {
 }
 ```
 
-Start service with:
+Start the service with:
 
 ```
 BUTLER_ADDR=http:8042 cabal run
 ```
+
 
 ## Multiplayer Desktop
 
@@ -55,10 +58,11 @@ A window-xp clone with support for multiple "seats":
 - [x] Simple invitation system to share the session with other users.
 - [x] Dekstop with a menu and tray bar
 - [x] Window manager
-- [x] Per user cursor and audio channel
+- [x] Per user pointer and audio channel
 - [x] Xterm and Vnc gateway
 
-Usage:
+
+Start the service with:
 
 ```ShellSession
 ./bin/run-vnc
@@ -66,17 +70,18 @@ Usage:
 firefox https://localhost:8080
 ```
 
-Use the electron client to forward your ssh-agent and enables Ctrl-T and Ctrl-N key code:
+Use the electron client instead of firefox to forward your ssh-agent and enables Ctrl-T and Ctrl-N key code:
 
 ```ShellSession
 nix run .#electron https://localhost:8080
 ```
 
-Container usage:
+Start the service with the pre-built container usage:
 
 ```ShellSession
 podman run -p 8080:8080 -v butler-data:/var/lib/butler ghcr.io/butleros/haskell-butler:term-latest
 ```
+
 
 ## Contribute
 
