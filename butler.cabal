@@ -39,6 +39,7 @@ library
       Butler.App.MineSweeper
       Butler.App.Mumbler
       Butler.App.Noter
+      Butler.App.NoterTest
       Butler.App.NoVnc
       Butler.App.Painter
       Butler.App.ProcessExplorer

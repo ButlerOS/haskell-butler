@@ -27,24 +27,23 @@ data Editor = Editor
 data EditorAction
     = MoveCursor Word
     | Insert Text
-    | Delete Int
+    | Delete Direction Word
+
+data Direction = Forward | Backward
 
 instance FromJSON EditorAction where
     parseJSON = withObject "EditorAction" \obj -> do
         let
-            moveParser =
-                obj .:? "move" >>= \case
-                    Just pos -> pure (MoveCursor pos)
-                    Nothing -> fail "missing action"
-            insertParser =
-                obj .:? "insert" >>= \case
-                    Just txt -> pure (Insert txt)
-                    Nothing -> fail "missing action"
-            deleteParser =
-                obj .:? "delete" >>= \case
-                    Just pos -> pure (Delete pos)
-                    Nothing -> fail "missing action"
-        moveParser <|> insertParser <|> deleteParser
+            moveParser = MoveCursor <$> obj .: "move"
+            insertParser = Insert <$> obj .: "insert"
+            deleteParser = toDelete <$> obj .: "delete"
+              where
+                toDelete (pos :: Int) = Delete dir (fromIntegral (abs pos))
+                  where
+                    dir
+                        | pos < 0 = Backward
+                        | otherwise = Forward
+        moveParser <|> deleteParser <|> insertParser
 
 data NoterStatus
     = NewFile
@@ -57,11 +56,6 @@ data NoterState = NoterState
     , editors :: Map Endpoint Editor
     }
     deriving (Generic)
-
-modifyEditors :: (Map Endpoint Editor -> Map Endpoint Editor) -> NoterState -> (Map Endpoint Editor, NoterState)
-modifyEditors edit state =
-    let newEditors = edit state.editors
-     in (newEditors, state & #editors .~ newEditors)
 
 startNoterApp :: AppContext -> ProcessIO ()
 startNoterApp ctx = do
@@ -99,14 +93,34 @@ startNoterApp ctx = do
                     with textarea_ [wid_ ctx.wid "txt", class_ "w-full h-full"] (toHtmlRaw (toText state.content))
                 script_ (noterClient ctx.wid)
 
+    let modifyEditors edit state =
+            let newEditors = edit state.editors
+             in (newEditors, state & #editors .~ newEditors)
+
+    let adjustPosition :: Word -> Int -> Editor -> Editor
+        adjustPosition start diff editor =
+            let updatePos :: Word -> Word
+                    | -- The cursor is after the change, just apply the diff
+                      editor.position >= start =
+                        (+ fromIntegral diff)
+                    | -- The cursor is in the middle of a deletion
+                      editor.position >= start + fromIntegral diff =
+                        const (fromIntegral diff - (start - editor.position))
+                    | -- The cursor is way before the change, don't change it
+                      otherwise =
+                        id
+             in editor & #position %~ updatePos
+
     let handleEditorAction client = \case
             MoveCursor pos -> do
                 logDebug "cursor moved" ["client" .= client, "pos" .= pos]
-                let updatePosition editor
-                        | editor.client.endpoint == client.endpoint = editor & #position .~ pos
-                        | otherwise = editor
-                -- TODO: broadcast and render cursor to the other clients
-                atomically $ modifyTVar' tState (#editors %~ fmap updatePosition)
+                atomically do
+                    maxPos <- Rope.length . (.content) <$> readTVar tState
+                    let updatePosition editor
+                            | editor.client.endpoint == client.endpoint = editor & #position .~ (min maxPos pos)
+                            | otherwise = editor
+                    -- TODO: broadcast and render cursor to the other clients
+                    modifyTVar' tState (#editors %~ fmap updatePosition)
             Insert txt -> do
                 mBody <- atomically $ stateTVar tState \state ->
                     case Map.lookup client.endpoint state.editors of
@@ -119,9 +133,8 @@ startNoterApp ctx = do
                                 newContent = mconcat [before, insertRope, after]
                                 setContent = #content .~ newContent
                                 -- update editor position (cursor set after the insertion)
-                                newEditor = editor & #position .~ editor.position + Rope.length insertRope
-                                updateEditor = #editors %~ Map.insert client.endpoint newEditor
-                                newState = state & setContent . updateEditor . (#dirty .~ True)
+                                updateEditors = adjustPosition editor.position (fromIntegral $ Rope.length insertRope)
+                                newState = state & setContent . (#editors %~ fmap updateEditors) . (#dirty .~ True)
                                 dirtyChanged
                                     | state.dirty = Nothing
                                     | otherwise = Just newState
@@ -134,7 +147,7 @@ startNoterApp ctx = do
                         sendsBinaryButSelf client ctx.clients (encodeMessageL ctx.wid (encodeJSON body))
                         forM_ dirtyChanged (sendsHtml ctx.clients . fileNameForm)
                     Nothing -> logError "Insert failed" ["client" .= client, "txt" .= txt]
-            Delete count -> do
+            Delete dir deleteSize -> do
                 -- logDebug "Deleting" ["count" .= count]
                 mBody <- atomically $ stateTVar tState \state ->
                     case Map.lookup client.endpoint state.editors of
@@ -142,37 +155,30 @@ startNoterApp ctx = do
                         Just editor ->
                             let
                                 -- The absolute deletion size
-                                deleteSize = fromIntegral (abs count)
-                                deleteStart
-                                    | -- negative count is backward delete
-                                      count < 0 =
-                                        editor.position - deleteSize
-                                    | otherwise = editor.position
-                                -- update content
+                                deleteStart = case dir of
+                                    Backward
+                                        | deleteSize > editor.position -> 0
+                                        | otherwise -> editor.position - deleteSize
+                                    Forward -> editor.position
+                                -- The new content
                                 (before, rest) = Rope.splitAt deleteStart state.content
                                 (_deleted, after) = Rope.splitAt deleteSize rest
-                                newContent = mconcat [before, after]
-                                -- update editor position
-                                updateEditor
-                                    | count < 0 =
-                                        let newPosition
-                                                | deleteSize < editor.position = editor.position - deleteSize
-                                                | otherwise = 0
-                                         in Map.insert client.endpoint (editor & #position .~ newPosition)
-                                    | otherwise = id
-                                newState = state & (#content .~ newContent) . (#editors %~ updateEditor) . (#dirty .~ True)
+                                -- Update state
+                                updateContent = #content .~ mconcat [before, after]
+                                updateEditors = adjustPosition deleteStart (fromIntegral $ -1 * deleteSize)
+                                newState = state & updateContent . (#editors %~ fmap updateEditors) . (#dirty .~ True)
                                 dirtyChanged
                                     | state.dirty = Nothing
                                     | otherwise = Just newState
                                 -- broadcast event
-                                body = object ["delete" .= abs count, "pos" .= deleteStart]
+                                body = object ["delete" .= deleteSize, "pos" .= deleteStart]
                              in
                                 (Just (dirtyChanged, body), newState)
                 case mBody of
                     Just (dirtyChanged, body) -> do
                         sendsBinaryButSelf client ctx.clients (encodeMessageL ctx.wid (encodeJSON body))
                         forM_ dirtyChanged (sendsHtml ctx.clients . fileNameForm)
-                    Nothing -> logError "Delete failed" ["client" .= client, "count" .= count]
+                    Nothing -> logError "Delete failed" ["client" .= client]
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> do
@@ -242,23 +248,20 @@ function setupNoterClient(wid) {
     console.log("onSelectionChange", selection, elt.selectionStart, elt.selectionEnd)
     const prev = selection.start
     updateSelection()
-    if (prev != selection.start) {
-      butlerDataSocket.send(encodeDataMessage(wid, {move: elt.selectionStart}))
-    }
+    // TODO: check why server loose track of client. Until then, always send the current position...
+    // if (prev != selection.start) {
+    butlerDataSocket.send(encodeDataMessage(wid, {move: elt.selectionStart}))
+    // }
   }
 
   // handle text change
   elt.oninput = ev => {
-    if (ev.inputType == "deleteContentBackward") {
-      let size = -1
-      if (isSelecting()) {
-        size = selection.end - selection.start
-      }
-      butlerDataSocket.send(encodeDataMessage(wid, {delete: size}))
-    } else if (ev.inputType == "deleteContentForward") {
+    if (ev.inputType == "deleteContentBackward" || ev.inputType == "deleteContentForward" || ev.inputType == "deleteByCut") {
       let size = 1
       if (isSelecting()) {
         size = selection.end - selection.start
+      } else if (ev.inputType == "deleteContentBackward") {
+        size = -1
       }
       butlerDataSocket.send(encodeDataMessage(wid, {delete: size}))
     } else if (ev.inputType == "insertText" || ev.inputType == "insertFromPaste" || ev.inputType == "insertLineBreak") {
@@ -274,7 +277,6 @@ function setupNoterClient(wid) {
       console.error("Unknown input", ev)
     }
     updateSelection()
-    // butlerDataSocket.send(encodeDataMessage(wid, {insert: ev.data}))
   }
 
   // handle server event
