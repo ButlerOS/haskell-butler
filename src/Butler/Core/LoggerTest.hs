@@ -1,4 +1,4 @@
-module LoggerTest where
+module Butler.Core.LoggerTest where
 
 import Test.Hspec.Expectations
 import Test.Tasty

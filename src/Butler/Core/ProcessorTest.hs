@@ -1,4 +1,4 @@
-module ProcessorTest where
+module Butler.Core.ProcessorTest where
 
 import Test.Tasty
 import Test.Tasty.HUnit

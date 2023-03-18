@@ -158,7 +158,7 @@ displayAddrFromEnv = \case
             <*> P.decimal
 
 startDisplay :: Maybe DisplayAddr -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
-startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions \sessions -> do
+startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessions -> do
     DisplayAddr proto port <- case mAddr of
         Nothing -> displayAddrFromEnv <$> liftIO (getEnv "BUTLER_ADDR")
         Just addr -> pure addr
@@ -281,18 +281,18 @@ staticClientHandler clients shared displayEvent = case displayEvent of
             with div_ [id_ "display-wins", class_ "flex"] do
                 forM_ appInstances \appInstance -> do
                     with div_ [wid_ appInstance.wid "w"] mempty
-        forM_ appInstances \appInstance -> writePipe appInstance.pipeAE (AppDisplay displayEvent)
+        forM_ appInstances \appInstance -> writePipe appInstance.pipe (AppDisplay displayEvent)
         forever do
             dataMessage <- recvData client
             case eventFromMessage client dataMessage of
                 Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
                 Just (wid, ae) -> case Map.lookup wid appInstances of
-                    Just appInstance -> writePipe appInstance.pipeAE ae
+                    Just appInstance -> writePipe appInstance.pipe ae
                     Nothing -> logError "Unknown wid" ["wid" .= wid]
     UserDisconnected "htmx" client -> do
         logInfo "Client disconnected" ["client" .= client]
         atomically $ delClient clients client
         appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> do
-            writePipe appInstance.pipeAE (AppDisplay displayEvent)
+            writePipe appInstance.pipe (AppDisplay displayEvent)
     _ -> logError "Unknown event" ["ev" .= displayEvent]

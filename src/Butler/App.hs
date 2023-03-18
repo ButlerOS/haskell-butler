@@ -80,6 +80,8 @@ data App = App
     -- ^ Start action.
     }
 
+newtype Service = Service App
+
 defaultApp :: ProgramName -> (AppContext -> ProcessIO ()) -> App
 defaultApp name start =
     App
@@ -133,7 +135,7 @@ data AppInstance = AppInstance
     { app :: App
     , process :: Process
     , wid :: WinID
-    , pipeAE :: Pipe AppEvent
+    , pipe :: Pipe AppEvent
     }
     deriving (Generic)
 
@@ -161,12 +163,12 @@ launchApp (AppSet apps) (ProgramName name) shared clients wid = case Map.lookup 
 startApp :: Text -> App -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO AppInstance
 startApp prefix app shared clients wid = do
     -- Start app process
-    pipeAE <- atomically newPipe
-    let ctx = AppContext clients wid pipeAE shared
+    pipe <- atomically newPipe
+    let ctx = AppContext clients wid pipe shared
     process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
 
-    pure $ AppInstance{app, process, wid, pipeAE}
+    pure $ AppInstance{app, process, wid, pipe}
 
 startApps :: [App] -> Display -> DisplayClients -> ProcessIO AppSharedContext
 startApps apps display clients = do

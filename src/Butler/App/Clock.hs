@@ -41,15 +41,15 @@ clockHtml wid inner =
             ]
             (toHtml tz)
 
-clockContent :: MonadIO m => WinID -> TVar ClockState -> m (HtmlT STM ())
-clockContent wid s = do
-    state <- readTVarIO s
-    now <- dropMilliSec <$> liftIO getCurrentTime
+clockContent :: WinID -> TVar ClockState -> TVar UTCTime -> HtmlT STM ()
+clockContent wid s tNow = do
+    state <- lift (readTVar s)
+    now <- lift (readTVar tNow)
     let tz = case state of
             ClockUTC -> Data.Time.LocalTime.utc
             ClockGMT -> read "GMT"
             ClockEDT -> read "EDT"
-    pure $ clockValueHtml wid tz (Data.Time.LocalTime.utcToLocalTime tz now)
+    clockValueHtml wid tz (Data.Time.LocalTime.utcToLocalTime tz now)
 
 clockApp :: App
 clockApp =
@@ -62,23 +62,23 @@ clockApp =
 
 startClockApp :: AppContext -> ProcessIO ()
 startClockApp ctx = do
-    let clients = ctx.clients
-        wid = ctx.wid
     state <- newTVarIO ClockUTC
-    let
-        draw = clockHtml wid <$> clockContent wid state
+    tNow <- newTVarIO =<< loadTime
+    let mountUI :: HtmlT STM ()
+        mountUI = clockHtml ctx.wid (clockContent ctx.wid state tNow)
     forever do
         -- TODO: adjust wait time based until the next minute starting second
         res <- atomically =<< waitTransaction 60_000 (readPipe ctx.pipe)
         case res of
             WaitTimeout{} -> pure ()
-            WaitCompleted (AppDisplay de) -> case de of
-                UserConnected _ client -> atomically . sendHtml client =<< draw
-                _ -> pure ()
+            WaitCompleted ae@AppDisplay{} -> sendHtmlOnConnect mountUI ae
             WaitCompleted (AppTrigger ev) -> case ev.body ^? key "v" . _String of
                 Just "UTC" -> atomically $ writeTVar state ClockUTC
                 Just "GMT" -> atomically $ writeTVar state ClockGMT
                 Just "EDT" -> atomically $ writeTVar state ClockEDT
                 _ -> logError "Unknown event" ["ev" .= ev]
             WaitCompleted _ -> pure ()
-        clientsDraw clients (const $ clockContent wid state)
+        atomically . writeTVar tNow =<< loadTime
+        sendsHtml ctx.clients (clockContent ctx.wid state tNow)
+  where
+    loadTime = dropMilliSec <$> liftIO getCurrentTime

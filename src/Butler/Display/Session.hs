@@ -98,8 +98,8 @@ sessionsFromDB db = traverse mkSession =<< dbQuery db "select * from sessions" [
         session <- Session sessionID <$> newTVarIO (UserName username)
         pure (sessionID, session)
 
-withSessions :: (Sessions -> ProcessIO a) -> ProcessIO a
-withSessions cb = withDatabase "sessions" sessionsDB \db -> do
+withSessions :: StorageAddress -> (Sessions -> ProcessIO a) -> ProcessIO a
+withSessions addr cb = withDatabase addr sessionsDB \db -> do
     sessions <- newTVarIO =<< Map.fromList <$> sessionsFromDB db
     invitations <- snd <$> newProcessMemory "invitations.bin" (pure mempty)
     lock <- newMVar ()

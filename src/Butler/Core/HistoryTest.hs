@@ -1,4 +1,4 @@
-module HistoryTest where
+module Butler.Core.HistoryTest where
 
 import Test.Tasty
 import Test.Tasty.HUnit

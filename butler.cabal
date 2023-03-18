@@ -31,6 +31,7 @@ library
       Butler.App
       Butler.App.Chat
       Butler.App.Clock
+      Butler.App.ClockTest
       Butler.App.FileManager
       Butler.App.FileViewer
       Butler.App.Launcher
@@ -52,17 +53,22 @@ library
       Butler.Core
       Butler.Core.Buzzer
       Butler.Core.Clock
+      Butler.Core.ClockTest
       Butler.Core.Dynamic
       Butler.Core.Events
       Butler.Core.File
       Butler.Core.History
+      Butler.Core.HistoryTest
       Butler.Core.Logger
+      Butler.Core.LoggerTest
       Butler.Core.Memory
+      Butler.Core.MemoryTest
       Butler.Core.NatMap
       Butler.Core.Network
       Butler.Core.Pipe
       Butler.Core.Process
       Butler.Core.Processor
+      Butler.Core.ProcessorTest
       Butler.Core.Storage
       Butler.Database
       Butler.Desktop
@@ -76,11 +82,11 @@ library
       Butler.GUI.File
       Butler.Lobby
       Butler.Prelude
-      Butler.Service
       Butler.Service.Cursor
       Butler.Service.FileService
       Butler.Service.SoundBlaster
       Butler.Service.SshAgent
+      Butler.Test
       Butler.Window
       ButlerDemos
       XStatic.Butler
@@ -128,6 +134,7 @@ library
     , filepath
     , generic-lens
     , hashable
+    , hspec-expectations
     , http-api-data
     , http-types
     , jose
@@ -162,6 +169,8 @@ library
     , servant-websockets
     , sqlite-simple
     , stm
+    , tasty
+    , tasty-hunit
     , text
     , text-rope
     , time
@@ -237,6 +246,7 @@ executable butler
     , filepath
     , generic-lens
     , hashable
+    , hspec-expectations
     , http-api-data
     , http-types
     , jose
@@ -271,6 +281,8 @@ executable butler
     , servant-websockets
     , sqlite-simple
     , stm
+    , tasty
+    , tasty-hunit
     , text
     , text-rope
     , time
@@ -303,13 +315,10 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Driver.hs
   other-modules:
-      ClockTest
-      HistoryTest
-      LoggerTest
-      MemoryTest
-      ProcessorTest
+      Main
       Paths_butler
   hs-source-dirs:
+      app
       test
   default-extensions:
       OverloadedStrings

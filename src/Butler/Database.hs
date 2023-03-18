@@ -25,9 +25,12 @@ newtype Database = Database (MVar Connection)
 
 withDatabase :: StorageAddress -> DatabaseMigration -> (Database -> ProcessIO a) -> ProcessIO a
 withDatabase addr migrations cb = do
-    fp <- into @FilePath . decodeUtf8 <$> getPath addr
+    fp <-
+        if addr == ":memory:"
+            then pure ":memory:"
+            else flip mappend ".sqlite" . into @FilePath . decodeUtf8 <$> getPath addr
     withRunInIO \runInIO ->
-        withConnection (fp <> ".sqlite") \conn -> runInIO do
+        withConnection fp \conn -> runInIO do
             db <- Database <$> newMVar conn
             dbSetup db migrations
             cb db

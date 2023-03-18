@@ -235,7 +235,7 @@ desktopHandler appSet services desktop event = do
     forwardDisplayEvent :: DisplayEvent -> ProcessIO ()
     forwardDisplayEvent devent = do
         apps <- atomically (getApps desktop.shared.apps)
-        forM_ apps \app -> writePipe app.pipeAE (AppDisplay devent)
+        forM_ apps \app -> writePipe app.pipe (AppDisplay devent)
 
     handleNewUser :: ChannelName -> DisplayClient -> ProcessIO ()
     handleNewUser channel client = case channel of
@@ -259,7 +259,7 @@ desktopHandler appSet services desktop event = do
                         | otherwise ->
                             (Map.lookup wid <$> atomically (getApps desktop.shared.apps)) >>= \case
                                 Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
-                                Just appInstance -> writePipe appInstance.pipeAE ae
+                                Just appInstance -> writePipe appInstance.pipe ae
         _ -> logError "unknown channel" ["channel" .= channel]
 
 handleWinSwap :: AppSet -> Desktop -> WinID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
@@ -274,8 +274,8 @@ handleWinSwap appSet desktop wid appName mEvent = do
         clients <- atomically do
             swapApp desktop guiApp
             getClients desktop.clients
-        forM_ mEvent $ writePipe guiApp.pipeAE
-        forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
+        forM_ mEvent $ writePipe guiApp.pipe
+        forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserConnected "htmx" client)
         broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
         case guiApp.app.size of
             Just size -> do
@@ -339,8 +339,8 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             atomically $ addApp desktop guiApp
             renderNewWindow wid script
             clients <- atomically $ getClients desktop.clients
-            forM_ mEvent $ writePipe guiApp.pipeAE
-            forM_ clients \client -> writePipe guiApp.pipeAE (AppDisplay $ UserConnected "htmx" client)
+            forM_ mEvent $ writePipe guiApp.pipe
+            forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserConnected "htmx" client)
 
     renderNewWindow wid script = do
         sendsHtml desktop.clients do

@@ -78,6 +78,10 @@ dependencies:
   - SHA
   - witch
 
+  - tasty
+  - hspec-expectations
+  - tasty-hunit
+
   # Lens
   - generic-lens
   - lens
@@ -156,7 +160,7 @@ tests:
   spec:
     main: Driver.hs
     ghc-options: -threaded -rtsopts -with-rtsopts=-T
-    source-dirs: test
+    source-dirs: [app, test]
     dependencies:
       - butler
       - tasty

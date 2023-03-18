@@ -18,8 +18,11 @@ by simulating a traditional computer.
 - [x] Audio channel
 - [x] File upload
 - [ ] File download
-- [ ] Application testing
+- [x] Application testing
 - [ ] Mailbox and notification
+- [ ] Application debugging api (e.g. strace for events)
+- [ ] External identity providers
+- [ ] Authorization system
 
 To validate the abstractions, the project also feature some proof of concept demos:
 
@@ -60,7 +63,10 @@ A window-xp clone with support for multiple "seats":
 - [x] Window manager
 - [x] Per user pointer and audio channel
 - [x] Xterm and Vnc gateway
-
+- [ ] Programming REPL
+- [ ] Media player
+- [ ] Agenda and calendar
+- [ ] Games
 
 Start the service with:
 

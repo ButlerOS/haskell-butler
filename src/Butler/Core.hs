@@ -2,6 +2,7 @@ module Butler.Core (
     -- * Boot
     OS (..),
     spawnInitProcess,
+    spawnRawInitProcess,
     withButlerOS,
     ProcessEnv (..),
     ProcessIO,
@@ -211,9 +212,8 @@ writePipe :: HasCallStack => Pipe a -> a -> ProcessIO ()
 writePipe p v = unlessM (atomically (tryWritePipe p v)) do
     logError "Write pipe failed!" []
 
--- | Run the initial process with a given storage root directory.
-spawnInitProcess :: RawFilePath -> ProcessIO a -> IO ExitReason
-spawnInitProcess fp action = withProcessor \processor -> do
+spawnRawInitProcess :: (OS -> ProcessIO ()) -> RawFilePath -> ProcessIO a -> IO ExitReason
+spawnRawInitProcess systemAction fp action = withProcessor \processor -> do
     clock <- newClock
     logger <- atomically (newLogger 42)
     storage <- newStorage fp
@@ -221,15 +221,10 @@ spawnInitProcess fp action = withProcessor \processor -> do
     let os = OS processor storage clock logger newBuzzer
     os.buzzer 440
 
-    let systemDaemons = do
-            -- TODO: This should be configurable.
-            void $ superviseProcess "logger" (stdoutLogger os.logger)
-            void $ superviseProcess "storage" (syncThread os.storage (logSystem EventInfo . StorageSync))
-
     let createProcess mb = startProcess mb.clock mb.logger mb.processor
     p <- createProcess os Nothing "init" $ ProcessAction $ \process ->
         runProcessIO os process do
-            systemDaemons
+            systemAction os
             -- wait for daemon to initialize
             sleep 1
             logSystem EventInfo SystemReady
@@ -237,6 +232,14 @@ spawnInitProcess fp action = withProcessor \processor -> do
             logSystem EventInfo SystemCompleted
 
     atomically $ await p.thread
+
+-- | Run the initial process with a given storage root directory.
+spawnInitProcess :: RawFilePath -> ProcessIO a -> IO ExitReason
+spawnInitProcess = spawnRawInitProcess startDaemons
+  where
+    startDaemons os = do
+        void $ superviseProcess "logger" (stdoutLogger os.logger)
+        void $ superviseProcess "storage" (syncThread os.storage (logSystem EventInfo . StorageSync))
 
 withButlerOS :: ProcessIO a -> IO ExitReason
 withButlerOS = spawnInitProcess ".butler-storage"

@@ -1,4 +1,4 @@
-module ClockTest where
+module Butler.Core.ClockTest where
 
 import Test.Tasty
 import Test.Tasty.HUnit

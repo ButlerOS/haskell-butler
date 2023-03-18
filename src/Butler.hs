@@ -86,7 +86,6 @@ import Butler.Display.Client
 import Butler.Display.GUI
 import Butler.Frame
 import Butler.Prelude
-import Butler.Service
 import Butler.Window
 
 -- | Helper to setup line-buffering and cgroup rts for container

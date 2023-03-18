@@ -1,4 +1,4 @@
-module MemoryTest where
+module Butler.Core.MemoryTest where
 
 import Test.Tasty
 import Test.Tasty.HUnit

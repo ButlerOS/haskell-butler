@@ -18,6 +18,7 @@ import System.Posix.Files.ByteString (fileExist)
 import Prelude hiding (readFile, writeFile)
 
 import Butler.Core.Clock
+import Butler.Core.Logger (BSLog (..))
 import Butler.Prelude
 
 newtype StorageAddress = StorageAddress ByteString
@@ -26,6 +27,12 @@ newtype StorageAddress = StorageAddress ByteString
 
 instance From Text StorageAddress where
     from = StorageAddress . encodeUtf8
+
+instance From StorageAddress Text where
+    from (StorageAddress bs) = decodeUtf8 bs
+
+instance ToJSON StorageAddress where
+    toJSON (StorageAddress bs) = toJSON (BSLog bs)
 
 data Storage = Storage
     { rootDir :: RawFilePath
