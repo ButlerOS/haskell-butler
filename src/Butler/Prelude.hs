@@ -39,8 +39,10 @@ module Butler.Prelude (
     Data.Aeson.Types.Pair,
     Data.Aeson.decode',
     Data.Aeson.FromJSON (parseJSON),
+    Data.Aeson.FromJSONKey,
     Data.Aeson.fromJSON,
     Data.Aeson.ToJSON,
+    Data.Aeson.ToJSONKey,
     Data.Aeson.toJSON,
     Data.Aeson.withText,
     Data.Aeson.withObject,
@@ -187,6 +189,7 @@ import Data.Text qualified
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
 import Data.Text.IO qualified
+import Data.Text.Rope
 import Data.Time.Clock qualified
 import Data.UUID qualified
 import Data.Void
@@ -271,3 +274,6 @@ sktRecv skt = liftIO . Network.Socket.ByteString.recv skt
 
 sktSendAll :: MonadIO m => Network.Socket.Socket -> Data.ByteString.ByteString -> m ()
 sktSendAll skt = liftIO . Network.Socket.ByteString.sendAll skt
+
+instance ToJSON Rope where
+    toJSON = toJSON . Data.Text.Rope.toText

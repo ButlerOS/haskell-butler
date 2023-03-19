@@ -137,7 +137,7 @@ clientsDraw clients draw = do
         atomically $ writeTChan client.sendChannel (WS.Text body Nothing)
 
 newtype Endpoint = Endpoint Text
-    deriving newtype (Eq, Ord, Show, IsString)
+    deriving newtype (Eq, Ord, Show, IsString, ToJSONKey)
     deriving (FromJSON, ToJSON, ToHtml) via Text
 
 instance ToJSON DisplayClient where

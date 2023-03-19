@@ -7,7 +7,8 @@ import Butler.Frame
 import Butler.Service.FileService
 
 import Data.Map.Strict qualified as Map
-import Data.Text.Rope as Rope
+import Data.Text qualified as Text
+import Data.Text.Rope qualified as Rope
 
 noterApp :: App
 noterApp =
@@ -22,14 +23,62 @@ data Editor = Editor
     { client :: DisplayClient
     , position :: Word
     }
-    deriving (Generic)
+    deriving (Generic, ToJSON)
 
+-- Note EditorAction:
+-- Backward delete size shall only be 1. That is because bigger backward deletion requires
+-- a selection, which trigger in a @selectionchange@ event that move the cursor at the begining of the chunk to be deleted,
+-- resulting in a forward delete action.
 data EditorAction
     = MoveCursor Word
     | Insert Text
     | Delete Direction Word
 
+{- | Adjust editors position when a change happens.
+
+For the change author, we need to update its position because the client ignore it's own @selectionchange@ event.
+See the @updateSelection@ call done in the @oninput@ handler.
+
+For the other editors, the @setRangeText@ call will trigger the @selectionchange@ event which will update their position after the change is applied.
+However, if they are also performing change at the same time, we need to adjust their position.
+-}
+adjustEditor :: Word -> Editor -> EditorAction -> Editor -> Editor
+adjustEditor maxPos author action editor = case action of
+    MoveCursor newPos
+        | -- This is the editor that moved: set its position
+          author.client.endpoint == editor.client.endpoint ->
+            editor & #position .~ min maxPos newPos
+        | otherwise -> editor
+    Insert txt
+        | -- The editor is after the insert: move it forward
+          editor.position >= author.position ->
+            editor & #position .~ editor.position + fromIntegral (Text.length txt)
+        | -- The editor is before the insert: don't touch
+          otherwise ->
+            editor
+    Delete Forward count
+        | -- The editor is after the removed chunk: move it backward
+          editor.position >= author.position + count ->
+            editor & #position .~ editor.position - count
+        | -- The editor is in the removed chunk: move it at the position of the author
+          editor.position > author.position ->
+            editor & #position .~ author.position
+        | -- The editor is before the delete: don't touch
+          otherwise ->
+            editor
+    Delete Backward count
+        | -- The editor is after the removed chunk: move it backward
+          editor.position >= author.position ->
+            editor & #position .~ editor.position - count
+        | -- The editor is in the removed chunk: move it at the new position of the autohr
+          editor.position >= author.position - count ->
+            editor & #position .~ author.position - count
+        | -- The editor is way before the delete: don't touch
+          otherwise ->
+            editor
+
 data Direction = Forward | Backward
+    deriving (Generic, ToJSON)
 
 instance FromJSON EditorAction where
     parseJSON = withObject "EditorAction" \obj -> do
@@ -48,14 +97,15 @@ instance FromJSON EditorAction where
 data NoterStatus
     = NewFile
     | EditingFile Directory File
+    deriving (Generic, ToJSON)
 
 data NoterState = NoterState
     { status :: NoterStatus
     , dirty :: Bool
-    , content :: Rope
+    , content :: Rope.Rope
     , editors :: Map Endpoint Editor
     }
-    deriving (Generic)
+    deriving (Generic, ToJSON)
 
 startNoterApp :: AppContext -> ProcessIO ()
 startNoterApp ctx = do
@@ -90,37 +140,20 @@ startNoterApp ctx = do
                     fileNameForm state
                     editorList state.editors
                 with div_ [class_ "flex-grow", wid_ ctx.wid "txt-div"] do
-                    with textarea_ [wid_ ctx.wid "txt", class_ "w-full h-full"] (toHtmlRaw (toText state.content))
+                    with textarea_ [wid_ ctx.wid "txt", class_ "w-full h-full"] (toHtmlRaw (Rope.toText state.content))
                 script_ (noterClient ctx.wid)
 
-    let modifyEditors edit state =
-            let newEditors = edit state.editors
-             in (newEditors, state & #editors .~ newEditors)
-
-    let adjustPosition :: Word -> Int -> Editor -> Editor
-        adjustPosition start diff editor =
-            let updatePos :: Word -> Word
-                    | -- The cursor is after the change, just apply the diff
-                      editor.position >= start =
-                        (+ fromIntegral diff)
-                    | -- The cursor is in the middle of a deletion
-                      editor.position >= start + fromIntegral diff =
-                        const (fromIntegral diff - (start - editor.position))
-                    | -- The cursor is way before the change, don't change it
-                      otherwise =
-                        id
-             in editor & #position %~ updatePos
-
-    let handleEditorAction client = \case
+    let handleEditorAction client action = case action of
             MoveCursor pos -> do
                 logDebug "cursor moved" ["client" .= client, "pos" .= pos]
-                atomically do
-                    maxPos <- Rope.length . (.content) <$> readTVar tState
-                    let updatePosition editor
-                            | editor.client.endpoint == client.endpoint = editor & #position .~ (min maxPos pos)
-                            | otherwise = editor
-                    -- TODO: broadcast and render cursor to the other clients
-                    modifyTVar' tState (#editors %~ fmap updatePosition)
+                -- TODO: broadcast and render cursor to the other clients
+                atomically $ modifyTVar' tState \state ->
+                    case Map.lookup client.endpoint state.editors of
+                        Nothing -> state
+                        Just editor ->
+                            let maxPos = Rope.length state.content
+                                newEditor = adjustEditor maxPos editor action editor
+                             in (state & #editors %~ Map.insert client.endpoint newEditor)
             Insert txt -> do
                 mBody <- atomically $ stateTVar tState \state ->
                     case Map.lookup client.endpoint state.editors of
@@ -133,7 +166,7 @@ startNoterApp ctx = do
                                 newContent = mconcat [before, insertRope, after]
                                 setContent = #content .~ newContent
                                 -- update editor position (cursor set after the insertion)
-                                updateEditors = adjustPosition editor.position (fromIntegral $ Rope.length insertRope)
+                                updateEditors = adjustEditor (Rope.length newContent) editor action
                                 newState = state & setContent . (#editors %~ fmap updateEditors) . (#dirty .~ True)
                                 dirtyChanged
                                     | state.dirty = Nothing
@@ -164,8 +197,9 @@ startNoterApp ctx = do
                                 (before, rest) = Rope.splitAt deleteStart state.content
                                 (_deleted, after) = Rope.splitAt deleteSize rest
                                 -- Update state
-                                updateContent = #content .~ mconcat [before, after]
-                                updateEditors = adjustPosition deleteStart (fromIntegral $ -1 * deleteSize)
+                                newContent = mconcat [before, after]
+                                updateContent = #content .~ newContent
+                                updateEditors = adjustEditor (Rope.length newContent) editor action
                                 newState = state & updateContent . (#editors %~ fmap updateEditors) . (#dirty .~ True)
                                 dirtyChanged
                                     | state.dirty = Nothing
@@ -179,6 +213,11 @@ startNoterApp ctx = do
                         sendsBinaryButSelf client ctx.clients (encodeMessageL ctx.wid (encodeJSON body))
                         forM_ dirtyChanged (sendsHtml ctx.clients . fileNameForm)
                     Nothing -> logError "Delete failed" ["client" .= client]
+
+    let modifyEditors edit state =
+            let newEditors = edit state.editors
+             in (newEditors, state & #editors .~ newEditors)
+
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> do
@@ -191,7 +230,7 @@ startNoterApp ctx = do
             AppTrigger ev -> case ev.trigger of
                 "refresh" -> atomically do
                     content <- (.content) <$> readTVar tState
-                    sendBinary ev.client (encodeMessageL ctx.wid (encodeJSON $ object ["text" .= toText content]))
+                    sendBinary ev.client (encodeMessageL ctx.wid (encodeJSON $ object ["text" .= Rope.toText content]))
                 "save-file" -> do
                     state <- readTVarIO tState
                     case state.status of
@@ -248,10 +287,10 @@ function setupNoterClient(wid) {
     console.log("onSelectionChange", selection, elt.selectionStart, elt.selectionEnd)
     const prev = selection.start
     updateSelection()
-    // TODO: check why server loose track of client. Until then, always send the current position...
-    // if (prev != selection.start) {
-    butlerDataSocket.send(encodeDataMessage(wid, {move: elt.selectionStart}))
-    // }
+    // TODO: if adjustEditor is wrong, then we should always send the current position by removing the following check
+    if (prev != selection.start) {
+      butlerDataSocket.send(encodeDataMessage(wid, {move: elt.selectionStart}))
+    }
   }
 
   // handle text change
