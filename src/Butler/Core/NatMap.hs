@@ -6,7 +6,6 @@ module Butler.Core.NatMap (
     newNatMap,
     newKey,
     elems,
-    elemsIndex,
     Butler.Core.NatMap.lookup,
     delete,
     nmDelete,
@@ -39,11 +38,6 @@ newKey nm = incr nm.counter
 
 elems :: NatMap a -> STM [a]
 elems nm = fmap snd . IM.toAscList <$> readTVar nm.values
-
-elemsIndex :: NatMap a -> STM [(Natural, a)]
-elemsIndex nm = fmap toNatKey . IM.toAscList <$> readTVar nm.values
-  where
-    toNatKey (k, v) = (unsafeFrom k, v)
 
 nmDelete :: NatMap a -> (a -> Bool) -> STM ()
 nmDelete nm f = modifyTVar' nm.values $ IM.filter (not . f)

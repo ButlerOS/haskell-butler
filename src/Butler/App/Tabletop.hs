@@ -1,54 +1,43 @@
 module Butler.App.Tabletop where
 
-import Data.Aeson
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
 import Butler
-import Butler.Core.Logger
 import Butler.Core.NatMap qualified as NM
 import Butler.Frame
 
 -- The data model
-newtype OID = OID Natural
-    deriving newtype (ToJSON)
-
 newtype OName = OName Text
-    deriving newtype (ToJSON)
+    deriving newtype (IsString, Eq, ToJSON)
+
+instance From OName Text where
+    from (OName n) = n
 
 data TableObject = TableObject
-    { name :: OName
-    , coord :: TVar (Word32, Word32)
+    { elt :: OName
+    , coord :: TVar (Word, Word)
     }
 
-newtype TableState = TableState
-    { tableObjects :: NM.NatMap TableObject
+data TableState = TableState
+    { players :: TVar (Map Endpoint (Either OName TableObject))
+    , objects :: NM.NatMap TableObject
     }
+
+isObject :: OName -> Maybe Natural
+isObject (OName name) = case decodeTriggerName name of
+    Just (WinID n, _) -> Just (unsafeFrom n)
+    Nothing -> Nothing
 
 newTableState :: STM TableState
-newTableState = TableState <$> NM.newNatMap
+newTableState = TableState <$> newTVar mempty <*> NM.newNatMap
 
-newTableObject :: TableState -> OName -> STM OID
-newTableObject ts name = do
-    obj <- TableObject name <$> newTVar (42, 42)
-    OID <$> NM.add ts.tableObjects obj
-
-delTableObject :: TableState -> OID -> STM ()
-delTableObject ts (OID oid) = NM.delete ts.tableObjects oid
-
-setTableObject :: TableState -> OID -> (Word32, Word32) -> STM ()
-setTableObject ts (OID oid) coord =
-    NM.lookup ts.tableObjects oid >>= \case
-        Nothing -> error ("Unknown object! " <> show oid)
-        Just obj -> writeTVar obj.coord coord
-
-getTableObjects :: TableState -> STM [(OID, TableObject)]
-getTableObjects ts = fmap (first OID) <$> NM.elemsIndex ts.tableObjects
-
-tableObjectJS :: (OID, TableObject) -> STM Text
-tableObjectJS (OID oid, obj) = do
-    (x, y) <- readTVar obj.coord
-    pure $ "{oid: " <> showT oid <> ", x: " <> showT x <> ", y: " <> showT y <> "}"
+newTableObject :: TableState -> OName -> STM TableObject
+newTableObject ts (OName name) = do
+    let mkObj :: Natural -> STM TableObject
+        mkObj n = TableObject (OName $ name <> "-" <> showT n) <$> newTVar (42, 42)
+    NM.addWithKey ts.objects mkObj
 
 -- Html rendering
 type SVG = SvgT STM ()
@@ -83,8 +72,8 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: TableState -> WinID -> HtmlT STM ()
-renderTable ts wid = with div_ [id_ (withWID wid "w")] do
+renderTable :: WinID -> HtmlT STM ()
+renderTable wid = with div_ [id_ (withWID wid "w")] do
     void $ with div_ [class_ "flex flex-row"] do
         with div_ [class_ "flex flex-col my-6"] do
             with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
@@ -98,35 +87,21 @@ renderTable ts wid = with div_ [id_ (withWID wid "w")] do
                 with div_ [class_ "flex flex-row"] do
                     replicateM 19 do
                         with div_ [class_ "w-8 h-8 border"] mempty
-    tableObjects <- lift (getTableObjects ts)
-    forM_ tableObjects $ \(oid, obj) -> do
-        with div_ [id_ (objID oid), class_ "cursor-pointer"] $ svg $ case obj.name of
-            (OName "black-stone") -> blackStone
-            (OName "white-stone") -> whiteStone
-            (OName name) -> error $ "Unknown object " <> show name
-
-    startingObjects <- lift (traverse tableObjectJS tableObjects)
-    script_ (tabletopClient wid startingObjects)
-  where
-    -- This need to be kept in sync with the below js implementation 'mkElementID'
-    objID (OID oid) = withWID wid ("oid-" <> showT oid)
+    script_ (tabletopClient wid)
 
 -- Client events
 data TableEvent
-    = TableEventCreate OName -- {new: "name"}
-    | TableEventMove OID Word32 Word32 -- {oid: 42, x: X, y: Y}
-    | TableEventDelete OID -- {oid: 42}
+    = TableEventClick Text
+    | TableEventMove Word Word
+    | TableEventDelete Text
     deriving (Generic, ToJSON)
 
 instance FromJSON TableEvent where
     parseJSON = withObject "TableEvent" $ \obj -> do
-        mOID <- fmap OID <$> (obj .:? "oid")
-        mX <- obj .:? "x"
-        case (mOID, mX) of
-            (Nothing, Nothing) -> TableEventCreate . OName <$> obj .: "new"
-            (Just oid, Nothing) -> pure (TableEventDelete oid)
-            (Just oid, Just x) -> TableEventMove oid x <$> obj .: "y"
-            _ -> fail "oid or x attribute missing"
+        let clickParser = TableEventClick . dropWID <$> obj .: "click"
+            deleteParser = TableEventDelete . dropWID <$> obj .: "del"
+            moveParser = TableEventMove <$> obj .: "x" <*> obj .: "y"
+        clickParser <|> deleteParser <|> moveParser
 
 tabletopApp :: App
 tabletopApp =
@@ -138,200 +113,208 @@ tabletopApp =
 
 startTabletopApp :: AppContext -> ProcessIO ()
 startTabletopApp ctx = do
-    let clients = ctx.clients
-        wid = ctx.wid
     tableState <- atomically newTableState
 
-    let clientHandler :: DataEvent -> ProcessIO ()
-        clientHandler de = case eitherDecode' (from de.buffer) of
-            Right ev ->
-                case ev of
-                    TableEventCreate name -> do
-                        newOID <- atomically (newTableObject tableState name)
-                        logInfo "obj created" ["oid" .= newOID]
-                        let msg = ["pending" .= newOID, "name" .= name]
-                        sendsBinary clients (encodeMessageL (from wid) (encodeJSON $ object msg))
-                    TableEventMove oid x y -> do
-                        -- logInfo "obj moved" ["ev" .= ev]
-                        atomically $ setTableObject tableState oid (x, y)
-                        sendsBinaryButSelf de.client clients (from de.rawBuffer)
-                    TableEventDelete oid -> do
-                        -- logInfo "obj removed" ["ev" .= ev]
-                        atomically $ delTableObject tableState oid
-                        sendsBinary clients (from de.rawBuffer)
-            Left err -> logError "invalid json" ["ev" .= BSLog de.buffer, "err" .= err]
+    let newObject :: OName -> OName -> LByteString
+        newObject src elt =
+            let msg = object ["new" .= elt, "src" .= src]
+             in encodeMessageL ctx.wid (encodeJSON msg)
+
+        moveObject :: OName -> (Word, Word) -> LByteString
+        moveObject elt (x, y) =
+            let msg = object ["elt" .= elt, "x" .= x, "y" .= y]
+             in encodeMessageL ctx.wid (encodeJSON msg)
+
+        delObject :: OName -> LByteString
+        delObject elt =
+            let msg = object ["del" .= elt]
+             in encodeMessageL ctx.wid (encodeJSON msg)
+
+    let clientHandler :: DisplayClient -> TableEvent -> ProcessIO ()
+        clientHandler client = \case
+            TableEventClick (OName -> name) -> do
+                mValue <- case isObject name of
+                    Just k -> fmap Right <$> atomically (NM.lookup tableState.objects k)
+                    Nothing -> pure $ Just $ Left name
+                case mValue of
+                    Nothing -> logError "Unknown name" ["name" .= name]
+                    Just value -> atomically do
+                        modifyTVar' tableState.players $ Map.insert client.endpoint value
+            TableEventMove x y ->
+                atomically (Map.lookup client.endpoint <$> readTVar tableState.players) >>= \case
+                    Just eObj -> do
+                        mTableObject <- case eObj of
+                            Right obj -> pure (Just obj)
+                            Left name
+                                | name `elem` ["black-stone", "white-stone"] -> do
+                                    obj <- atomically $ newTableObject tableState name
+                                    atomically $ modifyTVar' tableState.players $ Map.insert client.endpoint (Right obj)
+                                    sendsBinary ctx.clients $ newObject name obj.elt
+                                    pure (Just obj)
+                                | otherwise -> pure Nothing
+                        case mTableObject of
+                            Just obj -> do
+                                atomically (writeTVar obj.coord (x, y))
+                                sendsBinary ctx.clients $ moveObject obj.elt (x, y)
+                            Nothing -> logError "Unknown object" []
+                    Nothing -> logError "Player doesn't own an object" []
+            TableEventDelete (OName -> name) -> case isObject name of
+                Just k -> do
+                    isDeleted <- atomically do
+                        NM.lookup tableState.objects k >>= \case
+                            Just _obj -> do
+                                NM.delete tableState.objects k
+                                pure True
+                            Nothing -> pure False
+                    if isDeleted
+                        then do
+                            logDebug "Deleted" ["name" .= name]
+                            sendsBinary ctx.clients $ delObject name
+                        else logError "Unknown obj" ["name" .= name]
+                Nothing -> logError "Invalid obj" ["name" .= name]
 
     forever do
-        ev <- atomically (readPipe ctx.pipe)
-        case ev of
-            AppData de -> clientHandler de
-            AppTrigger ge -> logError "Unknown gui event" ["ev" .= ge]
-            AppDisplay _ -> sendHtmlOnConnect (renderTable tableState wid) ev
-            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
+        atomically (readPipe ctx.pipe) >>= \case
+            AppDisplay (UserConnected "htmx" client) -> do
+                atomically $ sendHtml client $ renderTable ctx.wid
+                objs <- atomically (NM.elems tableState.objects)
+                forM_ objs \obj -> do
+                    atomically $ sendBinary client $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt
+                    atomically . sendBinary client . moveObject obj.elt =<< readTVarIO obj.coord
+            AppDisplay (UserDisconnected "htmx" client) -> do
+                atomically $ modifyTVar' tableState.players (Map.delete client.endpoint)
+            AppData ev -> case decodeJSON @TableEvent (from ev.buffer) of
+                Just tableEvent -> clientHandler ev.client tableEvent
+                Nothing -> logError "Unknown event" ["ev" .= ev]
+            _ -> pure ()
 
-tabletopClient :: WinID -> [Text] -> Text
-tabletopClient wid startingObjects =
+tabletopClient :: WinID -> Text
+tabletopClient wid =
     [raw|
-function startTabletop(wid, initialObjects, startingObjects) {
+function startTabletop(wid, initialObjects) {
   // internal state
-  const glButlerTT = { };
+  const glTT = { current: null };
 
-  const setFocus = (elt) => {
-    if (glButlerTT.current && glButlerTT.current.id != elt.id) {
-      glButlerTT.current.style.zIndex = 999;
-    }
-    glButlerTT.current = elt;
-    elt.style.zIndex = 1000;
-  }
-
-  const mkElementID = (oid) => withWID(wid, "oid-" + oid);
-
+  // setup trash box handler
   const trashElt = document.getElementById(withWID(wid, "trash-box"));
   const trashActivatedClass = "bg-pink-200";
-  const isOverTrash = (pageX, pageY) => {
+  const updateTrash = (pageX, pageY) => {
     const trashRect = trashElt.getBoundingClientRect();
     const in_width  = pageX + 5 > trashRect.left && pageX - 5 < trashRect.right;
     const in_height = pageY + 5 > trashRect.top && pageY - 5 < trashRect.bottom;
-    return (in_width && in_height);
+    if (in_width && in_height) {
+      glTT.trashed = true
+      trashElt.classList.add(trashActivatedClass)
+    } else {
+      glTT.trashed = false
+      trashElt.classList.remove(trashActivatedClass)
+    }
   };
 
+  // setup window mouse handler
   const winElt = document.getElementById(withWID(wid, "w"));
-
-  const setPosition = (elt, x, y) => {
-    elt.style.left = x + "px";
-    elt.style.top = y + "px";
-  }
-
-  const newTableObject = (oid, name) => {
-    const elt = document.getElementById(withWID(wid, name));
-
-    // re-create the source object
-    const srcElt = elt.cloneNode(true);
-    srcElt.style.zIndex = 900;
-    elt.parentNode.appendChild(srcElt);
-
-    // setup the new object
-    elt.butlerOID = oid;
-    elt.id = mkElementID(oid);
-    elt.style.position = 'absolute';
-    winElt.appendChild(elt);
-
-    // Attach handlers for the source object
-    setupObject(srcElt);
-  }
-
-  // Handlers for event received by the server
-  butlerDataHandlers[wid] = buf => {
-    const body = decodeJSON(buf)
-    console.log("Got server event", body);
-    if (body.pending) {
-      newTableObject(body.pending, body.name);
-    } else if (body.oid) {
-      const elt = document.getElementById(mkElementID(body.oid));
-      if (elt === null) {
-        console.error("Invalid OID", body);
-        return;
-      }
-      if (body.x) {
-        setFocus(elt);
-        setPosition(elt, body.x, body.y);
-      } else {
-        elt.remove();
-      }
-    } else {
-      console.error("Invalid table event", buf);
+  winElt.onmousemove = debounceData(100, event => {
+    if (glTT.current === null) {
+      return null
     }
-  }
+    // Calculate the object position relative to the app window
+    const winRect = winElt.getBoundingClientRect();
+    const x = event.pageX - glTT.shiftX - winRect.left;
+    const y = event.pageY - glTT.shiftY - winRect.top;
 
-  const debounce = debounceData(100, ev =>
-      encodeDataMessage(wid, ev)
-  );
+    // Make sure the event is inside the window
+    const in_width = x > 0 && (x + glTT.boundingRect.width) < window.innerWidth;
+    const in_height = y > 0 && (y + glTT.boundingRect.height) < window.innerHeight;
+
+    if (in_width && in_height) {
+      const moveEv = {x, y}
+      updateTrash(event.pageX, event.pageY)
+      return encodeDataMessage(wid, moveEv)
+    }
+  })
+  winElt.onmouseup = event => {
+    if (glTT.current === null) {
+      return null
+    }
+    if (glTT.trashed) {
+      const delEv = {del: glTT.current.id}
+      console.log(delEv)
+      butlerDataSocketSend(encodeDataMessage(wid, delEv))
+    }
+    updateTrash(0, 0)
+    glTT.current = null
+  }
 
   // setupObject enables moving an element
   const setupObject = (elt) => {
-    const clientMove = (x, y) => {
-      setPosition(elt, x, y);
-      debounce({oid: elt.butlerOID, x, y});
-    }
-    const clientDelete = () => {
-      console.log("deleted", elt);
-      butlerDataSocket.send(encodeDataMessage(wid, {oid: elt.butlerOID}))
-    }
-
-    const handler_mousedown = (event) => {
-      // Ignore non-right click event
+    elt.onmousedown = (event) => {
+      // Ignore non-left click event
       if (event.buttons != 1) {
         return false;
       }
-
-      if (initialObjects.includes(elt.dataset.name)) {
-        butlerDataSocket.send(encodeDataMessage(wid, {new: elt.dataset.name}));
-      }
-      setFocus(elt);
-
-      // Get position and dimention of the clicked element
-      const boundingRect = elt.getBoundingClientRect()
-      console.log({event, elt, boundingRect});
-
-      const shiftX = event.clientX - boundingRect.left;
-      const shiftY = event.clientY - boundingRect.top;
-
-      const moveAt = (pageX, pageY) => {
-        const winRect = winElt.getBoundingClientRect();
-        const x = pageX - shiftX - winRect.left;
-        const y = pageY - shiftY - winRect.top;
-
-        const in_width = x > 0 && (x + boundingRect.width) < window.innerWidth;
-        const in_height = y > 0 && (y + boundingRect.height) < window.innerHeight;
-        if (in_width && in_height) {
-          clientMove(x, y);
-        }
-
-        if (isOverTrash(pageX, pageY)) {
-          trashElt.classList.add(trashActivatedClass);
-        } else {
-          trashElt.classList.remove(trashActivatedClass);
-        }
-      }
-
-      // Move the element where it should be, in case it just got created
-      moveAt(event.pageX, event.pageY);
-
-      const handler_mousemove = (event) => {
-        moveAt(event.pageX, event.pageY);
-      }
-
-      const handler_mouseup = (event) => {
-        console.log({event, elt});
-        if (trashElt.classList.contains(trashActivatedClass)) {
-          clientDelete();
-          trashElt.classList.remove(trashActivatedClass)
-        }
-        window.removeEventListener('mousemove', handler_mousemove);
-        window.removeEventListener('mouseup', handler_mouseup);
-      }
-
-      window.addEventListener('mousemove', handler_mousemove);
-      window.addEventListener('mouseup', handler_mouseup);
+      // Record object information for mousemouve handler
+      glTT.boundingRect = elt.getBoundingClientRect()
+      glTT.shiftX = event.clientX - glTT.boundingRect.left
+      glTT.shiftY = event.clientY - glTT.boundingRect.top
+      glTT.current = elt
+      const clickEv = {click: glTT.current.id}
+      // Tell the server
+      butlerDataSocketSend(encodeDataMessage(wid, clickEv))
     };
-
-    elt.addEventListener("mousedown", handler_mousedown)
-
     elt.ondragstart = function() {
       return false;
     };
   };
 
-  const setupObjectID = (id) => setupObject(document.getElementById(withWID(wid, id)));
+  // Handlers for event received by the server
+  const setFocus = (elt) => {
+    if (glTT.focus && glTT.focus.id != elt.id) {
+      glTT.focus.style.zIndex = 999;
+    }
+    glTT.focus = elt;
+    elt.style.zIndex = 1000;
+  }
+  const setPosition = (elt, x, y) => {
+    elt.style.left = x + "px";
+    elt.style.top = y + "px";
+  }
+  butlerDataHandlers[wid] = buf => {
+    const body = decodeJSON(buf)
+    console.log("Got server event", body)
+    if (body.new) {
+      const srcElt = document.getElementById(withWID(wid, body.src));
 
-  initialObjects.forEach(setupObjectID);
-  startingObjects.forEach(obj => {
-    const elt = document.getElementById(mkElementID(obj.oid))
-    setupObject(elt);
-    elt.butlerOID = obj.oid;
-    elt.style.position = 'absolute';
-    setPosition(elt, obj.x, obj.y);
-  });
+      // re-create the source object
+      const elt = srcElt.cloneNode(true)
+      elt.style.zIndex = 900
+
+      // setup the new object
+      elt.id = withWID(wid, body.new)
+      elt.style.position = 'absolute'
+      setPosition(elt, 42, 100)
+      winElt.appendChild(elt)
+      glTT.current = elt
+
+      // Attach handlers for the source object
+      setupObject(elt);
+    } else if (body.elt) {
+      const elt = document.getElementById(withWID(wid, body.elt))
+      if (elt === null) {
+        console.error("Invalid OID", body);
+        return;
+      }
+      setFocus(elt);
+      setPosition(elt, body.x, body.y);
+    } else if (body.del) {
+      document.getElementById(withWID(wid, body.del)).remove()
+    } else {
+      console.error("Invalid table event", buf);
+    }
+  }
+
+  initialObjects.forEach(id =>
+    setupObject(document.getElementById(withWID(wid, id)))
+  )
 }
   |]
         <> "\nstartTabletop("
@@ -341,5 +324,4 @@ function startTabletop(wid, initialObjects, startingObjects) {
     initTableArgs =
         [ showT wid
         , showT @[Text] ["white-stone", "black-stone"]
-        , "[" <> Text.intercalate ", " startingObjects <> "]"
         ]

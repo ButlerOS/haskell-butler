@@ -13,6 +13,7 @@ module Butler.Display.GUI (
     withTrigger_,
     withoutWID,
     withWID,
+    dropWID,
 
     -- * helpers
     with',
@@ -115,8 +116,11 @@ with' x n = with x [class_ n]
 withWID :: WinID -> Text -> Text
 withWID winID n = n <> "-" <> showT winID
 
+dropWID :: Text -> Text
+dropWID = Text.dropWhileEnd (== '-') . Text.dropWhileEnd isDigit
+
 withoutWID :: TriggerName -> TriggerName
-withoutWID (TriggerName n) = TriggerName $ Text.dropWhileEnd (== '-') . Text.dropWhileEnd isDigit $ n
+withoutWID (TriggerName n) = TriggerName $ dropWID n
 
 wid_ :: WinID -> Text -> _
 wid_ wid n = id_ (withWID wid n)
