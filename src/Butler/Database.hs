@@ -8,6 +8,7 @@ module Butler.Database (
     dbQuery,
 
     -- * re-export
+    FromField,
     NamedParam ((:=)),
     Only (..),
 )
@@ -16,6 +17,7 @@ where
 import Database.Migrant hiding (withTransaction)
 import Database.Migrant.Driver.Sqlite ()
 import Database.SQLite.Simple
+import Database.SQLite.Simple.FromField (FromField)
 
 import Butler.Core
 import Butler.Core.Storage

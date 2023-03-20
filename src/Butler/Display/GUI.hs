@@ -4,8 +4,11 @@ module Butler.Display.GUI (
     GuiEvent (..),
     TriggerName (..),
     HtmxEvent (..),
-    decodeTriggerName,
     renderOnChange,
+
+    -- * ID encoding
+    decodeNaturalSuffix,
+    encodeNaturalSuffix,
 
     -- * triggers
     wid_,
@@ -73,17 +76,20 @@ instance FromJSON HtmxEvent where
 
 {- | Remove winID from trigger name
 
->>> decodeTriggerName "toggle"
+>>> decodeNaturalSuffix "toggle"
 Nothing
->>> decodeTriggerName "toggle-1"
+>>> decodeNaturalSuffix "toggle-1"
 Just (1,"toggle")
 -}
-decodeTriggerName :: Text -> Maybe (WinID, TriggerName)
-decodeTriggerName txt = case Text.decimal txtSuffix of
-    Right (wid, "") -> Just (WinID wid, TriggerName (Text.dropEnd 1 txtPrefix))
+decodeNaturalSuffix :: Text -> Maybe (Natural, Text)
+decodeNaturalSuffix txt = case Text.decimal txtSuffix of
+    Right (num, "") -> Just (num, Text.dropEnd 1 txtPrefix)
     _ -> Nothing
   where
     (txtPrefix, txtSuffix) = Text.breakOnEnd "-" txt
+
+encodeNaturalSuffix :: Natural -> Text -> Text
+encodeNaturalSuffix k txt = txt <> "-" <> showT k
 
 data GuiEvent = GuiEvent
     { client :: DisplayClient

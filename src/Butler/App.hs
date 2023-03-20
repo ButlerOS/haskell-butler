@@ -54,8 +54,8 @@ eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
 eventFromMessage client = \case
     WS.Text lbs _ -> do
         htmxEvent <- decodeJSON @HtmxEvent lbs
-        (wid, trigger) <- decodeTriggerName htmxEvent.trigger
-        pure (wid, AppTrigger (GuiEvent client trigger htmxEvent.body))
+        (wid, TriggerName -> trigger) <- decodeNaturalSuffix htmxEvent.trigger
+        pure (WinID (unsafeFrom wid), AppTrigger (GuiEvent client trigger htmxEvent.body))
     WS.Binary lbs -> do
         let rawBuf = from lbs
         (wid, buf) <- decodeMessage rawBuf

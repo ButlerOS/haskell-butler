@@ -1,4 +1,4 @@
-module Butler.App.Tabletop where
+module Butler.App.Tabletop (tabletopApp) where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
@@ -6,11 +6,20 @@ import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_,
 
 import Butler
 import Butler.Core.NatMap qualified as NM
+import Butler.Database
 import Butler.Frame
+
+tabletopApp :: App
+tabletopApp =
+    (defaultApp "tabletop" startTabletopApp)
+        { tags = fromList ["Game"]
+        , description = "Free form tabletop"
+        , size = Just (1021, 656)
+        }
 
 -- The data model
 newtype OName = OName Text
-    deriving newtype (IsString, Eq, ToJSON)
+    deriving newtype (IsString, Eq, ToJSON, FromField)
 
 instance From OName Text where
     from (OName n) = n
@@ -20,18 +29,111 @@ data TableObject = TableObject
     , coord :: TVar (Word, Word)
     }
 
+-- | The 'TableState' is the current game on display.
 data TableState = TableState
-    { players :: TVar (Map Endpoint (Either OName TableObject))
+    { current :: Game
+    , players :: TVar (Map Endpoint (Either OName TableObject))
     , objects :: NM.NatMap TableObject
     }
 
-isObject :: OName -> Maybe Natural
-isObject (OName name) = case decodeTriggerName name of
-    Just (WinID n, _) -> Just (unsafeFrom n)
-    Nothing -> Nothing
+newTableState :: Game -> STM TableState
+newTableState game = TableState game <$> newTVar mempty <*> NM.newNatMap
 
-newTableState :: STM TableState
-newTableState = TableState <$> newTVar mempty <*> NM.newNatMap
+data GameStatus = Selecting Text | Playing TableState
+
+selectionName :: GameStatus -> Maybe Text
+selectionName = \case
+    Selecting n | n /= mempty -> pure n
+    _ -> Nothing
+
+data GameKind
+    = Baduk Natural
+    | Chess
+    | Checker
+
+data GameObject = GameObject
+    { name :: Text
+    , draw :: HtmlT STM ()
+    }
+
+gameObjects :: GameKind -> [[GameObject]]
+gameObjects = \case
+    Baduk{} ->
+        [ [GameObject "black-stone" (svg blackStone)]
+        , [GameObject "white-stone" (svg whiteStone)]
+        ]
+    _ -> []
+
+instance From GameKind Text where
+    from = \case
+        Baduk n -> encodeNaturalSuffix n "baduk"
+        Chess -> "chess"
+        Checker -> "checker"
+
+instance TryFrom Text GameKind where
+    tryFrom = maybeTryFrom decodeGameKindText
+
+decodeGameKindText :: Text -> Maybe GameKind
+decodeGameKindText name = case (name, decodeNaturalSuffix name) of
+    ("chess", _) -> Just Chess
+    ("checker", _) -> Just Checker
+    (_, Just (count, "baduk")) -> Just (Baduk count)
+    _ -> Nothing
+
+data Game = Game
+    { kind :: GameKind
+    , gameID :: Int
+    , name :: TVar Text
+    }
+
+data GameState = GameState
+    { status :: GameStatus
+    , games :: [Game]
+    }
+    deriving (Generic)
+
+tabletopDatabase :: DatabaseMigration
+tabletopDatabase = DatabaseMigration ["games-create", "objects-create"] doUp doDown
+  where
+    doUp name db = case name of
+        "games-create" -> dbExecute db "CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, game TEXT)" []
+        "objects-create" -> dbExecute db "CREATE TABLE objects (gameid INTEGER, name TEXT, x INTEGER, y INTEGER)" []
+        _ -> pure ()
+    doDown _ _ = pure ()
+
+gamesFromDB :: Database -> ProcessIO [Either Text Game]
+gamesFromDB db = traverse mkGame =<< dbQuery db "select * from games" []
+  where
+    mkGame (gameID, name, gameName) = do
+        case tryFrom @Text gameName of
+            Right kind -> Right . Game kind gameID <$> newTVarIO name
+            Left (TryFromException e _) -> pure $ Left e
+
+_tableStateFromDB :: Database -> Game -> ProcessIO TableState
+_tableStateFromDB db game = do
+    ts <- atomically (newTableState game)
+    loadObjects ts
+    pure ts
+  where
+    loadObjects ts = do
+        objs <- traverse toObject =<< dbQuery db "select (name, x, y) from objects WHERE gameid = :id" [":id" := game.gameID]
+        forM_ objs \obj -> case isObject obj.elt of
+            Nothing -> logError "Invalid obj from db" ["name" .= obj.elt]
+            Just k -> atomically (NM.insert ts.objects k obj)
+
+    toObject (name, x, y) = TableObject (OName name) <$> newTVarIO (x, y)
+
+newGameState :: Database -> ProcessIO GameState
+newGameState db = do
+    (errors, games) <- partitionEithers <$> gamesFromDB db
+    when (errors /= []) do
+        logError "Tabletop save loading error" ["errors" .= errors]
+    pure $ GameState (Selecting "") games
+
+isObject :: OName -> Maybe Natural
+isObject (OName name) = case decodeNaturalSuffix name of
+    Just (n, _) -> Just n
+    Nothing -> Nothing
 
 newTableObject :: TableState -> OName -> STM TableObject
 newTableObject ts (OName name) = do
@@ -72,22 +174,59 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: WinID -> HtmlT STM ()
-renderTable wid = with div_ [id_ (withWID wid "w")] do
-    void $ with div_ [class_ "flex flex-row"] do
+renderTable :: GameKind -> WinID -> HtmlT STM ()
+renderTable kind wid = do
+    void $ with div_ [class_ "flex flex-row flex-grow"] do
         with div_ [class_ "flex flex-col my-6"] do
-            with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
-                with div_ [id_ (withWID wid "black-stone"), data_ "name" "black-stone", class_ "cursor-pointer"] (svg blackStone)
-            with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
-                with div_ [id_ (withWID wid "white-stone"), data_ "name" "white-stone", class_ "cursor-pointer"] (svg whiteStone)
+            with div_ [class_ "flex flex-row gap-2"] do
+                forM_ (gameObjects kind) \xs -> do
+                    with div_ [class_ "flex flex-col"] do
+                        forM_ xs \gameObject -> do
+                            with div_ [class_ "border bg-gray-200 rounded p-1 m-2"] do
+                                with div_ [wid_ wid gameObject.name, class_ "cursor-pointer"] gameObject.draw
             with div_ [class_ "grow"] mempty
-            with div_ [id_ (withWID wid "trash-box"), class_ "m-2"] (svg trashBin)
+            with div_ [wid_ wid "trash-box", class_ "m-2"] (svg trashBin)
         with div_ [class_ "m-6"] do
-            replicateM 19 do
-                with div_ [class_ "flex flex-row"] do
-                    replicateM 19 do
-                        with div_ [class_ "w-8 h-8 border"] mempty
+            case kind of
+                Baduk (unsafeFrom -> size) -> void do
+                    replicateM size do
+                        with div_ [class_ "flex flex-row"] do
+                            replicateM size do
+                                with div_ [class_ "w-8 h-8 border"] mempty
+                _ -> "NotImplemented"
     script_ (tabletopClient wid)
+
+renderLoader :: Text -> [Game] -> WinID -> HtmlT STM ()
+renderLoader name games wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
+    "Game List"
+    withTrigger_ "" wid "select-game" (input_ []) [type_ "text", placeholder_ "New game name...", name_ "name", value_ name]
+    forM_ games \game -> do
+        gameName <- lift (readTVar game.name)
+        div_ [class_ "flex border"] do
+            withTrigger "click" wid "load-game" ["name" .= game.gameID] button_ [class_ "mx-2 flex-grow"] (toHtml gameName)
+            withTrigger "click" wid "del-game" ["id" .= game.gameID] i_ [class_ "ri-delete-bin-2-fill text-red-500 mx-2 cursor-pointer", title_ "Delete the game"] mempty
+
+renderSelector :: WinID -> HtmlT STM ()
+renderSelector wid = with div_ [class_ "flex-grow"] do
+    "Select a game"
+    ul_ do
+        let gameButton name kind = li_ do
+                withTrigger "click" wid "new-game" ["kind" .= into @Text kind] button_ [class_ "mx-4 my-2 border"] name
+        gameButton "Baduk 19" (Baduk 19)
+        gameButton "Baduk 13" (Baduk 13)
+        gameButton "Baduk 9" (Baduk 9)
+        gameButton "Chess" Chess
+        gameButton "Checker" Checker
+
+mountUI :: GameState -> WinID -> HtmlT STM ()
+mountUI gameState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] do
+    case gameState.status of
+        Selecting{} -> renderSelector wid
+        Playing game -> renderTable game.current.kind wid
+    let gameName = case gameState.status of
+            Selecting n -> n
+            _ -> ""
+    renderLoader gameName gameState.games wid
 
 -- Client events
 data TableEvent
@@ -103,18 +242,11 @@ instance FromJSON TableEvent where
             moveParser = TableEventMove <$> obj .: "x" <*> obj .: "y"
         clickParser <|> deleteParser <|> moveParser
 
-tabletopApp :: App
-tabletopApp =
-    (defaultApp "tabletop" startTabletopApp)
-        { tags = fromList ["Game"]
-        , description = "Free form tabletop"
-        , size = Just (725, 696)
-        }
-
 startTabletopApp :: AppContext -> ProcessIO ()
-startTabletopApp ctx = do
-    tableState <- atomically newTableState
+startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
+    tGameState <- newTVarIO =<< newGameState db
 
+    -- Server event encoding helper
     let newObject :: OName -> OName -> LByteString
         newObject src elt =
             let msg = object ["new" .= elt, "src" .= src]
@@ -130,8 +262,8 @@ startTabletopApp ctx = do
             let msg = object ["del" .= elt]
              in encodeMessageL ctx.wid (encodeJSON msg)
 
-    let clientHandler :: DisplayClient -> TableEvent -> ProcessIO ()
-        clientHandler client = \case
+    let clientHandler :: TableState -> DisplayClient -> TableEvent -> ProcessIO ()
+        clientHandler tableState client = \case
             TableEventClick (OName -> name) -> do
                 mValue <- case isObject name of
                     Just k -> fmap Right <$> atomically (NM.lookup tableState.objects k)
@@ -173,19 +305,63 @@ startTabletopApp ctx = do
                         else logError "Unknown obj" ["name" .= name]
                 Nothing -> logError "Invalid obj" ["name" .= name]
 
+    let updateState :: (GameState -> GameState) -> STM GameState
+        updateState up = stateTVar tGameState \prev ->
+            let new = up prev in (new, new)
+
+    let refreshUI :: GameState -> (LByteString -> ProcessIO ()) -> ProcessIO ()
+        refreshUI gameState send = do
+            case gameState.status of
+                Playing tableState -> do
+                    objs <- atomically (NM.elems tableState.objects)
+                    forM_ objs \obj -> do
+                        send $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt
+                        send . moveObject obj.elt =<< readTVarIO obj.coord
+                _ -> pure ()
+
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserConnected "htmx" client) -> do
-                atomically $ sendHtml client $ renderTable ctx.wid
-                objs <- atomically (NM.elems tableState.objects)
-                forM_ objs \obj -> do
-                    atomically $ sendBinary client $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt
-                    atomically . sendBinary client . moveObject obj.elt =<< readTVarIO obj.coord
+                gameState <- readTVarIO tGameState
+                atomically $ sendHtml client $ mountUI gameState ctx.wid
+                refreshUI gameState (atomically . sendBinary client)
             AppDisplay (UserDisconnected "htmx" client) -> do
-                atomically $ modifyTVar' tableState.players (Map.delete client.endpoint)
+                (.status) <$> readTVarIO tGameState >>= \case
+                    Playing tableState -> do
+                        atomically $ modifyTVar' tableState.players (Map.delete client.endpoint)
+                    _ -> pure ()
             AppData ev -> case decodeJSON @TableEvent (from ev.buffer) of
-                Just tableEvent -> clientHandler ev.client tableEvent
+                Just tableEvent ->
+                    (.status) <$> readTVarIO tGameState >>= \case
+                        Playing tableState -> clientHandler tableState ev.client tableEvent
+                        _ -> logError "Received data event during selection" ["ev" .= ev]
                 Nothing -> logError "Unknown event" ["ev" .= ev]
+            AppTrigger ev -> case ev.trigger of
+                "new-game" -> case tryFrom @Text <$> ev.body ^? key "kind" . _JSON of
+                    (Just (Right kind)) -> do
+                        prevState <- readTVarIO tGameState
+                        let name = fromMaybe "YY-MM-DD" (selectionName prevState.status)
+                        game <- Game kind 0 <$> newTVarIO name
+                        ts <- atomically (newTableState game)
+                        let addGame = #games %~ (game :)
+                            setStatus = #status .~ Playing ts
+                        gameState <- atomically $ updateState (addGame . setStatus)
+                        sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                        refreshUI gameState (sendsBinary ctx.clients)
+                    _ -> logError "Unknown game" ["ev" .= ev]
+                "select-game" -> case ev.body ^? key "name" . _JSON of
+                    Just name -> do
+                        gameState <- atomically $ updateState (#status .~ Selecting name)
+                        sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                    _ -> logError "Missing name" ["ev" .= ev]
+                "del-game" -> case ev.body ^? key "id" . _JSON of
+                    Just gameID -> do
+                        let removeGame = #games %~ filter (\g -> g.gameID /= gameID)
+                        gameState <- atomically $ updateState removeGame
+                        let name = fromMaybe "" (selectionName gameState.status)
+                        sendsHtml ctx.clients (renderLoader name gameState.games ctx.wid)
+                    _ -> logError "Missing name" ["ev" .= ev]
+                _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()
 
 tabletopClient :: WinID -> Text

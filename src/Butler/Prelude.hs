@@ -55,6 +55,9 @@ module Butler.Prelude (
     module XStatic,
 
     -- * witch
+    Witch.TryFrom,
+    Witch.TryFromException (..),
+    Witch.Utility.maybeTryFrom,
     Witch.From,
     Witch.from,
     Witch.tryFrom,
@@ -219,6 +222,7 @@ import Text.Read (readMaybe)
 import UnliftIO
 import UnliftIO.STM
 import Witch qualified
+import Witch.Utility qualified
 import XStatic
 
 type LByteString = Data.ByteString.Lazy.ByteString
