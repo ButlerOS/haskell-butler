@@ -60,7 +60,9 @@ startLauncherApp ctx = do
                     Just filterText -> case Map.elems (coerce $ filterAppSet filterText) of
                         [app :: App] -> do
                             logInfo "Launching" ["app" .= app.name]
-                            atomically $ sendHtml ev.client (script_ $ startAppScript app [])
+                            let swapWin = with div_ [wid_ ctx.wid "w"] do
+                                    script_ $ startAppScript app ["wid" .= ctx.wid]
+                            atomically $ sendHtml ev.client swapWin
                         _ -> do
                             atomically $ writeTVar vFilter mempty
                             sendsHtml ctx.clients mountUI
