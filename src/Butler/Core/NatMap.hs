@@ -12,6 +12,7 @@ module Butler.Core.NatMap (
     insert,
     add,
     addWithKey,
+    addWithKeyValue,
 ) where
 
 import Butler.Prelude
@@ -24,6 +25,9 @@ newNatCounter = NatCounter <$> newTVar 0
 
 incr :: NatCounter -> STM Natural
 incr (NatCounter nc) = stateTVar nc \v -> let new = v + 1 in (new, new)
+
+clamp :: NatCounter -> Natural -> STM ()
+clamp (NatCounter nc) minValue = modifyTVar' nc (max minValue)
 
 data NatMap a = NatMap
     { counter :: NatCounter
@@ -55,12 +59,17 @@ add nm value = do
     pure k
 
 addWithKey :: NatMap a -> (Natural -> STM a) -> STM a
-addWithKey nm mkValue = do
+addWithKey nm mkValue = snd <$> addWithKeyValue nm mkValue
+
+addWithKeyValue :: NatMap a -> (Natural -> STM a) -> STM (Natural, a)
+addWithKeyValue nm mkValue = do
     k <- newKey nm
     value <- mkValue k
     insert nm k value
-    pure value
+    pure (k, value)
 
 -- todo: throw error if elem already exist?
 insert :: NatMap a -> Natural -> a -> STM ()
-insert nm mapKey value = modifyTVar' nm.values (IM.insert (unsafeFrom mapKey) value)
+insert nm mapKey value = do
+  clamp nm.counter mapKey
+  modifyTVar' nm.values (IM.insert (unsafeFrom mapKey) value)

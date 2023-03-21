@@ -6,9 +6,12 @@ module Butler.Database (
     dbSimpleCreate,
     dbExecute,
     dbQuery,
+    dbInsert,
+    dbUpdate,
 
     -- * re-export
     FromField,
+    ToField,
     NamedParam ((:=)),
     Only (..),
 )
@@ -18,6 +21,7 @@ import Database.Migrant hiding (withTransaction)
 import Database.Migrant.Driver.Sqlite ()
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromField (FromField)
+import Database.SQLite.Simple.ToField (ToField)
 
 import Butler.Core
 import Butler.Core.Storage
@@ -65,6 +69,18 @@ dbSetup (Database mvConn) databaseSetup = withMVar mvConn \conn ->
 
 dbExecute :: MonadUnliftIO m => Database -> Query -> [NamedParam] -> m ()
 dbExecute (Database mvConn) q args = withMVar mvConn \conn -> liftIO (executeNamed conn q args)
+
+-- | 'dbUpdate' returns the number of updated row: http://www.sqlite.org/c3ref/changes.html
+dbUpdate :: MonadUnliftIO m => Database -> Query -> [NamedParam] -> m Int
+dbUpdate (Database mvConn) q args = withMVar mvConn \conn -> liftIO do
+    executeNamed conn q args
+    changes conn
+
+-- | 'dbInsert' returns the ROWID of the INSERT: http://www.sqlite.org/c3ref/last_insert_rowid.html
+dbInsert :: MonadUnliftIO m => Database -> Query -> [NamedParam] -> m Int64
+dbInsert (Database mvConn) q args = withMVar mvConn \conn -> liftIO do
+    executeNamed conn q args
+    lastInsertRowId conn
 
 dbQuery :: (MonadUnliftIO m, FromRow r) => Database -> Query -> [NamedParam] -> m [r]
 dbQuery (Database mvConn) q args = withMVar mvConn \conn -> liftIO (queryNamed conn q args)

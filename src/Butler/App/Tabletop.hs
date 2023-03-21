@@ -1,5 +1,6 @@
 module Butler.App.Tabletop (tabletopApp) where
 
+import Data.IntSet qualified as IS
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
@@ -19,7 +20,7 @@ tabletopApp =
 
 -- The data model
 newtype OName = OName Text
-    deriving newtype (IsString, Eq, ToJSON, FromField)
+    deriving newtype (IsString, Eq, ToJSON, FromField, ToField)
 
 instance From OName Text where
     from (OName n) = n
@@ -32,19 +33,16 @@ data TableObject = TableObject
 -- | The 'TableState' is the current game on display.
 data TableState = TableState
     { current :: Game
-    , players :: TVar (Map Endpoint (Either OName TableObject))
+    , players :: TVar (Map Endpoint (Either OName (Natural, TableObject)))
     , objects :: NM.NatMap TableObject
+    , dirties :: TVar IntSet
     }
+    deriving (Generic)
 
 newTableState :: Game -> STM TableState
-newTableState game = TableState game <$> newTVar mempty <*> NM.newNatMap
+newTableState game = TableState game <$> newTVar mempty <*> NM.newNatMap <*> newTVar mempty
 
-data GameStatus = Selecting Text | Playing TableState
-
-selectionName :: GameStatus -> Maybe Text
-selectionName = \case
-    Selecting n | n /= mempty -> pure n
-    _ -> Nothing
+data GameStatus = Selecting | Playing TableState
 
 data GameKind
     = Baduk Natural
@@ -82,9 +80,16 @@ decodeGameKindText name = case (name, decodeNaturalSuffix name) of
 
 data Game = Game
     { kind :: GameKind
-    , gameID :: Int
-    , name :: TVar Text
+    , name :: Maybe (GameID, Text)
     }
+
+gameMatch :: GameID -> Game -> Bool
+gameMatch gameID game = case game.name of
+    Just (gid, _) -> gid == gameID
+    Nothing -> False
+
+newtype GameID = GameID Int64
+    deriving newtype (Eq, ToJSON, FromJSON, ToField, FromField)
 
 data GameState = GameState
     { status :: GameStatus
@@ -102,44 +107,63 @@ tabletopDatabase = DatabaseMigration ["games-create", "objects-create"] doUp doD
     doDown _ _ = pure ()
 
 gamesFromDB :: Database -> ProcessIO [Either Text Game]
-gamesFromDB db = traverse mkGame =<< dbQuery db "select * from games" []
+gamesFromDB db = fmap mkGame <$> dbQuery db "select * from games" []
   where
-    mkGame (gameID, name, gameName) = do
+    mkGame (gameID, name, gameName) =
         case tryFrom @Text gameName of
-            Right kind -> Right . Game kind gameID <$> newTVarIO name
-            Left (TryFromException e _) -> pure $ Left e
+            Right kind -> Right $ Game kind (Just (gameID, name))
+            Left (TryFromException e _) -> Left e
 
-_tableStateFromDB :: Database -> Game -> ProcessIO TableState
-_tableStateFromDB db game = do
+tableStateFromDB :: Database -> Game -> ProcessIO TableState
+tableStateFromDB db game = do
     ts <- atomically (newTableState game)
-    loadObjects ts
+    forM_ (game.name) (loadObjects ts . fst)
     pure ts
   where
-    loadObjects ts = do
-        objs <- traverse toObject =<< dbQuery db "select (name, x, y) from objects WHERE gameid = :id" [":id" := game.gameID]
+    loadObjects ts gameID = do
+        objs <- traverse toObject =<< dbQuery db "SELECT name,x,y FROM objects WHERE gameid = :id" [":id" := gameID]
         forM_ objs \obj -> case isObject obj.elt of
             Nothing -> logError "Invalid obj from db" ["name" .= obj.elt]
             Just k -> atomically (NM.insert ts.objects k obj)
 
     toObject (name, x, y) = TableObject (OName name) <$> newTVarIO (x, y)
 
+replaceObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
+replaceObjectDB db gameID (name, x, y) = do
+    updateCount <-
+        (dbUpdate db)
+            "UPDATE objects SET x = :x, y = :y WHERE name = :name AND gameid = :gameid "
+            [":x" := x, ":y" := y, ":name" := name, ":gameid" := gameID]
+    when (updateCount == 0) do
+        insertObjectDB db gameID (name, x, y)
+
+insertObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
+insertObjectDB db gameID (name, x, y) = do
+    (dbExecute db)
+        "INSERT INTO objects (gameid, name, x, y) VALUES (:gameid, :name, :x, :y)"
+        [":gameid" := gameID, ":name" := name, ":x" := x, ":y" := y]
+
+deleteObjectDB :: Database -> GameID -> OName -> ProcessIO ()
+deleteObjectDB db gameID name = do
+    dbExecute db "DELETE FROM objects where gameid = :gameid AND name = :name" [":gameid" := gameID, ":name" := name]
+
 newGameState :: Database -> ProcessIO GameState
 newGameState db = do
     (errors, games) <- partitionEithers <$> gamesFromDB db
     when (errors /= []) do
         logError "Tabletop save loading error" ["errors" .= errors]
-    pure $ GameState (Selecting "") games
+    pure $ GameState Selecting games
 
 isObject :: OName -> Maybe Natural
 isObject (OName name) = case decodeNaturalSuffix name of
     Just (n, _) -> Just n
     Nothing -> Nothing
 
-newTableObject :: TableState -> OName -> STM TableObject
+newTableObject :: TableState -> OName -> STM (Natural, TableObject)
 newTableObject ts (OName name) = do
     let mkObj :: Natural -> STM TableObject
         mkObj n = TableObject (OName $ name <> "-" <> showT n) <$> newTVar (42, 42)
-    NM.addWithKey ts.objects mkObj
+    NM.addWithKeyValue ts.objects mkObj
 
 -- Html rendering
 type SVG = SvgT STM ()
@@ -196,22 +220,43 @@ renderTable kind wid = do
                 _ -> "NotImplemented"
     script_ (tabletopClient wid)
 
-renderLoader :: Text -> [Game] -> WinID -> HtmlT STM ()
-renderLoader name games wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
+renderCurrentGame :: WinID -> Maybe TableState -> Text -> HtmlT STM ()
+renderCurrentGame wid mTableState name = with div_ [wid_ wid "current-game"] do
+    toHtml ("Playing: " <> name)
+    isClean <- case mTableState of
+        Nothing -> pure True
+        Just tableState -> IS.null <$> lift (readTVar tableState.dirties)
+    unless isClean do
+        " *"
+
+renderLoader :: GameState -> WinID -> HtmlT STM ()
+renderLoader gameState wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
     "Game List"
-    withTrigger_ "" wid "select-game" (input_ []) [type_ "text", placeholder_ "New game name...", name_ "name", value_ name]
-    forM_ games \game -> do
-        gameName <- lift (readTVar game.name)
-        div_ [class_ "flex border"] do
-            withTrigger "click" wid "load-game" ["name" .= game.gameID] button_ [class_ "mx-2 flex-grow"] (toHtml gameName)
-            withTrigger "click" wid "del-game" ["id" .= game.gameID] i_ [class_ "ri-delete-bin-2-fill text-red-500 mx-2 cursor-pointer", title_ "Delete the game"] mempty
+    mTS <- case gameState.status of
+        Playing ts -> do
+            withTrigger_ "" wid "save-game" (input_ []) [type_ "text", name_ "name", placeholder_ "New Save game"]
+            pure (Just ts)
+        _ -> pure Nothing
+    let mGameID = maybe Nothing (\ts -> fst <$> ts.current.name) mTS
+    with div_ [class_ "flex-grow"] do
+        forM_ gameState.games \game -> case game.name of
+            Just (gameID, name) ->
+                div_ [class_ "flex border"] do
+                    if Just gameID == mGameID
+                        then do
+                            renderCurrentGame wid mTS name
+                        else do
+                            withTrigger "click" wid "load-game" ["id" .= gameID] button_ [class_ "mx-2 flex-grow"] (toHtml $ name <> " (" <> into @Text game.kind <> ")")
+                            withTrigger "click" wid "del-game" ["id" .= gameID] i_ [class_ "ri-delete-bin-2-fill text-red-500 mx-2 cursor-pointer", title_ "Delete the game"] mempty
+            Nothing -> error "Game without ID must not be added to the saved list"
+    withTrigger_ "click" wid "new-game" button_ [class_ btnGreenClass] "New Game"
 
 renderSelector :: WinID -> HtmlT STM ()
 renderSelector wid = with div_ [class_ "flex-grow"] do
     "Select a game"
     ul_ do
         let gameButton name kind = li_ do
-                withTrigger "click" wid "new-game" ["kind" .= into @Text kind] button_ [class_ "mx-4 my-2 border"] name
+                withTrigger "click" wid "start-game" ["kind" .= into @Text kind] button_ [class_ "mx-4 my-2 border"] name
         gameButton "Baduk 19" (Baduk 19)
         gameButton "Baduk 13" (Baduk 13)
         gameButton "Baduk 9" (Baduk 9)
@@ -223,10 +268,7 @@ mountUI gameState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] d
     case gameState.status of
         Selecting{} -> renderSelector wid
         Playing game -> renderTable game.current.kind wid
-    let gameName = case gameState.status of
-            Selecting n -> n
-            _ -> ""
-    renderLoader gameName gameState.games wid
+    renderLoader gameState wid
 
 -- Client events
 data TableEvent
@@ -266,7 +308,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
         clientHandler tableState client = \case
             TableEventClick (OName -> name) -> do
                 mValue <- case isObject name of
-                    Just k -> fmap Right <$> atomically (NM.lookup tableState.objects k)
+                    Just k -> fmap (Right . (k,)) <$> atomically (NM.lookup tableState.objects k)
                     Nothing -> pure $ Just $ Left name
                 case mValue of
                     Nothing -> logError "Unknown name" ["name" .= name]
@@ -276,17 +318,33 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                 atomically (Map.lookup client.endpoint <$> readTVar tableState.players) >>= \case
                     Just eObj -> do
                         mTableObject <- case eObj of
-                            Right obj -> pure (Just obj)
+                            -- The client hold an existing object.
+                            Right (eKey, obj) -> pure $ Just (eKey, obj)
+                            -- The client hold a new object.
                             Left name
                                 | name `elem` ["black-stone", "white-stone"] -> do
-                                    obj <- atomically $ newTableObject tableState name
-                                    atomically $ modifyTVar' tableState.players $ Map.insert client.endpoint (Right obj)
+                                    -- Add the object to the tableState.
+                                    (eKey, obj) <- atomically $ newTableObject tableState name
+                                    -- Add the object to the client hand.
+                                    atomically $ modifyTVar' tableState.players $ Map.insert client.endpoint (Right (eKey, obj))
+                                    -- Tell the clients a new object has been created.
                                     sendsBinary ctx.clients $ newObject name obj.elt
-                                    pure (Just obj)
+                                    pure $ Just (eKey, obj)
                                 | otherwise -> pure Nothing
                         case mTableObject of
-                            Just obj -> do
-                                atomically (writeTVar obj.coord (x, y))
+                            Just (eKey, obj) -> do
+                                prevDirties <- atomically do
+                                    -- update the object coordinate.
+                                    writeTVar obj.coord (x, y)
+                                    -- add to the list of dirty object.
+                                    stateTVar tableState.dirties \dirties ->
+                                        (dirties, IS.insert (unsafeFrom @Natural @Int eKey) dirties)
+                                case tableState.current.name of
+                                    Just (_, name) | IS.null prevDirties -> do
+                                        -- Update the current game UI to indicate it is dirty.
+                                        sendsHtml ctx.clients $ renderCurrentGame ctx.wid (Just tableState) name
+                                    _ -> pure ()
+                                -- Tell the clients an object moved.
                                 sendsBinary ctx.clients $ moveObject obj.elt (x, y)
                             Nothing -> logError "Unknown object" []
                     Nothing -> logError "Player doesn't own an object" []
@@ -302,12 +360,16 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                         then do
                             logDebug "Deleted" ["name" .= name]
                             sendsBinary ctx.clients $ delObject name
+                            forM_ tableState.current.name \(gameID, _) -> deleteObjectDB db gameID name
                         else logError "Unknown obj" ["name" .= name]
                 Nothing -> logError "Invalid obj" ["name" .= name]
 
     let updateState :: (GameState -> GameState) -> STM GameState
         updateState up = stateTVar tGameState \prev ->
             let new = up prev in (new, new)
+
+    let _rename :: Text -> GameID -> ProcessIO ()
+        _rename name gid = dbExecute db "UPDATE games SET name = :name where id = :id" [":name" := name, ":id" := gid]
 
     let refreshUI :: GameState -> (LByteString -> ProcessIO ()) -> ProcessIO ()
         refreshUI gameState send = do
@@ -318,6 +380,58 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                         send $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt
                         send . moveObject obj.elt =<< readTVarIO obj.coord
                 _ -> pure ()
+
+    let collectDirties = do
+            gameState <- readTVar tGameState
+            case gameState.status of
+                Playing tableState -> case tableState.current.name of
+                    Just (gameID, name) -> do
+                        dirties <- IS.toList <$> stateTVar tableState.dirties \dirties -> (dirties, mempty)
+                        mDirties <- forM dirties \dirty -> do
+                            NM.lookup tableState.objects (unsafeFrom dirty) >>= \case
+                                Just obj -> do
+                                    (x, y) <- readTVar obj.coord
+                                    pure $ Just (obj.elt, x, y)
+                                Nothing -> pure Nothing
+                        case catMaybes mDirties of
+                            [] -> pure Nothing
+                            xs -> pure $ Just (gameID, name, xs)
+                    Nothing -> pure Nothing
+                Selecting -> pure Nothing
+
+    let saveGame :: Text -> TableState -> ProcessIO ()
+        saveGame name ts = do
+            gid <-
+                GameID
+                    <$> (dbInsert db)
+                        "INSERT INTO games (name, game) VALUES (:name, :game)"
+                        [":name" := name, ":game" := into @Text ts.current.kind]
+            let newGame = Game ts.current.kind (Just $ (gid, name))
+                addGame = #games %~ (newGame :)
+                setStatus = #status .~ Playing (ts & #current .~ newGame)
+            (objects, mDirtyObjs, gameState) <- atomically do
+                objs <- NM.elems ts.objects
+                dirties <- collectDirties
+                (objs,dirties,) <$> updateState (addGame . setStatus)
+
+            sendsHtml ctx.clients (renderLoader gameState ctx.wid)
+            forM_ mDirtyObjs \(gameID, name, dirtyObjs) -> do
+                logInfo "Saving board before loading" ["count" .= length dirtyObjs]
+                forM_ dirtyObjs (replaceObjectDB db gameID)
+
+            logInfo "Creating game" ["name" .= name, "count" .= length objects]
+            -- save current state
+            forM_ objects \obj -> do
+                (x, y) <- readTVarIO obj.coord
+                insertObjectDB db gid (obj.elt, x, y)
+
+    spawnThread_ $ forever do
+        sleep 5_000
+        mDirtyObjs <- atomically collectDirties
+        forM mDirtyObjs \(gameID, name, dirtyObjs) -> do
+            logInfo "Background saving" ["count" .= length dirtyObjs]
+            forM_ dirtyObjs (replaceObjectDB db gameID)
+            sendsHtml ctx.clients (renderCurrentGame ctx.wid Nothing name)
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
@@ -337,30 +451,41 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                         _ -> logError "Received data event during selection" ["ev" .= ev]
                 Nothing -> logError "Unknown event" ["ev" .= ev]
             AppTrigger ev -> case ev.trigger of
-                "new-game" -> case tryFrom @Text <$> ev.body ^? key "kind" . _JSON of
+                "new-game" -> do
+                    gameState <- atomically $ updateState (#status .~ Selecting)
+                    sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                "start-game" -> case tryFrom @Text <$> ev.body ^? key "kind" . _JSON of
                     (Just (Right kind)) -> do
-                        prevState <- readTVarIO tGameState
-                        let name = fromMaybe "YY-MM-DD" (selectionName prevState.status)
-                        game <- Game kind 0 <$> newTVarIO name
-                        ts <- atomically (newTableState game)
-                        let addGame = #games %~ (game :)
-                            setStatus = #status .~ Playing ts
-                        gameState <- atomically $ updateState (addGame . setStatus)
+                        ts <- atomically (newTableState (Game kind Nothing))
+                        gameState <- atomically $ updateState (#status .~ Playing ts)
                         sendsHtml ctx.clients (mountUI gameState ctx.wid)
-                        refreshUI gameState (sendsBinary ctx.clients)
                     _ -> logError "Unknown game" ["ev" .= ev]
-                "select-game" -> case ev.body ^? key "name" . _JSON of
+                "save-game" -> case ev.body ^? key "name" . _JSON of
                     Just name -> do
-                        gameState <- atomically $ updateState (#status .~ Selecting name)
-                        sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                        gameState <- atomically (readTVar tGameState)
+                        case gameState.status of
+                            Playing tableState -> saveGame name tableState
+                            Selecting -> logError "Can't save while selecting mode" []
                     _ -> logError "Missing name" ["ev" .= ev]
+                "load-game" -> case ev.body ^? key "id" . _JSON of
+                    Just gameID -> do
+                        prevState <- readTVarIO tGameState
+                        case filter (gameMatch gameID) prevState.games of
+                            (game : _) -> do
+                                ts <- tableStateFromDB db game
+                                gameState <- atomically $ updateState (#status .~ Playing ts)
+                                sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                                refreshUI gameState (sendsBinary ctx.clients)
+                            [] -> logError "Unknown game" ["ev" .= ev]
+                    _ -> logError "Missing gameID" ["ev" .= ev]
                 "del-game" -> case ev.body ^? key "id" . _JSON of
                     Just gameID -> do
-                        let removeGame = #games %~ filter (\g -> g.gameID /= gameID)
+                        let removeGame = #games %~ filter (not . gameMatch gameID)
                         gameState <- atomically $ updateState removeGame
-                        let name = fromMaybe "" (selectionName gameState.status)
-                        sendsHtml ctx.clients (renderLoader name gameState.games ctx.wid)
-                    _ -> logError "Missing name" ["ev" .= ev]
+                        dbExecute db "DELETE FROM games WHERE id = :id" [":id" := gameID]
+                        dbExecute db "DELETE FROM objects WHERE gameid = :id" [":id" := gameID]
+                        sendsHtml ctx.clients (renderLoader gameState ctx.wid)
+                    _ -> logError "Missing gameID" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()
 
