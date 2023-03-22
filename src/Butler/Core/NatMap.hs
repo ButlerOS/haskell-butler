@@ -71,5 +71,5 @@ addWithKeyValue nm mkValue = do
 -- todo: throw error if elem already exist?
 insert :: NatMap a -> Natural -> a -> STM ()
 insert nm mapKey value = do
-  clamp nm.counter mapKey
-  modifyTVar' nm.values (IM.insert (unsafeFrom mapKey) value)
+    clamp nm.counter mapKey
+    modifyTVar' nm.values (IM.insert (unsafeFrom mapKey) value)

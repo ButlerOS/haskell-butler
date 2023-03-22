@@ -30,6 +30,7 @@ library
       Butler
       Butler.App
       Butler.App.Chat
+      Butler.App.Chess
       Butler.App.Clock
       Butler.App.ClockTest
       Butler.App.FileManager

@@ -3,12 +3,14 @@ module Butler.App.Tabletop (tabletopApp) where
 import Data.IntSet qualified as IS
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
-import Lucid.Svg (SvgT, circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
+import Lucid.Svg (circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
 import Butler
 import Butler.Core.NatMap qualified as NM
 import Butler.Database
 import Butler.Frame
+
+import Butler.App.Chess
 
 tabletopApp :: App
 tabletopApp =
@@ -60,7 +62,31 @@ gameObjects = \case
         [ [GameObject "black-stone" (svg blackStone)]
         , [GameObject "white-stone" (svg whiteStone)]
         ]
+    Chess ->
+        [
+            [ GameObject "black-king" blackKing
+            , GameObject "black-queen" blackQueen
+            , GameObject "black-rook" blackRook
+            , GameObject "black-bishop" blackBishop
+            , GameObject "black-knight" blackKnight
+            , GameObject "black-pawn" blackPawn
+            ]
+        ,
+            [ GameObject "white-king" whiteKing
+            , GameObject "white-queen" whiteQueen
+            , GameObject "white-rook" whiteRook
+            , GameObject "white-bishop" whiteBishop
+            , GameObject "white-knight" whiteKnight
+            , GameObject "white-pawn" whitePawn
+            ]
+        ]
     _ -> []
+
+gameObjectsNames :: GameKind -> [Text]
+gameObjectsNames kind = do
+    objs <- gameObjects kind
+    obj <- objs
+    pure obj.name
 
 instance From GameKind Text where
     from = \case
@@ -131,7 +157,8 @@ tableStateFromDB db game = do
 replaceObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
 replaceObjectDB db gameID (name, x, y) = do
     updateCount <-
-        (dbUpdate db)
+        dbUpdate
+            db
             "UPDATE objects SET x = :x, y = :y WHERE name = :name AND gameid = :gameid "
             [":x" := x, ":y" := y, ":name" := name, ":gameid" := gameID]
     when (updateCount == 0) do
@@ -139,7 +166,8 @@ replaceObjectDB db gameID (name, x, y) = do
 
 insertObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
 insertObjectDB db gameID (name, x, y) = do
-    (dbExecute db)
+    dbExecute
+        db
         "INSERT INTO objects (gameid, name, x, y) VALUES (:gameid, :name, :x, :y)"
         [":gameid" := gameID, ":name" := name, ":x" := x, ":y" := y]
 
@@ -166,8 +194,6 @@ newTableObject ts (OName name) = do
     NM.addWithKeyValue ts.objects mkObj
 
 -- Html rendering
-type SVG = SvgT STM ()
-
 svg :: SVG -> SVG
 svg content = do
     with (svg11_ content) [version_ "1.1", width_ "30", height_ "30"]
@@ -198,8 +224,8 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: GameKind -> WinID -> HtmlT STM ()
-renderTable kind wid = do
+renderTable :: WinID -> GameKind -> HtmlT STM ()
+renderTable wid kind = do
     void $ with div_ [class_ "flex flex-row flex-grow"] do
         with div_ [class_ "flex flex-col my-6"] do
             with div_ [class_ "flex flex-row gap-2"] do
@@ -217,8 +243,8 @@ renderTable kind wid = do
                         with div_ [class_ "flex flex-row"] do
                             replicateM size do
                                 with div_ [class_ "w-8 h-8 border"] mempty
-                _ -> "NotImplemented"
-    script_ (tabletopClient wid)
+                _ -> board
+    script_ (tabletopClient wid kind)
 
 renderCurrentGame :: WinID -> Maybe TableState -> Text -> HtmlT STM ()
 renderCurrentGame wid mTableState name = with div_ [wid_ wid "current-game"] do
@@ -237,7 +263,7 @@ renderLoader gameState wid = with div_ [wid_ wid "tabletop-game-list", class_ "f
             withTrigger_ "" wid "save-game" (input_ []) [type_ "text", name_ "name", placeholder_ "New Save game"]
             pure (Just ts)
         _ -> pure Nothing
-    let mGameID = maybe Nothing (\ts -> fst <$> ts.current.name) mTS
+    let mGameID = (\ts -> fst <$> ts.current.name) =<< mTS
     with div_ [class_ "flex-grow"] do
         forM_ gameState.games \game -> case game.name of
             Just (gameID, name) ->
@@ -267,7 +293,7 @@ mountUI :: GameState -> WinID -> HtmlT STM ()
 mountUI gameState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] do
     case gameState.status of
         Selecting{} -> renderSelector wid
-        Playing game -> renderTable game.current.kind wid
+        Playing game -> renderTable wid game.current.kind
     renderLoader gameState wid
 
 -- Client events
@@ -322,7 +348,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                             Right (eKey, obj) -> pure $ Just (eKey, obj)
                             -- The client hold a new object.
                             Left name
-                                | name `elem` ["black-stone", "white-stone"] -> do
+                                | coerce name `elem` (gameObjectsNames tableState.current.kind) -> do
                                     -- Add the object to the tableState.
                                     (eKey, obj) <- atomically $ newTableObject tableState name
                                     -- Add the object to the client hand.
@@ -403,10 +429,11 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
         saveGame name ts = do
             gid <-
                 GameID
-                    <$> (dbInsert db)
+                    <$> dbInsert
+                        db
                         "INSERT INTO games (name, game) VALUES (:name, :game)"
                         [":name" := name, ":game" := into @Text ts.current.kind]
-            let newGame = Game ts.current.kind (Just $ (gid, name))
+            let newGame = Game ts.current.kind (Just (gid, name))
                 addGame = #games %~ (newGame :)
                 setStatus = #status .~ Playing (ts & #current .~ newGame)
             (objects, mDirtyObjs, gameState) <- atomically do
@@ -415,7 +442,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                 (objs,dirties,) <$> updateState (addGame . setStatus)
 
             sendsHtml ctx.clients (renderLoader gameState ctx.wid)
-            forM_ mDirtyObjs \(gameID, name, dirtyObjs) -> do
+            forM_ mDirtyObjs \(gameID, _name, dirtyObjs) -> do
                 logInfo "Saving board before loading" ["count" .= length dirtyObjs]
                 forM_ dirtyObjs (replaceObjectDB db gameID)
 
@@ -462,7 +489,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                     _ -> logError "Unknown game" ["ev" .= ev]
                 "save-game" -> case ev.body ^? key "name" . _JSON of
                     Just name -> do
-                        gameState <- atomically (readTVar tGameState)
+                        gameState <- readTVarIO tGameState
                         case gameState.status of
                             Playing tableState -> saveGame name tableState
                             Selecting -> logError "Can't save while selecting mode" []
@@ -489,8 +516,8 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()
 
-tabletopClient :: WinID -> Text
-tabletopClient wid =
+tabletopClient :: WinID -> GameKind -> Text
+tabletopClient wid kind =
     [raw|
 function startTabletop(wid, initialObjects) {
   // internal state
@@ -624,5 +651,5 @@ function startTabletop(wid, initialObjects) {
   where
     initTableArgs =
         [ showT wid
-        , showT @[Text] ["white-stone", "black-stone"]
+        , showT (gameObjectsNames kind)
         ]
