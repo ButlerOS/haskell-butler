@@ -8,6 +8,7 @@ module Butler.Display.Client (
     sendsHtml,
     sendsHtmlButSelf,
     clientsDraw,
+    clientsDrawT,
 
     -- * Binary output
     sendBinary,
@@ -127,7 +128,10 @@ sendsBinaryButSelf self clients !buf = do
         when (client.endpoint /= self.endpoint) do
             atomically $ writeTChan client.sendChannel (WS.Binary buf)
 
--- | Send html using a draw action.
+-- | Render and send html to all clients. Use this helper to adapt the output per client.
+clientsDrawT :: DisplayClients -> (DisplayClient -> HtmlT STM ()) -> ProcessIO ()
+clientsDrawT clients draw = clientsDraw clients (pure . draw)
+
 clientsDraw :: DisplayClients -> (DisplayClient -> ProcessIO (HtmlT STM ())) -> ProcessIO ()
 clientsDraw clients draw = do
     xs <- atomically (getClients clients)

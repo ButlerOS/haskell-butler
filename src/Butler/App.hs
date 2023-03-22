@@ -193,10 +193,32 @@ tagIcon = \case
     "Utility" -> Just "ri-tools-line"
     _ -> Nothing
 
-startAppScript :: App -> [Pair] -> Text
-startAppScript app args = "sendTrigger(0, \"start-app\", " <> decodeUtf8 (from obj) <> ")"
+butlerCheckbox :: WinID -> Text -> [Pair] -> Bool -> Maybe Text -> [Attribute]
+butlerCheckbox wid name attrs value mConfirm
+    | value = checked_ : attributes
+    | otherwise = attributes
   where
-    obj = encodeJSON (object (["name" .= app.name] <> args))
+    baseAction = sendTriggerScript wid name attrs
+    action = case mConfirm of
+        Just txt -> "if (window.confirm(\"" <> txt <> "\")) {" <> baseAction <> ";}"
+        Nothing -> baseAction
+    attributes = [type_ "checkbox", onclick_ (action <> "; return false")]
+
+sendTriggerScriptConfirm :: WinID -> Text -> [Pair] -> Maybe Text -> Text
+sendTriggerScriptConfirm wid name attrs mConfirm = case mConfirm of
+    Nothing -> script
+    Just txt -> "if (window.confirm(\"" <> txt <> "\")) {" <> script <> ";}"
+  where
+    script = sendTriggerScript wid name attrs
+
+sendTriggerScript :: WinID -> Text -> [Pair] -> Text
+sendTriggerScript wid name attrs =
+    "sendTrigger(" <> showT wid <> ", \"" <> name <> "\", " <> decodeUtf8 (from obj) <> ")"
+  where
+    obj = encodeJSON (object attrs)
+
+startAppScript :: App -> [Pair] -> Text
+startAppScript app args = sendTriggerScript (WinID 0) "start-app" (["name" .= app.name] <> args)
 
 appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do

@@ -3,6 +3,7 @@ module Butler.App.FileManager where
 import Data.Set qualified as Set
 
 import Butler
+import Butler.App
 import Butler.GUI.File
 import Butler.Service.FileService
 
@@ -53,14 +54,8 @@ startFileManagerApp ctx = do
                 let (icon, name) = renderFileIcon child
                 with div_ [class_ "flex"] do
                     let fn = into @FileName child
-
-                    -- [ ] The selection checkbox
-                    let selectedAttr
-                            | fn `Set.member` selected = (checked_ :)
-                            | otherwise = id
-                        -- A click handler to disable automatically checking the checkbox. This is done server side.
-                        clickScript = "sendTrigger(" <> showT ctx.wid <> ", \"select-file\", {fp: " <> showT fn <> "}); return false"
-                    input_ (selectedAttr [type_ "checkbox", class_ "relative top-1 mx-1", onclick_ clickScript])
+                        checkbox = butlerCheckbox ctx.wid "select-file" ["fp" .= fn] (fn `Set.member` selected) Nothing
+                    input_ $ class_ "relative top-1 mx-1" : checkbox
 
                     -- ✏ edit button
                     when (editFile == mempty) do

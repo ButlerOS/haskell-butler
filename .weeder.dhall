@@ -1,6 +1,7 @@
 { roots =
   [ "Main.main"
   , "ButlerDemos.multiDesktop"
+  , "Butler.Database"
   , "^Paths_.*"
   , ".*.runTest"
   , ".*.test_"

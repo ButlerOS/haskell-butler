@@ -4,11 +4,13 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 
 import Butler
+import Butler.App
 import Butler.Display
 import Butler.Display.Session
 
-renderSM :: Display -> WinID -> HtmlT STM ()
-renderSM display wid = do
+renderSM :: Display -> WinID -> DisplayClient -> HtmlT STM ()
+renderSM display wid client = do
+    isAdmin <- lift (readTVar client.session.admin)
     sessions <- Map.elems <$> lift (readTVar display.sessions.sessions)
     clients <- lift (readTVar display.clients)
     invites <- Map.toList <$> lift (readMemoryVar display.sessions.invitations)
@@ -17,15 +19,14 @@ renderSM display wid = do
         forM_ (Map.toList clients) \(session, displayClients) -> do
             with div_ [class_ "odd:bg-stone-100 even:bg-stone-200"] do
                 with pre_ [class_ ""] (toHtml session)
-                forM_ displayClients \client -> do
-                    with
+                forM_ displayClients \dclient -> do
+                    withTrigger
+                        "click"
+                        wid
+                        "close-connection"
+                        ["uuid" .= dclient.session.sessionID, "client" .= dclient.endpoint]
                         i_
-                        [ id_ (withWID wid "close-connection")
-                        , encodeVal ["uuid" .= into @Text client.session.sessionID, "client" .= client.endpoint]
-                        , class_ "ri-focus-3-fill text-red-400 cursor-pointer top-0.5 relative"
-                        , wsSend
-                        , title_ "Close the connection"
-                        ]
+                        [class_ "ri-focus-3-fill text-red-400 cursor-pointer top-0.5 relative", title_ "Close the connection"]
                         mempty
                     with span_ [class_ ""] do
                         toHtml (client.endpoint)
@@ -35,39 +36,42 @@ renderSM display wid = do
 
         with h2_ [class_ "font-semibold text-center pt-2 border-t-2 border-slate-700/50"] "Sessions"
         with' table_ "w-full" do
-            thead_ $ tr_ $ traverse_ th_ ["User", "Live", "ID"]
+            thead_ $ tr_ do
+                with th_ [class_ "pl-2"] "User"
+                th_ "Admin"
+                with th_ [class_ "text-center"] "Live"
+                with th_ [class_ "text-right pr-5"] "ID"
             tbody_ $ forM_ sessions \session -> do
                 with' tr_ "odd:bg-stone-100 even:bg-stone-200" do
                     td_ do
-                        with form_ [wid_ wid "edit", wsSend, hxTrigger_ "submit"] do
-                            with
+                        when (isAdmin || session.sessionID == client.session.sessionID) do
+                            withTrigger
+                                "click"
+                                wid
+                                "edit"
+                                ["name" .= session.sessionID]
                                 button_
                                 [ class_ "relative rounded-xl text-sm text-slate-900 cursor-pointer"
-                                , type_ "submit"
                                 ]
                                 "📝"
+                        toHtml =<< lift (readTVar session.username)
+                    td_ do
+                        isAdminSession <- lift (readTVar session.admin)
+                        let confirm
+                                | isAdminSession && client.session == session = Just "Are you sure?"
+                                | otherwise = Nothing
+                        input_ (butlerCheckbox wid "toggle-admin" ["uuid" .= session.sessionID] isAdminSession confirm)
 
-                            with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
-                            toHtml =<< lift (readTVar session.username)
                     with' td_ "text-center" (toHtml $ into @Text $ show $ length $ fromMaybe [] $ Map.lookup session.sessionID clients)
                     with' td_ "pl-2 text-right" do
                         toHtml (Text.takeWhile (/= '-') $ from session.sessionID)
-                        with
-                            i_
-                            [ wid_ wid "terminate-session"
-                            , encodeVal ["uuid" .= into @Text session.sessionID]
-                            , class_ "ri-delete-bin-2-fill text-red-500 px-2 cursor-pointer top-0.5 relative"
-                            , wsSend
-                            , hxTrigger_ "confirmed"
-                            , title_ "Delete the sessions"
-                            , hyper_ $
-                                Text.unlines
-                                    [ "on click"
-                                    , "call Swal.fire({title: 'Confirm', text:'Do you want to continue?'})"
-                                    , "if result.isConfirmed trigger confirmed"
-                                    ]
-                            ]
-                            mempty
+                        when (isAdmin || session.sessionID == client.session.sessionID) do
+                            with
+                                i_
+                                [ class_ "ri-delete-bin-2-fill text-red-500 px-2 cursor-pointer top-0.5 relative"
+                                , onclick_ $ sendTriggerScriptConfirm wid "terminate-session" ["uuid" .= session.sessionID] (Just "Are you sure?")
+                                ]
+                                mempty
         with h2_ [class_ "font-semibold text-center pt-2 border-t-2 border-slate-700/50"] "Invites"
         with' table_ "w-full" do
             unless (null invites) do
@@ -138,79 +142,96 @@ renderEditForm session wid = with div_ [id_ (withWID wid "w")] do
                 ]
                 "Save"
 
-renderApp :: TVar AppState -> WinID -> HtmlT STM ()
-renderApp state wid =
+renderApp :: TVar AppState -> WinID -> DisplayClient -> HtmlT STM ()
+renderApp state wid client =
     lift (readTVar state) >>= \case
-        Listing display -> renderSM display wid
+        Listing display -> renderSM display wid client
         Editing session -> renderEditForm session wid
 
 startSMApp :: AppContext -> ProcessIO ()
 startSMApp ctx = do
-    let clients = ctx.clients
-        wid = ctx.wid
-        display = ctx.shared.display
+    let display = ctx.shared.display
     state <- newTVarIO $ Listing display
-    let handleGuiEvent ev = do
-            resp <- case ev.trigger of
-                "listing" -> do
-                    atomically $ writeTVar state (Listing display)
-                    pure $ renderSM display wid
-                "edit" -> case ev.body ^? key "name" . _JSON of
-                    Nothing -> logError "invalid edit action" ["ev" .= ev] >> pure mempty
+    let refreshUI = clientsDrawT ctx.clients (renderApp state ctx.wid)
+    let handleGuiEvent ev = \case
+            "listing" -> do
+                atomically $ writeTVar state (Listing display)
+                clientsDrawT ctx.clients (renderSM display ctx.wid)
+            "edit" -> case ev.body ^? key "name" . _JSON of
+                Nothing -> logError "invalid edit action" ["ev" .= ev] >> pure mempty
+                Just sessionID -> do
+                    atomically (lookupSession display.sessions sessionID) >>= \case
+                        Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
+                        Just session -> do
+                            atomically $ writeTVar state (Editing session)
+                            refreshUI
+            "save" -> do
+                isAdmin <- readTVarIO ev.client.session.admin
+                case (ev.body ^? key "name" . _JSON, ev.body ^? key "username" . _JSON) of
+                    (Just sessionID, Just username)
+                        | isAdmin || sessionID == ev.client.session.sessionID -> do
+                            atomically (lookupSession display.sessions sessionID) >>= \case
+                                Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
+                                Just session -> do
+                                    _ <- changeUsername display.sessions session username
+                                    atomically $ writeTVar state (Listing display)
+                                    refreshUI
+                        | otherwise -> logError "Permission denied" ["ev" .= ev]
+                    _ -> logError "invalid save action" ["ev" .= ev] >> pure mempty
+            "new-invite" -> case ev.body ^? key "name" . _JSON of
+                Nothing -> logError "invalid invite" [] >> pure mempty
+                Just mInvite -> do
+                    let invite = case mInvite of
+                            "" -> "butler"
+                            _ -> mInvite
+                    newInvite display.sessions invite
+                    refreshUI
+            "delete-invite" -> case ev.body ^? key "uuid" . _JSON of
+                Just invite -> do
+                    atomically $ deleteInvite display.sessions invite
+                    refreshUI
+                Nothing -> pure mempty
+            "terminate-session" -> do
+                isAdmin <- readTVarIO ev.client.session.admin
+                case ev.body ^? key "uuid" . _JSON of
+                    Just session
+                        | isAdmin || session == ev.client.session.sessionID -> do
+                            deleteSession display.sessions session
+                            pids <- atomically do
+                                allClients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
+                                pure ((.process.pid) <$> allClients)
+                            logInfo "Terminating" ["pids" .= pids]
+                            traverse_ killProcess pids
+                            refreshUI
+                        | otherwise -> logError "Permission denied" ["ev" .= ev]
+                    Nothing -> pure ()
+            "toggle-admin" -> withAdmin ev.client.session \adminSession -> do
+                case ev.body ^? key "uuid" . _JSON of
                     Just sessionID -> do
                         atomically (lookupSession display.sessions sessionID) >>= \case
-                            Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
                             Just session -> do
-                                atomically $ writeTVar state (Editing session)
-                                pure $ renderApp state wid
-                "save" -> case (ev.body ^? key "name" . _JSON, ev.body ^? key "username" . _JSON) of
-                    (Just sessionID, Just username) -> do
-                        atomically (lookupSession display.sessions sessionID) >>= \case
-                            Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
-                            Just session -> do
-                                _ <- changeUsername display.sessions session username
-                                atomically $ writeTVar state (Listing display)
-                                pure $ renderApp state wid
-                    _ -> logError "invalid save action" ["ev" .= ev] >> pure mempty
-                "new-invite" -> case ev.body ^? key "name" . _JSON of
-                    Nothing -> logError "invalid invite" [] >> pure mempty
-                    Just mInvite -> do
-                        let invite = case mInvite of
-                                "" -> "butler"
-                                _ -> mInvite
-                        newInvite display.sessions invite
-                        pure $ renderSM display wid
-                "delete-invite" -> case ev.body ^? key "uuid" . _JSON of
-                    Just invite -> atomically do
-                        deleteInvite display.sessions invite
-                        pure $ renderSM display wid
-                    Nothing -> pure mempty
-                "terminate-session" -> case ev.body ^? key "uuid" . _JSON of
-                    Just session -> do
-                        deleteSession display.sessions session
-                        pids <- atomically do
-                            allClients <- fromMaybe [] . Map.lookup session <$> readTVar display.clients
-                            pure ((.process.pid) <$> allClients)
-                        logInfo "Terminating" ["pids" .= pids]
-                        traverse_ killProcess pids
-                        pure $ renderSM display wid
-                    Nothing -> pure mempty
-                "close-connection" -> case (,) <$> ev.body ^? key "client" . _JSON <*> ev.body ^? key "uuid" . _JSON of
-                    Just (endpoint, uuid) -> do
-                        clientM <- atomically $ getClient display uuid endpoint
-                        case clientM of
-                            Just client -> void $ killProcess client.process.pid
-                            Nothing -> logError "Unknown client" ["endpoint" .= endpoint]
-                        pure $ renderSM display wid
+                                newAdmin <- not <$> readTVarIO session.admin
+                                logInfo "User admin changed" ["session" .= session, "admin" .= newAdmin]
+                                setAdmin display.sessions adminSession session newAdmin
+                                refreshUI
+                            Nothing -> pure ()
+                    Nothing -> pure ()
+            "close-connection" -> do
+                isAdmin <- readTVarIO ev.client.session.admin
+                case (,) <$> ev.body ^? key "client" . _JSON <*> ev.body ^? key "uuid" . _JSON of
+                    Just (endpoint, uuid)
+                        | isAdmin || endpoint == ev.client.endpoint -> do
+                            clientM <- atomically $ getClient display uuid endpoint
+                            case clientM of
+                                Just client -> void $ killProcess client.process.pid
+                                Nothing -> logError "Unknown client" ["endpoint" .= endpoint]
+                            refreshUI
+                        | otherwise -> logError "Permission denied" ["ev" .= ev]
                     Nothing -> do
                         logError "close-connection missing client and/or uuid key" ["ev" .= ev]
-                        pure mempty
-                _ -> do
-                    logError "unknown ev" ["ev" .= ev]
-                    pure mempty
-            sendsHtml clients resp
+            _ -> logError "unknown ev" ["ev" .= ev]
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            ae@(AppDisplay _) -> sendHtmlOnConnect (renderApp state wid) ae
-            AppTrigger ge -> handleGuiEvent ge
+            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (renderApp state ctx.wid client)
+            AppTrigger ge -> handleGuiEvent ge ge.trigger
             _ -> pure ()

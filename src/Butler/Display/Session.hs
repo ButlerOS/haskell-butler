@@ -14,6 +14,12 @@ module Butler.Display.Session (
     isValidUserName,
     SessionID (..),
     InviteID (..),
+
+    -- * Permission API
+    AdminSession,
+    getAdminSession,
+    withAdmin,
+    setAdmin,
 ) where
 
 import Butler.Prelude
@@ -45,6 +51,7 @@ isValidUserName n
 data Session = Session
     { sessionID :: SessionID
     , username :: TVar UserName
+    , admin :: TVar Bool
     }
     deriving (Eq, Generic)
 
@@ -78,6 +85,9 @@ newtype SessionID = SessionID UUID
     deriving (Ord, Eq, Generic, Show)
     deriving (ToJSON, FromJSON, ToHtml, FromHttpApiData, Serialise, Hashable) via JsonUID
 
+instance ToField SessionID where
+    toField = SQLText . from
+
 instance From SessionID Text where
     from (SessionID uuid) = UUID.toText uuid
 
@@ -88,14 +98,24 @@ instance FromJWT SessionID
 instance ToJWT SessionID
 
 sessionsDB :: DatabaseMigration
-sessionsDB = dbSimpleCreate "sessions" "uuid TEXT, username TEXT"
+sessionsDB = DatabaseMigration ["sessions-create", "admin"] doUp doDown
+  where
+    doUp name db = case name of
+        "sessions-create" -> dbExecute db "CREATE TABLE sessions (uuid TEXT, username TEXT)" []
+        "admin" -> do
+            dbExecute db "ALTER TABLE sessions ADD COLUMN admin BOOLEAN" []
+            dbExecute db "UPDATE sessions SET admin = FALSE" []
+            dbExecute db "UPDATE sessions SET admin = TRUE WHERE rowid = 1" []
+        _ -> logError "Unknown migration" ["name" .= show name]
+    doDown _ _ = pure ()
 
+-- | TODO: only load active sessions when needed.
 sessionsFromDB :: Database -> ProcessIO [(SessionID, Session)]
 sessionsFromDB db = traverse mkSession =<< dbQuery db "select * from sessions" []
   where
-    mkSession (uuid, username) = do
+    mkSession (uuid, username, admin) = do
         let sessionID = SessionID (fromMaybe (error "bad uuid?!") (UUID.fromText uuid))
-        session <- Session sessionID <$> newTVarIO (UserName username)
+        session <- Session sessionID <$> newTVarIO (UserName username) <*> newTVarIO admin
         pure (sessionID, session)
 
 withSessions :: StorageAddress -> (Sessions -> ProcessIO a) -> ProcessIO a
@@ -115,12 +135,13 @@ lookupSession :: Sessions -> SessionID -> STM (Maybe Session)
 lookupSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
 
 addSessionDB :: Sessions -> Session -> ProcessIO ()
-addSessionDB sessions session = do
-    username <- readTVarIO session.username
+addSessionDB sessions (Session sessionID tUsername tAdmin) = do
+    username <- readTVarIO tUsername
+    admin <- readTVarIO tAdmin
     dbExecute
         sessions.db
-        "INSERT INTO sessions (uuid, username) VALUES (:uuid, :username)"
-        [":uuid" := into @Text session.sessionID, ":username" := into @Text username]
+        "INSERT INTO sessions (uuid, username, admin) VALUES (:uuid, :username, :admin)"
+        [":uuid" := sessionID, ":username" := into @Text username, ":admin" := admin]
 
 isUsernameAvailable :: Sessions -> UserName -> ProcessIO Bool
 isUsernameAvailable sessions username = do
@@ -168,7 +189,7 @@ createSession sessions username mInvite = withMVar sessions.lock \() -> do
                 modifyMemoryVar sessions.invitations (Map.alter alter invite)
             if firstSession || validInvite || username == "guest"
                 then do
-                    session <- Session sessionID <$> newTVar username
+                    session <- Session sessionID <$> newTVar username <*> newTVar firstSession
                     modifyTVar' sessions.sessions (Map.insert session.sessionID session)
                     pure (Just session)
                 else pure Nothing
@@ -203,3 +224,16 @@ instance Serialise JsonUID where
     decode = fmap (JsonUID . decodeUUID) decodeBytes
       where
         decodeUUID = runGet get . from
+
+newtype AdminSession = AdminSession {getAdminSession :: Session}
+
+withAdmin :: Session -> (AdminSession -> ProcessIO a) -> ProcessIO ()
+withAdmin session cb =
+    readTVarIO session.admin >>= \case
+        True -> void $ cb (AdminSession session)
+        False -> logError "Permission denied" ["ses" .= session]
+
+setAdmin :: Sessions -> AdminSession -> Session -> Bool -> ProcessIO ()
+setAdmin sessions _ target admin = do
+    dbExecute sessions.db "UPDATE sessions SET admin = :admin WHERE uuid = :sessionID" [":admin" := admin, ":sessionID" := target.sessionID]
+    atomically $ writeTVar target.admin admin

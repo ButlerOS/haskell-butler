@@ -10,8 +10,9 @@ module Butler.Database (
     dbUpdate,
 
     -- * re-export
+    SQLData (..),
     FromField,
-    ToField,
+    ToField (..),
     NamedParam ((:=)),
     Only (..),
 )
@@ -21,7 +22,7 @@ import Database.Migrant hiding (withTransaction)
 import Database.Migrant.Driver.Sqlite ()
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromField (FromField)
-import Database.SQLite.Simple.ToField (ToField)
+import Database.SQLite.Simple.ToField (ToField (..))
 
 import Butler.Core
 import Butler.Core.Storage
