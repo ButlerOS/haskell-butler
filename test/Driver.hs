@@ -1,1 +1,1 @@
-{-# OPTIONS_GHC -F -pgmF tasty-discover -optF --search-dir=../src #-}
+{-# OPTIONS_GHC -F -pgmF tasty-discover #-}

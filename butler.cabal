@@ -32,7 +32,6 @@ library
       Butler.App.Chat
       Butler.App.Chess
       Butler.App.Clock
-      Butler.App.ClockTest
       Butler.App.FileManager
       Butler.App.FileViewer
       Butler.App.Launcher
@@ -40,7 +39,6 @@ library
       Butler.App.MineSweeper
       Butler.App.Mumbler
       Butler.App.Noter
-      Butler.App.NoterTest
       Butler.App.NoVnc
       Butler.App.Painter
       Butler.App.ProcessExplorer
@@ -55,22 +53,17 @@ library
       Butler.Core
       Butler.Core.Buzzer
       Butler.Core.Clock
-      Butler.Core.ClockTest
       Butler.Core.Dynamic
       Butler.Core.Events
       Butler.Core.File
       Butler.Core.History
-      Butler.Core.HistoryTest
       Butler.Core.Logger
-      Butler.Core.LoggerTest
       Butler.Core.Memory
-      Butler.Core.MemoryTest
       Butler.Core.NatMap
       Butler.Core.Network
       Butler.Core.Pipe
       Butler.Core.Process
       Butler.Core.Processor
-      Butler.Core.ProcessorTest
       Butler.Core.Storage
       Butler.Database
       Butler.Desktop
@@ -317,10 +310,15 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Driver.hs
   other-modules:
-      Main
+      Butler.App.ClockTest
+      Butler.App.NoterTest
+      Butler.Core.ClockTest
+      Butler.Core.HistoryTest
+      Butler.Core.LoggerTest
+      Butler.Core.MemoryTest
+      Butler.Core.ProcessorTest
       Paths_butler
   hs-source-dirs:
-      app
       test
   default-extensions:
       OverloadedStrings

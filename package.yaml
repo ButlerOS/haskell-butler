@@ -160,7 +160,7 @@ tests:
   spec:
     main: Driver.hs
     ghc-options: -threaded -rtsopts -with-rtsopts=-T
-    source-dirs: [app, test]
+    source-dirs: test
     dependencies:
       - butler
       - tasty
