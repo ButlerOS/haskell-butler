@@ -41,6 +41,7 @@ library
       Butler.App.Noter
       Butler.App.NoVnc
       Butler.App.Painter
+      Butler.App.PokerPlanner
       Butler.App.ProcessExplorer
       Butler.App.QRTest
       Butler.App.SessionManager
@@ -155,6 +156,7 @@ library
     , qrcode-juicypixels
     , random
     , retry
+    , scientific
     , serialise
     , servant
     , servant-auth
@@ -267,6 +269,7 @@ executable butler
     , qrcode-juicypixels
     , random
     , retry
+    , scientific
     , serialise
     , servant
     , servant-auth
@@ -389,6 +392,7 @@ test-suite spec
     , qrcode-juicypixels
     , random
     , retry
+    , scientific
     , serialise
     , servant
     , servant-auth

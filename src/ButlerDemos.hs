@@ -23,6 +23,7 @@ import Butler.App.Mumbler
 import Butler.App.NoVnc
 import Butler.App.Noter
 import Butler.App.Painter
+import Butler.App.PokerPlanner
 import Butler.App.ProcessExplorer
 import Butler.App.QRTest
 import Butler.App.SessionManager
@@ -153,6 +154,7 @@ demoDesktop extraApps = do
             , launcherApp
             , noterApp
             , painterApp
+            , pokerPlannerApp
             ]
                 <> extraApps
 
