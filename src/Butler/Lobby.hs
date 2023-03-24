@@ -3,20 +3,18 @@ The 'Lobby' act as a router to dispatch user based on the workspace path.
 -}
 module Butler.Lobby (lobbyProgram) where
 
-import Data.IntMap.Strict qualified as IM
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 import Lucid.Htmx
 
 import Butler
-import Butler.App (AppSet)
+import Butler.App
+import Butler.App.Desktop
 import Butler.Core
 import Butler.Core.Logger
-import Butler.Desktop
 import Butler.Display
 import Butler.Display.Session
-import Butler.Display.User
 import Butler.Display.WebSocket
 
 import Butler.App.Chat
@@ -26,7 +24,9 @@ data Lobby = Lobby
     , desktopsList :: MemoryVar [Workspace]
     }
 
-data DesktopStatus = DesktopOffline | DesktopRunning Desktop
+data DesktopStatus = DesktopOffline | DesktopRunning DesktopInstance
+
+type DesktopInstance = (Desktop, (ProcessEnv, DisplayEvent -> ProcessIO ()))
 
 newLobby :: ProcessIO Lobby
 newLobby = do
@@ -43,25 +43,56 @@ lobbyProgram appSet services chat display = do
     rootOS <- asks os
     let dmEnv = ProcessEnv rootOS dmProcess
 
-    let getDesktop :: Workspace -> ProcessIO Desktop
+    let getDesktop :: Workspace -> ProcessIO DesktopInstance
         getDesktop name = modifyMVar dm.desktops $ \wss -> case Map.lookup name wss of
             Just (DesktopRunning desktop) -> pure (wss, desktop)
             mDesktopStatus -> do
-                desktopMVar <- newEmptyMVar
-                let desktopID = "desktop-" <> from name
-                void $ spawnProcess (ProgramName desktopID) $ chroot (from desktopID) do
-                    startDesktop desktopMVar appSet services display name
+                let desktopID = "desktop-" <> into @StorageAddress name
+                clients <- atomically newDisplayClients
+                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop" (desktopApp services) display clients
 
-                desktop <- takeMVar desktopMVar
                 when (isNothing mDesktopStatus) do
                     atomically $ modifyMemoryVar dm.desktopsList (name :)
-                pure (Map.insert name (DesktopRunning desktop) wss, desktop)
+
+                desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance
+
+                let desktopInstance = (desktop, (shared.processEnv, shellHandler desktop shared clients))
+                pure (Map.insert name (DesktopRunning desktopInstance) wss, desktopInstance)
 
     pure \_ -> \case
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
-        name -> do
-            desktop <- getDesktop name
-            pure (desktop.env, desktopHandler desktop.shared services desktop)
+        name -> snd <$> getDesktop name
+
+shellHandler :: Desktop -> AppSharedContext -> DisplayClients -> DisplayEvent -> ProcessIO ()
+shellHandler desktop shared clients event = case event of
+    UserConnected "htmx" client -> do
+        -- No need to spawn a ping thread because the desktop update the status periodically.
+        spawnThread_ (sendThread client)
+        atomically $ sendHtml client desktop.mountUI
+        atomically $ addClient clients client
+
+        appInstances <- atomically (getApps shared.apps)
+        forM_ appInstances \appInstance -> writePipe appInstance.pipe (AppDisplay (UserJoined client))
+
+        forever do
+            dataMessage <- recvData client
+            case eventFromMessage client dataMessage of
+                Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
+                Just (wid, ae) ->
+                    (Map.lookup wid <$> atomically (getApps shared.apps)) >>= \case
+                        Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
+                        Just appInstance -> writePipe appInstance.pipe ae
+    UserDisconnected "htmx" client -> do
+        atomically $ delClient clients client
+        apps <- atomically (getApps shared.apps)
+        forM_ apps \app -> writePipe app.pipe (AppDisplay (UserLeft client))
+    UserConnected chan _ -> forwardExtraHandler chan
+    UserDisconnected chan _ -> forwardExtraHandler chan
+  where
+    forwardExtraHandler chan =
+        Map.lookup chan <$> readTVarIO shared.extraHandlers >>= \case
+            Just hdl -> hdl event
+            Nothing -> logError "Unknown chan" ["chan" .= chan]
 
 chatWin :: WinID
 chatWin = WinID 0
@@ -74,9 +105,9 @@ lobbyHandler dm chat = \case
         atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Loading..."))
         sleep 100
         atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Getting workspaces..."))
-        sleep 60
         wss <- readMVar dm.desktops
         chatChan <- atomically (newChatReader chat)
+        sleep 60
         atomically $ sendHtml client (lobbyHtml wss (renderChat chatWin chat client))
         spawnThread_ $ forever do
             ev <- atomically (readTChan chatChan)
@@ -128,13 +159,7 @@ lobbyWsListHtml wss =
                         attr "name" (toHtml ws)
                         case desktopStatus of
                             DesktopOffline -> "offline"
-                            DesktopRunning desktop -> do
-                                clients <- lift (getClients desktop.clients)
-                                attr "clients" do
-                                    with div_ [class_ "flex"] do
-                                        traverse_ (\c -> userIcon =<< lift (readTVar c.session.username)) clients
-                                wins <- IM.size . (.windows) <$> lift (readMemoryVar desktop.wm.windows)
-                                attr "wins" (toHtml (show wins))
+                            DesktopRunning (desktop, _) -> desktop.thumbnail
 
 btn :: Text
 btn = "rounded-none px-4 py-2 font-semibold text-sm bg-sky-500 text-white rounded-none shadow-sm"
@@ -174,7 +199,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
             "delete-ws" -> modifyMVar_ dm.desktops $ \wss -> case Map.lookup ws wss of
                 Just desktopStatus -> do
                     case desktopStatus of
-                        DesktopRunning desktop -> void $ killProcess desktop.env.process.pid
+                        DesktopRunning (_, (env, _)) -> void $ killProcess env.process.pid
                         DesktopOffline -> pure ()
                     let newWss = Map.delete ws wss
                     atomically $ sendHtml client (lobbyWsListHtml newWss)

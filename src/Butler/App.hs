@@ -8,6 +8,7 @@ import Lucid
 import Network.WebSockets qualified as WS
 
 import Butler.Core
+import Butler.Core.Clock
 import Butler.Core.Dynamic
 import Butler.Core.File
 import Butler.Core.Pipe
@@ -51,7 +52,24 @@ data AppEvent
       AppData DataEvent
     | -- | A file event (e.g. a new file opened)
       AppFile Directory (Maybe File)
+    | -- | A sync event (e.g. a query that needs a reply)
+      AppSync SyncEvent
     deriving (Generic, ToJSON)
+
+newtype SyncEvent = SyncEvent
+    { reply :: TMVar Dynamic
+    }
+
+instance ToJSON SyncEvent where toJSON = const "SyncEvent"
+
+appCall :: Typeable a => AppInstance -> ProcessIO (Maybe a)
+appCall appInstance = do
+    mvReply <- newEmptyTMVarIO
+    writePipe appInstance.pipe (AppSync (SyncEvent mvReply))
+    res <- atomically =<< waitTransaction 100 (takeTMVar mvReply)
+    pure $ case res of
+        WaitTimeout -> Nothing
+        WaitCompleted dyn -> fromDynamic dyn
 
 eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
 eventFromMessage client = \case
@@ -173,6 +191,22 @@ startApp prefix app shared clients wid = do
         app.start ctx
 
     pure $ AppInstance{app, process, wid, pipe}
+
+-- | Start the application that is in charge of starting the other apps.
+startShellApp :: AppSet -> Text -> App -> Display -> DisplayClients -> ProcessIO (AppSharedContext, AppInstance)
+startShellApp appSet prefix app display clients = do
+    let wid = WinID 0
+    pipe <- atomically newPipe
+    mvShared <- newEmptyMVar
+    process <- spawnProcess (from prefix <> app.name) do
+        processEnv <- ask
+        shared <- atomically (newAppSharedContext display processEnv appSet)
+        putMVar mvShared shared
+        app.start (AppContext clients wid pipe shared)
+    shared <- takeMVar mvShared
+    let appInstance = AppInstance{app, process, wid, pipe}
+    atomically (registerApp shared.apps appInstance)
+    pure (shared, appInstance)
 
 startApps :: [App] -> Display -> DisplayClients -> ProcessIO AppSharedContext
 startApps apps display clients = do

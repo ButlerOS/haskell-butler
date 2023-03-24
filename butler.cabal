@@ -32,6 +32,7 @@ library
       Butler.App.Chat
       Butler.App.Chess
       Butler.App.Clock
+      Butler.App.Desktop
       Butler.App.FileManager
       Butler.App.FileViewer
       Butler.App.Launcher
@@ -67,7 +68,6 @@ library
       Butler.Core.Processor
       Butler.Core.Storage
       Butler.Database
-      Butler.Desktop
       Butler.Display
       Butler.Display.Client
       Butler.Display.GUI

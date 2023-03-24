@@ -61,7 +61,9 @@ data DisplayClient = DisplayClient
 newClient :: WS.Connection -> Endpoint -> Process -> Session -> STM DisplayClient
 newClient c endpoint p s = DisplayClient c endpoint p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
--- | An action to keep a client alive.
+{- | An action to keep a client alive.
+TODO: implement ping keep alive using a wait timeout on the send thread.
+-}
 pingThread :: DisplayClient -> ProcessIO Void
 pingThread client = forever do
     sleep 30_000

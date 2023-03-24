@@ -74,7 +74,7 @@ startTermApp name ctx = do
                         sendsHtmlButSelf de.client clients do
                             with (script_ resizeScript) [wid_ wid "script"]
                     _ -> logError "invalid dim" ["ev" .= de]
-            af@AppFile{} -> logError "unknown file event" ["ev" .= af]
+            _ -> logError "Unexpected event" ["ev" .= ev]
 
     let sess = from ("butler-" <> name <> "-" <> showT wid)
         (prog, args) = ("tmux", ["attach", "-t", sess])

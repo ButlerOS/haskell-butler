@@ -38,7 +38,7 @@ startSoundCard ctx = do
                      in atomically $ sendHtml ge.client btn
                 | otherwise -> logError "Invalid ev" ["ev" .= ge]
             AppData de -> soundHandler sc de.client de.buffer
-            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
+            ev -> logError "Unknown event" ["ev" .= ev]
 
 renderAudioToggle :: WinID -> TVar UserName -> Bool -> HtmlT STM ()
 renderAudioToggle wid tvUsername enabled = do

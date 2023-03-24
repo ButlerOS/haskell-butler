@@ -86,7 +86,7 @@ startApp ctx = do
                                 sktSendAll request.socket buf
                             _ -> pure ()
                 _ -> logError "Unknown data" ["ev" .= de]
-            af@AppFile{} -> logError "Unknown file event" ["ev" .= af]
+            ev -> logError "Unexpected event" ["ev" .= ev]
 
 sshAgentProvider :: WinID -> Text
 sshAgentProvider wid =
