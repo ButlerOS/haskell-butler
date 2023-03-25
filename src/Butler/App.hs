@@ -118,9 +118,7 @@ defaultApp name start =
 
 -- | The application context
 data AppContext = AppContext
-    { clients :: DisplayClients
-    -- ^ the list of all the connected clients. To send update, app should uses `sendsHtml clients ""`
-    , wid :: WinID
+    { wid :: WinID
     -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
     , pipe :: Pipe AppEvent
     -- ^ the channel to receive events.
@@ -131,13 +129,16 @@ data AppSharedContext = AppSharedContext
     { display :: Display
     , processEnv :: ProcessEnv
     , appSet :: AppSet
+    , clients :: DisplayClients
+    -- ^ the list of all the connected clients. To send update, app should uses `sendsHtml clients ""`
     , dynamics :: Dynamics
     , apps :: Apps
     , extraHandlers :: TVar (Map ChannelName (DisplayEvent -> ProcessIO ()))
     }
 
 newAppSharedContext :: Display -> ProcessEnv -> AppSet -> STM AppSharedContext
-newAppSharedContext display processEnv appSet = AppSharedContext display processEnv appSet <$> newDynamics <*> newApps <*> newTVar mempty
+newAppSharedContext display processEnv appSet =
+    AppSharedContext display processEnv appSet <$> newDisplayClients <*> newDynamics <*> newApps <*> newTVar mempty
 
 newtype Apps = Apps (TVar (Map WinID AppInstance))
 
@@ -175,26 +176,26 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> (app.name, app))
 
-launchApp :: AppSet -> ProgramName -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) (ProgramName name) shared clients wid = case Map.lookup (ProgramName appName) apps of
-    Just app -> Just <$> startApp "app-" app shared clients wid
+launchApp :: AppSet -> ProgramName -> AppSharedContext -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) (ProgramName name) shared wid = case Map.lookup (ProgramName appName) apps of
+    Just app -> Just <$> startApp "app-" app shared wid
     Nothing -> pure Nothing
   where
     appName = fromMaybe name $ Text.stripPrefix "app-" name
 
-startApp :: Text -> App -> AppSharedContext -> DisplayClients -> WinID -> ProcessIO AppInstance
-startApp prefix app shared clients wid = do
+startApp :: Text -> App -> AppSharedContext -> WinID -> ProcessIO AppInstance
+startApp prefix app shared wid = do
     -- Start app process
     pipe <- atomically newPipe
-    let ctx = AppContext clients wid pipe shared
+    let ctx = AppContext wid pipe shared
     process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
 
     pure $ AppInstance{app, process, wid, pipe}
 
 -- | Start the application that is in charge of starting the other apps.
-startShellApp :: AppSet -> Text -> App -> Display -> DisplayClients -> ProcessIO (AppSharedContext, AppInstance)
-startShellApp appSet prefix app display clients = do
+startShellApp :: AppSet -> Text -> App -> Display -> ProcessIO (AppSharedContext, AppInstance)
+startShellApp appSet prefix app display = do
     let wid = WinID 0
     pipe <- atomically newPipe
     mvShared <- newEmptyMVar
@@ -202,14 +203,14 @@ startShellApp appSet prefix app display clients = do
         processEnv <- ask
         shared <- atomically (newAppSharedContext display processEnv appSet)
         putMVar mvShared shared
-        app.start (AppContext clients wid pipe shared)
+        app.start (AppContext wid pipe shared)
     shared <- takeMVar mvShared
     let appInstance = AppInstance{app, process, wid, pipe}
     atomically (registerApp shared.apps appInstance)
     pure (shared, appInstance)
 
-startApps :: [App] -> Display -> DisplayClients -> ProcessIO AppSharedContext
-startApps apps display clients = do
+startApps :: [App] -> Display -> ProcessIO AppSharedContext
+startApps apps display = do
     processEnv <- ask
     shared <- atomically (newAppSharedContext display processEnv (newAppSet apps))
     traverse_ (go shared) (zip [0 ..] apps)
@@ -217,7 +218,7 @@ startApps apps display clients = do
   where
     go shared (i, app) = do
         let wid = WinID i
-        appInstance <- startApp "app-" app shared clients wid
+        appInstance <- startApp "app-" app shared wid
         atomically (registerApp shared.apps appInstance)
 
 tagIcon :: AppTag -> Maybe Text

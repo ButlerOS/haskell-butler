@@ -163,7 +163,7 @@ startPokerPlannerApp ctx = do
             AppDisplay (UserJoined client) -> do
                 atomically do
                     modifyTVar' state.players (Map.insert client.endpoint (Player client Thinking))
-                clientsDrawT ctx.clients mountUI
+                clientsDrawT ctx.shared.clients mountUI
             AppDisplay (UserLeft client) -> do
                 atomically $ modifyTVar' state.players (Map.delete client.endpoint)
             AppTrigger ev -> case ev.trigger of
@@ -172,20 +172,20 @@ startPokerPlannerApp ctx = do
                         atomically do
                             writeTVar state.status (Playing name)
                             modifyTVar' state.players (fmap $ \(Player client _) -> Player client Thinking)
-                        clientsDrawT ctx.clients mountUI
+                        clientsDrawT ctx.shared.clients mountUI
                     Nothing -> logError "Missing name" ["ev" .= ev]
                 "vote" -> case ev.body ^? key "card" . _JSON of
                     Just vote -> do
                         atomically $ modifyTVar' state.players (Map.insert ev.client.endpoint (Player ev.client (Voted vote)))
-                        clientsDrawT ctx.clients mountUI
+                        clientsDrawT ctx.shared.clients mountUI
                     Nothing -> logError "Missing vote" ["ev" .= ev]
                 "reset" -> do
                     atomically $ writeTVar state.status WaitingForGame
-                    clientsDrawT ctx.clients mountUI
+                    clientsDrawT ctx.shared.clients mountUI
                 "complete" -> do
                     atomically $ modifyTVar state.status \case
                         Playing name -> Finished name
                         _ -> Finished "unknown"
-                    clientsDrawT ctx.clients mountUI
+                    clientsDrawT ctx.shared.clients mountUI
                 _ -> logError "Unknown ev" ["ev" .= ev]
             _ -> pure ()

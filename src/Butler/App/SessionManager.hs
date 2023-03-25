@@ -152,11 +152,11 @@ startSMApp :: AppContext -> ProcessIO ()
 startSMApp ctx = do
     let display = ctx.shared.display
     state <- newTVarIO $ Listing display
-    let refreshUI = clientsDrawT ctx.clients (renderApp state ctx.wid)
+    let refreshUI = clientsDrawT ctx.shared.clients (renderApp state ctx.wid)
     let handleGuiEvent ev = \case
             "listing" -> do
                 atomically $ writeTVar state (Listing display)
-                clientsDrawT ctx.clients (renderSM display ctx.wid)
+                clientsDrawT ctx.shared.clients (renderSM display ctx.wid)
             "edit" -> case ev.body ^? key "name" . _JSON of
                 Nothing -> logError "invalid edit action" ["ev" .= ev] >> pure mempty
                 Just sessionID -> do

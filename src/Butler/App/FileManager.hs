@@ -194,7 +194,7 @@ startFileManagerApp ctx = do
 
     spawnThread_ $ renderOnChange mountUI \newHtml -> do
         logDebug "Updating file-manager ui" []
-        sendsHtml ctx.clients newHtml
+        sendsHtml ctx.shared.clients newHtml
 
     let
         withFileName :: GuiEvent -> (Directory -> FileName -> ProcessIO ()) -> ProcessIO ()

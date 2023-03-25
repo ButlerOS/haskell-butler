@@ -177,8 +177,8 @@ startNoterApp ctx = do
                                 (Just (dirtyChanged, body), newState)
                 case mBody of
                     Just (dirtyChanged, body) -> do
-                        sendsBinaryButSelf client ctx.clients (encodeMessageL ctx.wid (encodeJSON body))
-                        forM_ dirtyChanged (sendsHtml ctx.clients . fileNameForm)
+                        sendsBinaryButSelf client ctx.shared.clients (encodeMessageL ctx.wid (encodeJSON body))
+                        forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Insert failed" ["client" .= client, "txt" .= txt]
             Delete dir deleteSize -> do
                 -- logDebug "Deleting" ["count" .= count]
@@ -210,8 +210,8 @@ startNoterApp ctx = do
                                 (Just (dirtyChanged, body), newState)
                 case mBody of
                     Just (dirtyChanged, body) -> do
-                        sendsBinaryButSelf client ctx.clients (encodeMessageL ctx.wid (encodeJSON body))
-                        forM_ dirtyChanged (sendsHtml ctx.clients . fileNameForm)
+                        sendsBinaryButSelf client ctx.shared.clients (encodeMessageL ctx.wid (encodeJSON body))
+                        forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Delete failed" ["client" .= client]
 
     let modifyEditors edit state =
@@ -223,10 +223,10 @@ startNoterApp ctx = do
             AppDisplay (UserJoined client) -> do
                 editors <- atomically $ stateTVar tState (modifyEditors $ Map.insert client.endpoint (Editor client 0))
                 atomically $ sendHtml client mountUI
-                sendsHtmlButSelf client ctx.clients (editorList editors)
+                sendsHtmlButSelf client ctx.shared.clients (editorList editors)
             AppDisplay (UserLeft client) -> do
                 editors <- atomically $ stateTVar tState (modifyEditors $ Map.delete client.endpoint)
-                sendsHtml ctx.clients (editorList editors)
+                sendsHtml ctx.shared.clients (editorList editors)
             AppTrigger ev -> case ev.trigger of
                 "refresh" -> atomically do
                     content <- (.content) <$> readTVar tState
@@ -239,7 +239,7 @@ startNoterApp ctx = do
                             writeFileBS dir file (encodeUtf8 $ Rope.toText state.content)
                             let newState = state & (#dirty .~ False)
                             atomically $ writeTVar tState newState
-                            sendsHtml ctx.clients (fileNameForm newState)
+                            sendsHtml ctx.shared.clients (fileNameForm newState)
                 "new-file" -> case ev.body ^? key "file" . _JSON of
                     Just fp -> do
                         state <- readTVarIO tState
@@ -253,7 +253,7 @@ startNoterApp ctx = do
                                 atomically do
                                     writeTVar tState newState
                                     modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
-                                sendsHtml ctx.clients (fileNameForm newState)
+                                sendsHtml ctx.shared.clients (fileNameForm newState)
                             Nothing -> logError "Documents is not a directory" []
                     Nothing -> logError "Invalid new-file" ["ev" .= ev]
                 _ -> logError "Unknown ev" ["ev" .= ev]
@@ -266,7 +266,7 @@ startNoterApp ctx = do
                     modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
                     let setContent = #content .~ Rope.fromText content
                     modifyTVar' tState $ (#status .~ EditingFile dir file) . (#dirty .~ False) . setContent
-                sendsHtml ctx.clients mountUI
+                sendsHtml ctx.shared.clients mountUI
             _ -> pure ()
 
 -- See https://developer.mozilla.org/en-US/docs/Web/API/HTMLTextAreaElement

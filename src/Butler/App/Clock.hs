@@ -79,6 +79,6 @@ startClockApp ctx = do
                 _ -> logError "Unknown event" ["ev" .= ev]
             WaitCompleted _ -> pure ()
         atomically . writeTVar tNow =<< loadTime
-        sendsHtml ctx.clients (clockContent ctx.wid state tNow)
+        sendsHtml ctx.shared.clients (clockContent ctx.wid state tNow)
   where
     loadTime = dropMilliSec <$> liftIO getCurrentTime

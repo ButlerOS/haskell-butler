@@ -30,6 +30,6 @@ logViewerApp =
                 case ev of
                     Right de -> sendHtmlOnConnect (renderLogs os ctx.wid) de
                     Left sysEvent ->
-                        sendsHtml ctx.clients do
+                        sendsHtml ctx.shared.clients do
                             with ul_ [id_ (withWID ctx.wid "logs-list"), hxSwapOob_ "afterbegin"] do
                                 li_ $ renderLog sysEvent

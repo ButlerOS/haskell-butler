@@ -48,28 +48,27 @@ lobbyProgram appSet services chat display = do
             Just (DesktopRunning desktop) -> pure (wss, desktop)
             mDesktopStatus -> do
                 let desktopID = "desktop-" <> into @StorageAddress name
-                clients <- atomically newDisplayClients
-                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop" (desktopApp services) display clients
+                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop" (desktopApp services) display
 
                 when (isNothing mDesktopStatus) do
                     atomically $ modifyMemoryVar dm.desktopsList (name :)
 
                 desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance
 
-                let desktopInstance = (desktop, (shared.processEnv, shellHandler desktop shared clients))
+                let desktopInstance = (desktop, (shared.processEnv, shellHandler desktop shared))
                 pure (Map.insert name (DesktopRunning desktopInstance) wss, desktopInstance)
 
     pure \_ -> \case
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
         name -> snd <$> getDesktop name
 
-shellHandler :: Desktop -> AppSharedContext -> DisplayClients -> DisplayEvent -> ProcessIO ()
-shellHandler desktop shared clients event = case event of
+shellHandler :: Desktop -> AppSharedContext -> DisplayEvent -> ProcessIO ()
+shellHandler desktop shared event = case event of
     UserConnected "htmx" client -> do
         -- No need to spawn a ping thread because the desktop update the status periodically.
         spawnThread_ (sendThread client)
         atomically $ sendHtml client desktop.mountUI
-        atomically $ addClient clients client
+        atomically $ addClient shared.clients client
 
         appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> writePipe appInstance.pipe (AppDisplay (UserJoined client))
@@ -83,7 +82,7 @@ shellHandler desktop shared clients event = case event of
                         Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
                         Just appInstance -> writePipe appInstance.pipe ae
     UserDisconnected "htmx" client -> do
-        atomically $ delClient clients client
+        atomically $ delClient shared.clients client
         apps <- atomically (getApps shared.apps)
         forM_ apps \app -> writePipe app.pipe (AppDisplay (UserLeft client))
     UserConnected chan _ -> forwardExtraHandler chan

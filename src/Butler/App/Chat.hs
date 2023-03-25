@@ -134,7 +134,7 @@ chatApp srv =
 
 startChatApp :: ChatServer -> AppContext -> ProcessIO ()
 startChatApp srv ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     chatChan <- atomically (newChatReader srv)
     spawnThread_ $ forever do

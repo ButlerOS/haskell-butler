@@ -35,6 +35,6 @@ startQrTest ctx = do
             AppTrigger ge -> case ge.body ^? key "title" . _JSON of
                 Just title -> do
                     atomically $ writeTVar state (Just $ qrEncode title)
-                    sendsHtml ctx.clients mountUI
+                    sendsHtml ctx.shared.clients mountUI
                 Nothing -> logError "unknown ev" ["ev" .= ge]
             _ -> pure ()

@@ -106,7 +106,7 @@ appStateHtml wid (AppState nm) = do
 ----
 startMumbler :: AppContext -> ProcessIO ()
 startMumbler ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     soundCard <- getSoundCard ctx
     (state, soundEvents) <- atomically do

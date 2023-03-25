@@ -61,7 +61,7 @@ peApp =
         }
   where
     startPE ctx = do
-        let clients = ctx.clients
+        let clients = ctx.shared.clients
             wid = ctx.wid
         stV <- newTVarIO (PEScopped ctx.shared.processEnv.process.pid)
         os <- asks os

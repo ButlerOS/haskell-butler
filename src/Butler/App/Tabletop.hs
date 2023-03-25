@@ -354,7 +354,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                                     -- Add the object to the client hand.
                                     atomically $ modifyTVar' tableState.players $ Map.insert client.endpoint (Right (eKey, obj))
                                     -- Tell the clients a new object has been created.
-                                    sendsBinary ctx.clients $ newObject name obj.elt
+                                    sendsBinary ctx.shared.clients $ newObject name obj.elt
                                     pure $ Just (eKey, obj)
                                 | otherwise -> pure Nothing
                         case mTableObject of
@@ -368,10 +368,10 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                                 case tableState.current.name of
                                     Just (_, name) | IS.null prevDirties -> do
                                         -- Update the current game UI to indicate it is dirty.
-                                        sendsHtml ctx.clients $ renderCurrentGame ctx.wid (Just tableState) name
+                                        sendsHtml ctx.shared.clients $ renderCurrentGame ctx.wid (Just tableState) name
                                     _ -> pure ()
                                 -- Tell the clients an object moved.
-                                sendsBinary ctx.clients $ moveObject obj.elt (x, y)
+                                sendsBinary ctx.shared.clients $ moveObject obj.elt (x, y)
                             Nothing -> logError "Unknown object" []
                     Nothing -> logError "Player doesn't own an object" []
             TableEventDelete (OName -> name) -> case isObject name of
@@ -385,7 +385,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                     if isDeleted
                         then do
                             logDebug "Deleted" ["name" .= name]
-                            sendsBinary ctx.clients $ delObject name
+                            sendsBinary ctx.shared.clients $ delObject name
                             forM_ tableState.current.name \(gameID, _) -> deleteObjectDB db gameID name
                         else logError "Unknown obj" ["name" .= name]
                 Nothing -> logError "Invalid obj" ["name" .= name]
@@ -441,7 +441,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                 dirties <- collectDirties
                 (objs,dirties,) <$> updateState (addGame . setStatus)
 
-            sendsHtml ctx.clients (renderLoader gameState ctx.wid)
+            sendsHtml ctx.shared.clients (renderLoader gameState ctx.wid)
             forM_ mDirtyObjs \(gameID, _name, dirtyObjs) -> do
                 logInfo "Saving board before loading" ["count" .= length dirtyObjs]
                 forM_ dirtyObjs (replaceObjectDB db gameID)
@@ -458,7 +458,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
         forM mDirtyObjs \(gameID, name, dirtyObjs) -> do
             logInfo "Background saving" ["count" .= length dirtyObjs]
             forM_ dirtyObjs (replaceObjectDB db gameID)
-            sendsHtml ctx.clients (renderCurrentGame ctx.wid Nothing name)
+            sendsHtml ctx.shared.clients (renderCurrentGame ctx.wid Nothing name)
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
@@ -480,12 +480,12 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
             AppTrigger ev -> case ev.trigger of
                 "new-game" -> do
                     gameState <- atomically $ updateState (#status .~ Selecting)
-                    sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                    sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
                 "start-game" -> case tryFrom @Text <$> ev.body ^? key "kind" . _JSON of
                     (Just (Right kind)) -> do
                         ts <- atomically (newTableState (Game kind Nothing))
                         gameState <- atomically $ updateState (#status .~ Playing ts)
-                        sendsHtml ctx.clients (mountUI gameState ctx.wid)
+                        sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
                     _ -> logError "Unknown game" ["ev" .= ev]
                 "save-game" -> case ev.body ^? key "name" . _JSON of
                     Just name -> do
@@ -501,8 +501,8 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                             (game : _) -> do
                                 ts <- tableStateFromDB db game
                                 gameState <- atomically $ updateState (#status .~ Playing ts)
-                                sendsHtml ctx.clients (mountUI gameState ctx.wid)
-                                refreshUI gameState (sendsBinary ctx.clients)
+                                sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
+                                refreshUI gameState (sendsBinary ctx.shared.clients)
                             [] -> logError "Unknown game" ["ev" .= ev]
                     _ -> logError "Missing gameID" ["ev" .= ev]
                 "del-game" -> case ev.body ^? key "id" . _JSON of
@@ -511,7 +511,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                         gameState <- atomically $ updateState removeGame
                         dbExecute db "DELETE FROM games WHERE id = :id" [":id" := gameID]
                         dbExecute db "DELETE FROM objects WHERE gameid = :id" [":id" := gameID]
-                        sendsHtml ctx.clients (renderLoader gameState ctx.wid)
+                        sendsHtml ctx.shared.clients (renderLoader gameState ctx.wid)
                     _ -> logError "Missing gameID" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()

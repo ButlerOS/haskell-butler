@@ -97,7 +97,7 @@ soundTestApp =
 
 startSoundTest :: AppContext -> ProcessIO ()
 startSoundTest ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     soundCard <- getSoundCard ctx
     vState <- newTVarIO Pending

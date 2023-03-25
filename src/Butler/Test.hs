@@ -20,11 +20,6 @@ import Network.WebSockets.Connection qualified as WS
 import Test.Tasty (TestName, TestTree)
 import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
-data AppTestContext = AppTestContext
-    { clients :: DisplayClients
-    , shared :: AppSharedContext
-    }
-
 butlerTestCase :: TestName -> ProcessIO () -> TestTree
 butlerTestCase name action = testCase name do
     res <- spawnRawInitProcess (const $ pure ()) ".butler-test" action
@@ -42,10 +37,10 @@ newTestClient appSharedContext = do
     atomically (modifyTVar' appSharedContext.display.clients $ Map.insert sessionID [client])
     pure client
 
-newAppClient :: AppTestContext -> AppInstance -> ProcessIO DisplayClient
-newAppClient appTestContext appInstance = do
-    client <- newTestClient appTestContext.shared
-    atomically $ addClient appTestContext.clients client
+newAppClient :: AppSharedContext -> AppInstance -> ProcessIO DisplayClient
+newAppClient shared appInstance = do
+    client <- newTestClient shared
+    atomically $ addClient shared.clients client
     writePipe appInstance.pipe (AppDisplay $ UserJoined client)
     pure client
 
@@ -57,18 +52,17 @@ withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
         newAppSharedContext display processEnv appSet
     cb appSharedContext
 
-withAppInstance :: App -> (AppTestContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
+withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
 withAppInstance app cb = withTestSharedContext (newAppSet [app]) \appSharedContext -> do
-    clients <- atomically newDisplayClients
-    appInstance <- startApp "app" app appSharedContext clients (WinID 1)
-    cb (AppTestContext clients appSharedContext) appInstance
+    appInstance <- startApp "app" app appSharedContext (WinID 1)
+    cb appSharedContext appInstance
 
-startTestService :: AppTestContext -> Service -> ProcessIO ()
-startTestService appTestContext (Service app) = do
+startTestService :: AppSharedContext -> Service -> ProcessIO ()
+startTestService shared (Service app) = do
     -- TODO: increase win-id for next service
-    void $ startApp "srv" app appTestContext.shared appTestContext.clients (WinID 2)
+    void $ startApp "srv" app shared (WinID 2)
 
-butlerAppTestCase :: App -> (AppTestContext -> AppInstance -> ProcessIO ()) -> TestTree
+butlerAppTestCase :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> TestTree
 butlerAppTestCase app cb = butlerTestCase ("Butler.App." <> via @Text app.name) do
     withAppInstance app cb
 

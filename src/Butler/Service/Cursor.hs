@@ -101,7 +101,7 @@ cursorService = Service $ defaultApp "cursor" startSeatApp
 
 startSeatApp :: AppContext -> ProcessIO ()
 startSeatApp ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     seats <- atomically newSeats
 

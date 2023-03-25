@@ -34,7 +34,7 @@ startApp ctx = do
             reqID <- atomically (NM.add requests request)
 
             let sendMessage = encodeMessage (from ctx.wid) . encodeMessage reqID
-            sendsBinary ctx.clients $ sendMessage ""
+            sendsBinary ctx.shared.clients $ sendMessage ""
 
             baton <- newEmptyTMVarIO
             void $ spawnThread do

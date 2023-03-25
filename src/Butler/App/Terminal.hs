@@ -51,7 +51,7 @@ termApp name =
 
 startTermApp :: Text -> AppContext -> ProcessIO ()
 startTermApp name ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     server <- atomically newXtermServer
 

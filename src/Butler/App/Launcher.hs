@@ -52,7 +52,7 @@ startLauncherApp ctx = do
                     Just filterText -> do
                         atomically $ writeTVar vFilter filterText
                         -- Render the full UI for everyone
-                        sendsHtmlButSelf ev.client ctx.clients mountUI
+                        sendsHtmlButSelf ev.client ctx.shared.clients mountUI
                         -- Render the list for the active user to keep the input intact
                         atomically $ sendHtml ev.client (drawAppList filterText)
                     Nothing -> logError "Unknown filter" ["ev" .= ev]
@@ -65,7 +65,7 @@ startLauncherApp ctx = do
                             atomically $ sendHtml ev.client swapWin
                         _ -> do
                             atomically $ writeTVar vFilter mempty
-                            sendsHtml ctx.clients mountUI
+                            sendsHtml ctx.shared.clients mountUI
                     Nothing -> logError "Unknown filter" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             ev -> logError "Unknown ev" ["ev" .= ev]

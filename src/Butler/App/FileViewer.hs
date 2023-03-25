@@ -61,5 +61,5 @@ startFileViewerApp ctx = do
                 atomically do
                     writeTVar tmFile (Just fileContent)
                     modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
-                sendsHtml ctx.clients (renderFileContent fileContent)
+                sendsHtml ctx.shared.clients (renderFileContent fileContent)
             _ -> pure ()

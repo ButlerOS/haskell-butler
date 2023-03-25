@@ -43,16 +43,16 @@ startDesktopApp :: [Service] -> AppContext -> ProcessIO ()
 startDesktopApp services ctx = do
     wm <- newWindowManager (WinID (length services))
 
-    let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared ctx.clients
+    let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
-        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared ctx.clients (WinID wid)
+        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared (WinID wid)
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
 
     spawnThread_ $ renderOnChange (renderFileIcons controlWin dir) \newHtml -> do
         logInfo "Updating desktop directory ui" []
-        sendsHtml ctx.clients newHtml
+        sendsHtml ctx.shared.clients newHtml
 
     Map.toList <$> atomically (readMemoryVar wm.apps) >>= \case
         [] -> do
@@ -63,8 +63,8 @@ startDesktopApp services ctx = do
             forM_ xs $ \(wid, prog) -> do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> startDeskApp wid
-                    "app-launcher" -> launchApp ctx.shared.appSet "launcher" ctx.shared ctx.clients wid
-                    _ -> launchApp ctx.shared.appSet prog ctx.shared ctx.clients wid
+                    "app-launcher" -> launchApp ctx.shared.appSet "launcher" ctx.shared wid
+                    _ -> launchApp ctx.shared.appSet prog ctx.shared wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow wm.windows wid)) do
@@ -77,7 +77,7 @@ startDesktopApp services ctx = do
 
     -- This act as a ping thread
     let updateStatus s = do
-            sendsHtml ctx.clients $ statusHtml s
+            sendsHtml ctx.shared.clients $ statusHtml s
             sleep 5_000
             updateStatus (not s)
     spawnThread_ (updateStatus True)
@@ -109,16 +109,16 @@ startDesktopApp services ctx = do
                 let script = renderWindow (winId, win)
                 pure (winId, script)
 
-            mGuiApp <- launchApp ctx.shared.appSet name ctx.shared ctx.clients wid
+            mGuiApp <- launchApp ctx.shared.appSet name ctx.shared wid
             forM_ mGuiApp \guiApp -> do
                 atomically $ addApp wm ctx.shared guiApp
                 renderNewWindow wid script
                 forM_ mEvent $ writePipe guiApp.pipe
-                clients <- atomically (getClients ctx.clients)
+                clients <- atomically (getClients ctx.shared.clients)
                 forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
 
         renderNewWindow wid script = do
-            sendsHtml ctx.clients do
+            sendsHtml ctx.shared.clients do
                 with div_ [id_ "backstore", hxSwapOob_ "beforeend"] do
                     with div_ [id_ (withWID wid "w")] mempty
                     with (script_ script) [type_ "module"]
@@ -141,7 +141,7 @@ startDesktopApp services ctx = do
                     ("close", Nothing, Nothing) -> do
                         atomically do
                             delWin wm ctx wid
-                        sendsHtml (ctx.clients) do
+                        sendsHtml (ctx.shared.clients) do
                             with span_ [wid_ wid "bar", hxSwapOob_ "delete"] mempty
                             with span_ [wid_ wid "tray", hxSwapOob_ "delete"] mempty
                         logInfo "Delete win" ["wid" .= wid]
@@ -152,7 +152,7 @@ startDesktopApp services ctx = do
                         logError "invalid win-event" ["v" .= v]
                         pure False
             when doBroadcast do
-                sendsBinaryButSelf client ctx.clients (encodeMessageL controlWin buf)
+                sendsBinaryButSelf client ctx.shared.clients (encodeMessageL controlWin buf)
 
         desktop =
             Desktop
@@ -166,7 +166,7 @@ startDesktopApp services ctx = do
                                     ":"
                                 with td_ [class_ "font-medium"] do
                                     v
-                    clients <- lift (getClients ctx.clients)
+                    clients <- lift (getClients ctx.shared.clients)
                     attr "clients" do
                         with div_ [class_ "flex"] do
                             traverse_ (\c -> userIcon =<< lift (readTVar c.session.username)) clients
@@ -288,7 +288,7 @@ statusHtml s =
 
 handleWinSwap :: WindowManager -> AppContext -> WinID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
 handleWinSwap wm ctx wid appName mEvent = do
-    mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared ctx.clients wid
+    mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared wid
     case mGuiApp of
         Just guiApp -> swapWindow guiApp
         Nothing -> logInfo "unknown win-swap prog" ["v" .= appName]
@@ -297,7 +297,7 @@ handleWinSwap wm ctx wid appName mEvent = do
     swapWindow guiApp = do
         atomically $ swapApp wm ctx.shared guiApp
         forM_ mEvent $ writePipe guiApp.pipe
-        clients <- atomically $ getClients ctx.clients
+        clients <- atomically $ getClients ctx.shared.clients
         forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
         broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
         case guiApp.app.size of
@@ -307,7 +307,7 @@ handleWinSwap wm ctx wid appName mEvent = do
             Nothing -> pure ()
 
     broadcastWinMessage body =
-        sendsBinary ctx.clients (encodeMessageL controlWin (encodeJSON $ object body))
+        sendsBinary ctx.shared.clients (encodeMessageL controlWin (encodeJSON $ object body))
 
     broadcastSize :: (Int, Int) -> ProcessIO ()
     broadcastSize (x, y) =

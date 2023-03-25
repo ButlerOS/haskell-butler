@@ -186,7 +186,6 @@ newtype DisplayApplication
 
 data SessionApps = SessionApps
     { env :: ProcessEnv
-    , clients :: DisplayClients
     , shared :: AppSharedContext
     }
 
@@ -198,29 +197,28 @@ startSessionApps (AllSessionApps mv) display sessionID apps =
     modifyMVar mv \allSessionApps -> case Map.lookup sessionID allSessionApps of
         Just sa -> pure (allSessionApps, sa)
         Nothing -> do
-            clients <- atomically newDisplayClients
             -- Create a MVar so that the process can pass the created AppSharedContext
             mvShared <- newEmptyMVar
             -- Create a new process to manage a given session
-            process <- doStartSessionApps clients mvShared
+            process <- doStartSessionApps mvShared
             -- Read the AppSharedContext
             shared <- takeMVar mvShared
             -- Create the SessionApps
             os <- asks os
             let sessionEnv = ProcessEnv os process
-                sa = SessionApps sessionEnv clients shared
+                sa = SessionApps sessionEnv shared
             pure (Map.insert sessionID sa allSessionApps, sa)
   where
     processName = ProgramName $ "sess-" <> into @Text sessionID
     storageAddr = StorageAddress "sess-" <> into sessionID
 
-    doStartSessionApps clients mvShared = spawnProcess processName $ chroot storageAddr do
+    doStartSessionApps mvShared = spawnProcess processName $ chroot storageAddr do
         -- Start the apps
-        shared <- startApps apps display clients
+        shared <- startApps apps display
         -- Pass the created AppSharedContext
         putMVar mvShared shared
         -- Wait until all clients disconnected
-        waitForDisconnect clients
+        waitForDisconnect shared.clients
         -- Remove the sa
         modifyMVar_ mv (pure . Map.delete sessionID)
 
@@ -250,7 +248,7 @@ serveApps (DisplayApplication mkAuth) apps = do
                 allSessionApps <- AllSessionApps <$> newMVar mempty
                 pure $ \session _ws -> do
                     sa <- startSessionApps allSessionApps display session.sessionID apps
-                    pure (sa.env, staticClientHandler sa.clients sa.shared)
+                    pure (sa.env, staticClientHandler sa.shared)
     error "Display exited?!"
   where
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
@@ -261,21 +259,20 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
             startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
-                clients <- atomically newDisplayClients
-                shared <- startApps apps display clients
+                shared <- startApps apps display
                 pure $ \_session _ws -> do
                     env <- ask
-                    pure (env, staticClientHandler clients shared)
+                    pure (env, staticClientHandler shared)
     error "Display exited?!"
   where
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
-staticClientHandler :: DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
-staticClientHandler clients shared = \case
+staticClientHandler :: AppSharedContext -> DisplayEvent -> ProcessIO ()
+staticClientHandler shared = \case
     UserConnected "htmx" client -> do
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
-        atomically $ addClient clients client
+        atomically $ addClient shared.clients client
         appInstances <- atomically (getApps shared.apps)
         atomically $ sendHtml client do
             with div_ [id_ "display-wins", class_ "flex"] do
@@ -291,7 +288,7 @@ staticClientHandler clients shared = \case
                     Nothing -> logError "Unknown wid" ["wid" .= wid]
     UserDisconnected "htmx" client -> do
         logInfo "Client disconnected" ["client" .= client]
-        atomically $ delClient clients client
+        atomically $ delClient shared.clients client
         appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> do
             writePipe appInstance.pipe (AppDisplay (UserLeft client))

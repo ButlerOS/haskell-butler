@@ -216,7 +216,7 @@ mineSweeperApp =
 
 startMineSweeper :: AppContext -> ProcessIO ()
 startMineSweeper ctx = do
-    let clients = ctx.clients
+    let clients = ctx.shared.clients
         wid = ctx.wid
     board <- liftIO initBoard
     state <- newTVarIO $ MSState board Play
