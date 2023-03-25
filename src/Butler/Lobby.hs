@@ -48,7 +48,7 @@ lobbyProgram appSet services chat display = do
             Just (DesktopRunning desktop) -> pure (wss, desktop)
             mDesktopStatus -> do
                 let desktopID = "desktop-" <> into @StorageAddress name
-                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop" (desktopApp services) display
+                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop-" (desktopApp services){name = via @Text name} display
 
                 when (isNothing mDesktopStatus) do
                     atomically $ modifyMemoryVar dm.desktopsList (name :)
