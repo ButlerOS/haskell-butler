@@ -122,25 +122,17 @@ smApp =
 data AppState = Listing Display | Editing Session
 
 renderEditForm :: Session -> WinID -> HtmlT STM ()
-renderEditForm session wid = with div_ [id_ (withWID wid "w")] do
+renderEditForm session wid = with div_ [id_ (withWID wid "w"), class_ "p-3"] do
     with form_ [wid_ wid "save", wsSend, hxTrigger_ "submit"] do
+        with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
         div_ do
             with label_ [class_ "block mb-2 text-sm font-medium text-gray-900 dark:text-white"] "Username"
             username <- into @Text <$> lift (readTVar session.username)
-            with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
-            with (input_ mempty) [class_ inputClass, name_ "username", type_ "text", value_ username]
-        with div_ [class_ "flex flex-row items-center"] do
-            button_
-                [ class_ btnBlueClass
-                , wsSend
-                , wid_ wid "listing"
-                ]
-                "Cancel"
-            button_
-                [ class_ btnGreenClass
-                , type_ "submit"
-                ]
-                "Save"
+            input_ [class_ inputClass, type_ "text", name_ "username", value_ username]
+
+        with div_ [class_ "flex flex-row justify-center gap-3 items-center"] do
+            button_ [class_ btnGreenClass, type_ "submit"] "Save"
+            with button_ [class_ btnBlueClass, onclick_ (sendTriggerScript wid "listing" [])] "Cancel"
 
 renderApp :: TVar AppState -> WinID -> DisplayClient -> HtmlT STM ()
 renderApp state wid client =
@@ -173,7 +165,10 @@ startSMApp ctx = do
                             atomically (lookupSession display.sessions sessionID) >>= \case
                                 Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
                                 Just session -> do
-                                    _ <- changeUsername display.sessions session username
+                                    oldUsername <- readTVarIO session.username
+                                    when (oldUsername /= username) do
+                                        logInfo "Changing username" ["name" .= username, "session" .= session]
+                                        void $ changeUsername display.sessions session username
                                     atomically $ writeTVar state (Listing display)
                                     refreshUI
                         | otherwise -> logError "Permission denied" ["ev" .= ev]
