@@ -21,7 +21,7 @@ import Butler.Display.User
 data ChatServer = ChatServer
     { allClients :: TVar (Map SessionID [DisplayClient])
     , history :: History UserMessage
-    , events :: BroadcastChan UserEvent
+    , events :: BroadcastChan ChatEvent
     , users :: TVar (Set UserName)
     }
 
@@ -31,13 +31,13 @@ data UserMessage = MkMessage
     }
     deriving (Generic, ToJSON)
 
-data UserEvent = UserJoined UserName | UserLeft UserName | UserChat UserMessage
+data ChatEvent = ChatUserJoined UserName | ChatUserLeft UserName | UserChat UserMessage
     deriving (Generic, ToJSON)
 
 newChatServer :: TVar (Map SessionID [DisplayClient]) -> STM ChatServer
 newChatServer allClients = demoChat =<< (ChatServer allClients <$> newHistory 42 <*> newBroadcastChan <*> newTVar mempty)
 
-newChatReader :: ChatServer -> STM (TChan UserEvent)
+newChatReader :: ChatServer -> STM (TChan ChatEvent)
 newChatReader srv = newReaderChan srv.events
 
 demoChat :: ChatServer -> STM ChatServer
@@ -46,22 +46,22 @@ demoChat srv = do
     addHistory srv.history (MkMessage "bob" "The quick brown fox jumps over the lazy dog")
     pure srv
 
-handleDisplayEvent :: ChatServer -> DisplayEvent -> STM ()
+handleDisplayEvent :: ChatServer -> UserEvent -> STM ()
 handleDisplayEvent srv = \case
-    UserConnected _ client -> do
+    UserJoined client -> do
         user <- readTVar client.session.username
         added <- stateTVar srv.users $ \users ->
             if Set.member user users
                 then (False, users)
                 else (True, Set.insert user users)
         when added do
-            let ev = UserJoined user
+            let ev = ChatUserJoined user
             broadcast srv.events ev
-    UserDisconnected _ client -> do
+    UserLeft client -> do
         user <- readTVar client.session.username
         removed <- null . fromMaybe [] . Map.lookup client.session.sessionID <$> readTVar srv.allClients
         when removed do
-            let ev = UserLeft user
+            let ev = ChatUserLeft user
             modifyTVar' srv.users (Set.delete user)
             broadcast srv.events ev
 
@@ -70,11 +70,11 @@ addUserMessage srv um = do
     broadcast srv.events (UserChat um)
     addHistory srv.history um
 
-updateChat :: WinID -> DisplayClient -> UserEvent -> HtmlT STM ()
+updateChat :: WinID -> DisplayClient -> ChatEvent -> HtmlT STM ()
 updateChat wid client = \case
     UserChat um -> appendUserMessage wid client um
-    UserJoined user -> appendUser wid client user
-    UserLeft user -> with div_ [id_ (withWID wid ("chat-" <> from user)), hxSwapOob_ "delete"] mempty
+    ChatUserJoined user -> appendUser wid client user
+    ChatUserLeft user -> with div_ [id_ (withWID wid ("chat-" <> from user)), hxSwapOob_ "delete"] mempty
 
 appendUserMessage :: WinID -> DisplayClient -> UserMessage -> HtmlT STM ()
 appendUserMessage wid _client um = do
@@ -152,10 +152,10 @@ startChatApp srv ctx = do
     forever do
         ev <- atomically $ readPipe ctx.pipe
         case ev of
-            AppDisplay de@(UserConnected "htmx" client) -> do
+            AppDisplay de@(UserJoined client) -> do
                 atomically $ sendHtml client (renderChat wid srv client)
                 atomically (handleDisplayEvent srv de)
-            AppDisplay de@(UserDisconnected _ _) ->
+            AppDisplay de@(UserLeft _) ->
                 atomically (handleDisplayEvent srv de)
             AppTrigger ge -> handleGuiEvent ge
             _ -> pure ()

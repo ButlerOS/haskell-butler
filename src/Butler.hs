@@ -52,6 +52,7 @@ module Butler (
     AppContext (..),
     defaultApp,
     AppEvent (..),
+    UserEvent (..),
     GuiEvent (..),
     DataEvent (..),
     serveApps,

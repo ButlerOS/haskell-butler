@@ -46,7 +46,7 @@ newAppClient :: AppTestContext -> AppInstance -> ProcessIO DisplayClient
 newAppClient appTestContext appInstance = do
     client <- newTestClient appTestContext.shared
     atomically $ addClient appTestContext.clients client
-    writePipe appInstance.pipe (AppDisplay $ UserConnected "htmx" client)
+    writePipe appInstance.pipe (AppDisplay $ UserJoined client)
     pure client
 
 withTestSharedContext :: AppSet -> (AppSharedContext -> ProcessIO ()) -> ProcessIO ()

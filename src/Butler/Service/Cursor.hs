@@ -145,8 +145,8 @@ startSeatApp ctx = do
     forever do
         ev <- atomically (readPipe ctx.pipe)
         case ev of
-            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (tray client)
-            AppDisplay (UserDisconnected "htmx" client) -> do
+            AppDisplay (UserJoined client) -> atomically $ sendHtml client (tray client)
+            AppDisplay (UserLeft client) -> do
                 mSeat <- atomically do
                     delSeat seats client
                 case mSeat of

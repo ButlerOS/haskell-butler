@@ -220,11 +220,11 @@ startNoterApp ctx = do
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> do
+            AppDisplay (UserJoined client) -> do
                 editors <- atomically $ stateTVar tState (modifyEditors $ Map.insert client.endpoint (Editor client 0))
                 atomically $ sendHtml client mountUI
                 sendsHtmlButSelf client ctx.clients (editorList editors)
-            AppDisplay (UserDisconnected "htmx" client) -> do
+            AppDisplay (UserLeft client) -> do
                 editors <- atomically $ stateTVar tState (modifyEditors $ Map.delete client.endpoint)
                 sendsHtml ctx.clients (editorList editors)
             AppTrigger ev -> case ev.trigger of

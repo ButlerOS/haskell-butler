@@ -66,8 +66,8 @@ startApp ctx = do
     spawnThread_ (unixService "/tmp/butler.sock" handler)
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            ae@(AppDisplay (UserConnected{})) -> sendHtmlOnConnect mountUI ae
-            AppDisplay (UserDisconnected _ client) -> atomically (delClient providers client)
+            AppDisplay (UserJoined client) -> atomically (sendHtml client mountUI)
+            AppDisplay (UserLeft client) -> atomically (delClient providers client)
             AppTrigger ev -> case ev.trigger of
                 "new-provider" -> do
                     logInfo "new provider" ["client" .= ev.client]

@@ -38,10 +38,13 @@ newtype AppTag = AppTag Text
     deriving (Show, Generic)
     deriving newtype (Ord, Eq, Semigroup, Serialise, IsString, FromJSON, ToJSON, ToHtml)
 
+data UserEvent = UserJoined DisplayClient | UserLeft DisplayClient
+    deriving (Generic, ToJSON)
+
 -- | The type of event an app receive
 data AppEvent
     = -- | A display event (e.g. to mount the UI)
-      AppDisplay DisplayEvent
+      AppDisplay UserEvent
     | -- | A trigger event (e.g. onclick)
       AppTrigger GuiEvent
     | -- | A data event (e.g. for raw data)
@@ -112,10 +115,11 @@ data AppSharedContext = AppSharedContext
     , appSet :: AppSet
     , dynamics :: Dynamics
     , apps :: Apps
+    , extraHandlers :: TVar (Map ChannelName (DisplayEvent -> ProcessIO ()))
     }
 
 newAppSharedContext :: Display -> ProcessEnv -> AppSet -> STM AppSharedContext
-newAppSharedContext display processEnv appSet = AppSharedContext display processEnv appSet <$> newDynamics <*> newApps
+newAppSharedContext display processEnv appSet = AppSharedContext display processEnv appSet <$> newDynamics <*> newApps <*> newTVar mempty
 
 newtype Apps = Apps (TVar (Map WinID AppInstance))
 
@@ -147,7 +151,7 @@ appSetApps (AppSet m) = Map.elems m
 -- | A convenient helper to mount the UI when a new user connect.
 sendHtmlOnConnect :: HtmlT STM () -> AppEvent -> ProcessIO ()
 sendHtmlOnConnect htmlT = \case
-    AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client htmlT
+    AppDisplay (UserJoined client) -> atomically $ sendHtml client htmlT
     _ -> pure ()
 
 newAppSet :: [App] -> AppSet

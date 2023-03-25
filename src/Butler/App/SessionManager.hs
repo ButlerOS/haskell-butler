@@ -232,6 +232,6 @@ startSMApp ctx = do
             _ -> logError "unknown ev" ["ev" .= ev]
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> atomically $ sendHtml client (renderApp state ctx.wid client)
+            AppDisplay (UserJoined client) -> atomically $ sendHtml client (renderApp state ctx.wid client)
             AppTrigger ge -> handleGuiEvent ge ge.trigger
             _ -> pure ()

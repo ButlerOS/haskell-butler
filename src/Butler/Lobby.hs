@@ -61,7 +61,7 @@ lobbyProgram appSet services chat display = do
         Workspace "" -> pure (dmEnv, lobbyHandler dm chat)
         name -> do
             desktop <- getDesktop name
-            pure (desktop.env, desktopHandler appSet services desktop)
+            pure (desktop.env, desktopHandler desktop.shared services desktop)
 
 chatWin :: WinID
 chatWin = WinID 0

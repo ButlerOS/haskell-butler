@@ -462,11 +462,11 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> do
+            AppDisplay (UserJoined client) -> do
                 gameState <- readTVarIO tGameState
                 atomically $ sendHtml client $ mountUI gameState ctx.wid
                 refreshUI gameState (atomically . sendBinary client)
-            AppDisplay (UserDisconnected "htmx" client) -> do
+            AppDisplay (UserLeft client) -> do
                 (.status) <$> readTVarIO tGameState >>= \case
                     Playing tableState -> do
                         atomically $ modifyTVar' tableState.players (Map.delete client.endpoint)

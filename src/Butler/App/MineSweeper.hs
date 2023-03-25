@@ -225,7 +225,7 @@ startMineSweeper ctx = do
         case res of
             WaitTimeout{} -> pure ()
             WaitCompleted (AppDisplay de) -> case de of
-                UserConnected _ client -> atomically $ sendHtml client (renderApp wid state)
+                UserJoined client -> atomically $ sendHtml client (renderApp wid state)
                 _ -> pure ()
             WaitCompleted (AppTrigger ev) -> case ( ev.body ^? key "play" . _String
                                                   , ev.body ^? key "cx" . _String

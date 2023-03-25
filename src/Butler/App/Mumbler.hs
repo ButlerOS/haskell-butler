@@ -232,7 +232,7 @@ startMumbler ctx = do
         handleEvent = forever do
             ev <- atomically (Left <$> readPipe ctx.pipe <|> Right <$> readTChan soundEvents)
             case ev of
-                Left (AppDisplay (UserConnected "htmx" client)) -> atomically $ sendHtml client mountUI
+                Left (AppDisplay (UserJoined client)) -> atomically $ sendHtml client mountUI
                 Left (AppData de) -> do
                     case BS.uncons de.buffer of
                         Just (0, "") -> updateMumbler de.client False

@@ -206,36 +206,41 @@ statusHtml s =
             ]
             mempty
 
-desktopHandler :: AppSet -> [Service] -> Desktop -> DisplayEvent -> ProcessIO ()
-desktopHandler appSet services desktop event = do
+desktopHandler :: AppSharedContext -> [Service] -> Desktop -> DisplayEvent -> ProcessIO ()
+desktopHandler shared services desktop event = do
     -- update desktop state with display event
     case event of
         UserConnected chan client -> do
             spawnThread_ (sendThread client)
 
-            atomically do
-                when (chan == "htmx") do
-                    addClient desktop.clients client
-                    -- Send the desktop body
-                    sendHtml client (desktopHtml desktop services desktop.wm.windows)
-
-            -- Notify each apps
-            forwardDisplayEvent event
-
             if chan == "htmx"
-                then handleNewUser chan client
-                else void $ pingThread client
-        UserDisconnected chan client -> do
-            atomically do
-                when (chan == "htmx") do
-                    delClient desktop.clients client
+                then do
+                    atomically do
+                        addClient desktop.clients client
+                        -- Send the desktop body
+                        sendHtml client (desktopHtml desktop services desktop.wm.windows)
 
-            forwardDisplayEvent event
+                    -- Notify each apps
+                    forwardDisplayEvent (UserJoined client)
+                    handleNewUser chan client
+                else forwardExtraHandler chan
+        UserDisconnected chan client -> do
+            if chan == "htmx"
+                then do
+                    atomically $ delClient desktop.clients client
+                    forwardDisplayEvent (UserLeft client)
+                else forwardExtraHandler chan
   where
-    forwardDisplayEvent :: DisplayEvent -> ProcessIO ()
-    forwardDisplayEvent devent = do
+    forwardExtraHandler :: ChannelName -> ProcessIO ()
+    forwardExtraHandler chan =
+        Map.lookup chan <$> readTVarIO shared.extraHandlers >>= \case
+            Just hdl -> hdl event
+            Nothing -> logError "Unknown chan" ["chan" .= chan]
+
+    forwardDisplayEvent :: UserEvent -> ProcessIO ()
+    forwardDisplayEvent ev = do
         apps <- atomically (getApps desktop.shared.apps)
-        forM_ apps \app -> writePipe app.pipe (AppDisplay devent)
+        forM_ apps \app -> writePipe app.pipe (AppDisplay ev)
 
     handleNewUser :: ChannelName -> DisplayClient -> ProcessIO ()
     handleNewUser channel client = case channel of
@@ -255,7 +260,7 @@ desktopHandler appSet services desktop event = do
                 case eventFromMessage client dataMessage of
                     Nothing -> logError "Unknown data" ["ev" .= LBSLog (into @LByteString dataMessage)]
                     Just (wid, ae)
-                        | wid == controlWin -> handleDesktopEvent appSet desktop ae
+                        | wid == controlWin -> handleDesktopEvent shared.appSet desktop ae
                         | otherwise ->
                             (Map.lookup wid <$> atomically (getApps desktop.shared.apps)) >>= \case
                                 Nothing -> logError "Unknown wid" ["wid" .= wid, "ev" .= ae]
@@ -275,7 +280,7 @@ handleWinSwap appSet desktop wid appName mEvent = do
             swapApp desktop guiApp
             getClients desktop.clients
         forM_ mEvent $ writePipe guiApp.pipe
-        forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserConnected "htmx" client)
+        forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
         broadcastWinMessage ["w" .= wid, "ev" .= ("title" :: Text), "title" .= processID guiApp.process]
         case guiApp.app.size of
             Just size -> do
@@ -340,7 +345,7 @@ handleDesktopGuiEvent appSet desktop _client trigger value = case trigger of
             renderNewWindow wid script
             clients <- atomically $ getClients desktop.clients
             forM_ mEvent $ writePipe guiApp.pipe
-            forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserConnected "htmx" client)
+            forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
 
     renderNewWindow wid script = do
         sendsHtml desktop.clients do

@@ -29,9 +29,8 @@ startSoundCard ctx = do
                 renderAudioToggle ctx.wid client.session.username True
     withDynamic ctx.shared.dynamics "sound-blaster" sc $ forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserDisconnected "htmx" client) -> atomically (delSoundClient sc client)
-            AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client (mountUI client))
-            AppDisplay _ -> pure ()
+            AppDisplay (UserLeft client) -> atomically (delSoundClient sc client)
+            AppDisplay (UserJoined client) -> atomically (sendHtml client (mountUI client))
             AppTrigger ge
                 | ge.trigger == "toggle-audio" ->
                     let running = fromMaybe True (ge.body ^? key "running" . _Bool)

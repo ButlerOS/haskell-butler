@@ -160,11 +160,11 @@ startPokerPlannerApp ctx = do
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> do
+            AppDisplay (UserJoined client) -> do
                 atomically do
                     modifyTVar' state.players (Map.insert client.endpoint (Player client Thinking))
                 clientsDrawT ctx.clients mountUI
-            AppDisplay (UserDisconnected "htmx" client) -> do
+            AppDisplay (UserLeft client) -> do
                 atomically $ modifyTVar' state.players (Map.delete client.endpoint)
             AppTrigger ev -> case ev.trigger of
                 "new-game" -> case ev.body ^? key "name" . _JSON of

@@ -271,7 +271,7 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
 staticClientHandler :: DisplayClients -> AppSharedContext -> DisplayEvent -> ProcessIO ()
-staticClientHandler clients shared displayEvent = case displayEvent of
+staticClientHandler clients shared = \case
     UserConnected "htmx" client -> do
         spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
@@ -281,7 +281,7 @@ staticClientHandler clients shared displayEvent = case displayEvent of
             with div_ [id_ "display-wins", class_ "flex"] do
                 forM_ appInstances \appInstance -> do
                     with div_ [wid_ appInstance.wid "w"] mempty
-        forM_ appInstances \appInstance -> writePipe appInstance.pipe (AppDisplay displayEvent)
+        forM_ appInstances \appInstance -> writePipe appInstance.pipe (AppDisplay (UserJoined client))
         forever do
             dataMessage <- recvData client
             case eventFromMessage client dataMessage of
@@ -294,5 +294,5 @@ staticClientHandler clients shared displayEvent = case displayEvent of
         atomically $ delClient clients client
         appInstances <- atomically (getApps shared.apps)
         forM_ appInstances \appInstance -> do
-            writePipe appInstance.pipe (AppDisplay displayEvent)
-    _ -> logError "Unknown event" ["ev" .= displayEvent]
+            writePipe appInstance.pipe (AppDisplay (UserLeft client))
+    ev -> logError "Unknown event" ["ev" .= ev]

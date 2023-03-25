@@ -3,7 +3,7 @@ module Butler.App.NoVnc (vncApp) where
 import Butler
 import XStatic.NoVNC qualified as XStatic
 
-import Ki.Unlifted qualified as Ki
+import Data.Map.Strict qualified as Map
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
 
@@ -78,10 +78,16 @@ startVncApp ctx = do
                     buf <- liftIO (Network.Socket.ByteString.recv skt 65535)
                     atomically $ sendBinary client (from buf)
 
+        extraHandler = \case
+            UserConnected _ client -> do
+                spawnThread_ $ onClient client
+                void $ pingThread client
+            _ -> pure ()
+    atomically (modifyTVar' ctx.shared.extraHandlers $ Map.insert "novnc" extraHandler)
+
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserConnected "htmx" client) -> atomically (sendHtml client draw)
-            AppDisplay (UserConnected "novnc" client) -> client.process.scope `Ki.fork_` onClient client
+            AppDisplay (UserJoined client) -> atomically (sendHtml client draw)
             _ -> pure ()
 
 vncClient :: WinID -> (Int, Int) -> Text
