@@ -56,7 +56,7 @@ createSeatCursor user idx =
         ]
         "°"
 
-renderCursorToggle :: WinID -> UserName -> Bool -> HtmlT STM ()
+renderCursorToggle :: AppID -> UserName -> Bool -> HtmlT STM ()
 renderCursorToggle wid username enabled = do
     renderToggle
         "ri-cursor-fill"
@@ -73,7 +73,7 @@ appendSeat seat =
     with div_ [id_ "current-seats", hxSwapOob_ "afterbegin"] do
         renderSeat seat
 
-renderSeatTray :: Session -> WinID -> Seats -> HtmlT STM ()
+renderSeatTray :: Session -> AppID -> Seats -> HtmlT STM ()
 renderSeatTray session wid seats = do
     with div_ [id_ "seats", class_ "flex content-center mr-1"] do
         script_ $ seatClient wid
@@ -162,7 +162,7 @@ startSeatApp ctx = do
                 _ -> logError "Invalid ev" ["ev" .= ev]
             _ -> pure ()
 
-seatClient :: WinID -> Text
+seatClient :: AppID -> Text
 seatClient wid =
     [raw|
 function seatClient(chan) {

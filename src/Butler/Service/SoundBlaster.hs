@@ -40,7 +40,7 @@ startSoundCard ctx = do
             AppData de -> soundHandler sc de.client de.buffer
             ev -> logError "Unknown event" ["ev" .= ev]
 
-renderAudioToggle :: WinID -> TVar UserName -> Bool -> HtmlT STM ()
+renderAudioToggle :: AppID -> TVar UserName -> Bool -> HtmlT STM ()
 renderAudioToggle wid tvUsername enabled = do
     username <- lift (readTVar tvUsername)
     renderToggle
@@ -57,7 +57,7 @@ renderAudioToggle wid tvUsername enabled = do
 -- Sound Card setup
 -------------------------------------------------------------------------------
 data SoundCard = SoundCard
-    { wid :: WinID
+    { wid :: AppID
     , clients :: DisplayClients
     , channels :: NM.NatMap SoundChannel
     , receivers :: NM.NatMap SoundReceiver
@@ -65,7 +65,7 @@ data SoundCard = SoundCard
     }
     deriving (Typeable)
 
-newSoundCard :: WinID -> STM SoundCard
+newSoundCard :: AppID -> STM SoundCard
 newSoundCard wid = SoundCard wid <$> newDisplayClients <*> NM.newNatMap <*> NM.newNatMap <*> newBroadcastChan
 
 getSoundCard :: MonadUnliftIO m => AppContext -> m SoundCard
@@ -154,7 +154,7 @@ soundReceiverHtml receiver = do
 -- Sound Channel (for player)
 -------------------------------------------------------------------------------
 data SoundChannel = SoundChannel
-    { winID :: WinID
+    { winID :: AppID
     , name :: SoundChannelName
     , id :: SoundChannelID
     , frameCount :: TVar Natural
@@ -170,11 +170,11 @@ newtype SoundChannelID = SoundChannelID Natural deriving newtype (Show, ToJSON)
 instance From SoundChannelID Natural where
     from (SoundChannelID chan) = chan
 
-instance From WinID SoundChannelID where
-    from (WinID wid) = SoundChannelID (unsafeFrom wid)
+instance From AppID SoundChannelID where
+    from (AppID wid) = SoundChannelID (unsafeFrom wid)
 
-instance From SoundChannelID WinID where
-    from (SoundChannelID chan) = WinID (unsafeFrom chan)
+instance From SoundChannelID AppID where
+    from (SoundChannelID chan) = AppID (unsafeFrom chan)
 
 data SoundClientStatus
     = SoundClientInitializing Bool
@@ -192,7 +192,7 @@ clientStatusHtml = \case
   where
     tooltip n title = with span_ [title_ title] n
 
-newSoundChannel :: WinID -> SoundChannelName -> Natural -> STM SoundChannel
+newSoundChannel :: AppID -> SoundChannelName -> Natural -> STM SoundChannel
 newSoundChannel wid name k = SoundChannel wid name (SoundChannelID k) <$> newTVar 0 <*> NM.newNatMap
 
 delSoundChannelClient :: SoundChannel -> DisplayClient -> STM ()
@@ -210,7 +210,7 @@ startSoundChannelClient sc soundChannel synchronized client = do
     let mkChan = mkControlMessage sc "start" ["chan" .= soundChannel.id, "wid" .= soundChannel.winID]
     sendBinary client mkChan
 
-startSoundChannelKeep :: (DisplayClient -> Bool) -> SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
+startSoundChannelKeep :: (DisplayClient -> Bool) -> SoundCard -> AppID -> SoundChannelName -> STM SoundChannel
 startSoundChannelKeep p sc wid name = do
     soundChannel <- NM.addWithKey sc.channels (newSoundChannel wid name)
     -- initialize clients already connected
@@ -219,7 +219,7 @@ startSoundChannelKeep p sc wid name = do
     broadcast sc.events (SoundChannelEvent soundChannel.id)
     pure soundChannel
 
-startSoundChannel :: SoundCard -> WinID -> SoundChannelName -> STM SoundChannel
+startSoundChannel :: SoundCard -> AppID -> SoundChannelName -> STM SoundChannel
 startSoundChannel = startSoundChannelKeep (const True)
 
 stopSoundChannel :: SoundCard -> SoundChannel -> STM ()
@@ -327,12 +327,12 @@ soundReceiverHandler sc client buf = do
                 modifyTVar' receiver.counter (+ 1)
             atomically $ broadcast sc.events (SoundReceiveEvent client buf mFrame)
 
-startClientRecorder :: SoundCard -> WinID -> DisplayClient -> STM ()
+startClientRecorder :: SoundCard -> AppID -> DisplayClient -> STM ()
 startClientRecorder sc wid client = sendBinary client msg
   where
     msg = mkControlMessage sc "start-record" ["wid" .= wid]
 
-stopSoundReceiver :: SoundCard -> WinID -> DisplayClient -> STM ()
+stopSoundReceiver :: SoundCard -> AppID -> DisplayClient -> STM ()
 stopSoundReceiver sc wid client = sendBinary client msg
   where
     msg = mkControlMessage sc "stop-record" ["wid" .= wid]
@@ -379,7 +379,7 @@ soundHandler sc client msg = do
 -------------------------------------------------------------------------------
 -- Client payload
 -------------------------------------------------------------------------------
-soundClient :: WinID -> Text
+soundClient :: AppID -> Text
 soundClient wid =
     [raw|
 function setupSoundClient(chan) {

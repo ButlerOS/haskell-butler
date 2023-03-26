@@ -88,7 +88,7 @@ startApp ctx = do
                 _ -> logError "Unknown data" ["ev" .= de]
             ev -> logError "Unexpected event" ["ev" .= ev]
 
-sshAgentProvider :: WinID -> Text
+sshAgentProvider :: AppID -> Text
 sshAgentProvider wid =
     [raw|
 async function setupSshAgentProvider(wid) {

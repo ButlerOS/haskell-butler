@@ -14,7 +14,7 @@ data TestState
     | DelayPlayback Process DisplayClient
     | Streaming Process
 
-localStream :: SoundCard -> WinID -> ProcessIO Process
+localStream :: SoundCard -> AppID -> ProcessIO Process
 localStream sc wid = spawnProcess "recoder" do
     soundChannel <- atomically (startSoundChannel sc wid "test-streaming")
     logInfo "Running recorder" ["cmd" .= show cmd]
@@ -46,7 +46,7 @@ localStream sc wid = spawnProcess "recoder" do
             "gst-launch-1.0"
             ["pulsesrc", "!", "audioconvert", "!", "opusenc", "!", "webmmux", "!", "fdsink", "fd=2"]
 
-delayPlayback :: SoundCard -> WinID -> DisplayClient -> ProcessIO Process
+delayPlayback :: SoundCard -> AppID -> DisplayClient -> ProcessIO Process
 delayPlayback sc wid client = spawnProcess "delayer" do
     audioEventsChan <- atomically (newReaderChan sc.events)
     playbackChannel <- atomically (startSoundChannel sc wid "test-playback")
@@ -66,7 +66,7 @@ delayPlayback sc wid client = spawnProcess "delayer" do
             stopSoundChannel sc playbackChannel
             stopSoundReceiver sc wid client
 
-soundTestHtml :: WinID -> SoundCard -> TVar TestState -> HtmlT STM ()
+soundTestHtml :: AppID -> SoundCard -> TVar TestState -> HtmlT STM ()
 soundTestHtml wid sc vState = with div_ [id_ (withWID wid "w")] do
     lift (readTVar vState) >>= \case
         Pending ->

@@ -8,7 +8,7 @@ import Butler.App
 import Butler.Display
 import Butler.Display.Session
 
-renderSM :: Display -> WinID -> DisplayClient -> HtmlT STM ()
+renderSM :: Display -> AppID -> DisplayClient -> HtmlT STM ()
 renderSM display wid client = do
     isAdmin <- lift (readTVar client.session.admin)
     sessions <- Map.elems <$> lift (readTVar display.sessions.sessions)
@@ -121,7 +121,7 @@ smApp =
 
 data AppState = Listing Display | Editing Session
 
-renderEditForm :: Session -> WinID -> HtmlT STM ()
+renderEditForm :: Session -> AppID -> HtmlT STM ()
 renderEditForm session wid = with div_ [id_ (withWID wid "w"), class_ "p-3"] do
     with form_ [wid_ wid "save", wsSend, hxTrigger_ "submit"] do
         with (input_ mempty) [name_ "name", value_ (into @Text session.sessionID), type_ "hidden"]
@@ -134,7 +134,7 @@ renderEditForm session wid = with div_ [id_ (withWID wid "w"), class_ "p-3"] do
             button_ [class_ btnGreenClass, type_ "submit"] "Save"
             with button_ [class_ btnBlueClass, onclick_ (sendTriggerScript wid "listing" [])] "Cancel"
 
-renderApp :: TVar AppState -> WinID -> DisplayClient -> HtmlT STM ()
+renderApp :: TVar AppState -> AppID -> DisplayClient -> HtmlT STM ()
 renderApp state wid client =
     lift (readTVar state) >>= \case
         Listing display -> renderSM display wid client

@@ -29,7 +29,7 @@ data DataEvent = DataEvent
 instance ToJSON DataEvent where
     toJSON de = object ["client" .= de.client, "data" .= BSLog de.rawBuffer]
 
-encodeMessageL :: WinID -> LByteString -> LByteString
+encodeMessageL :: AppID -> LByteString -> LByteString
 encodeMessageL wid = encodeMessage (from wid)
 
 encodeMessage :: Natural -> LByteString -> LByteString

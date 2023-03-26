@@ -71,16 +71,16 @@ appCall appInstance = do
         WaitTimeout -> Nothing
         WaitCompleted dyn -> fromDynamic dyn
 
-eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (WinID, AppEvent)
+eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (AppID, AppEvent)
 eventFromMessage client = \case
     WS.Text lbs _ -> do
         htmxEvent <- decodeJSON @HtmxEvent lbs
         (wid, TriggerName -> trigger) <- decodeNaturalSuffix htmxEvent.trigger
-        pure (WinID (unsafeFrom wid), AppTrigger (GuiEvent client trigger htmxEvent.body))
+        pure (AppID (unsafeFrom wid), AppTrigger (GuiEvent client trigger htmxEvent.body))
     WS.Binary lbs -> do
         let rawBuf = from lbs
         (wid, buf) <- decodeMessage rawBuf
-        pure (WinID $ unsafeFrom wid, AppData (DataEvent client buf rawBuf))
+        pure (AppID $ unsafeFrom wid, AppData (DataEvent client buf rawBuf))
 
 -- | A graphical application definition.
 data App = App
@@ -118,8 +118,8 @@ defaultApp name start =
 
 -- | The application context
 data AppContext = AppContext
-    { wid :: WinID
-    -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the WinID suffix too.
+    { wid :: AppID
+    -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the AppID suffix too.
     , pipe :: Pipe AppEvent
     -- ^ the channel to receive events.
     , shared :: AppSharedContext
@@ -140,7 +140,7 @@ newAppSharedContext :: Display -> ProcessEnv -> AppSet -> STM AppSharedContext
 newAppSharedContext display processEnv appSet =
     AppSharedContext display processEnv appSet <$> newDisplayClients <*> newDynamics <*> newApps <*> newTVar mempty
 
-newtype Apps = Apps (TVar (Map WinID AppInstance))
+newtype Apps = Apps (TVar (Map AppID AppInstance))
 
 newApps :: STM Apps
 newApps = Apps <$> newTVar mempty
@@ -151,13 +151,13 @@ unregisterApp (Apps tv) appInstance = modifyTVar' tv (Map.delete appInstance.wid
 registerApp :: Apps -> AppInstance -> STM ()
 registerApp (Apps tv) appInstance = modifyTVar' tv (Map.insert appInstance.wid appInstance)
 
-getApps :: Apps -> STM (Map WinID AppInstance)
+getApps :: Apps -> STM (Map AppID AppInstance)
 getApps (Apps tv) = readTVar tv
 
 data AppInstance = AppInstance
     { app :: App
     , process :: Process
-    , wid :: WinID
+    , wid :: AppID
     , pipe :: Pipe AppEvent
     }
     deriving (Generic)
@@ -176,14 +176,14 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> (app.name, app))
 
-launchApp :: AppSet -> ProgramName -> AppSharedContext -> WinID -> ProcessIO (Maybe AppInstance)
+launchApp :: AppSet -> ProgramName -> AppSharedContext -> AppID -> ProcessIO (Maybe AppInstance)
 launchApp (AppSet apps) (ProgramName name) shared wid = case Map.lookup (ProgramName appName) apps of
     Just app -> Just <$> startApp "app-" app shared wid
     Nothing -> pure Nothing
   where
     appName = fromMaybe name $ Text.stripPrefix "app-" name
 
-startApp :: Text -> App -> AppSharedContext -> WinID -> ProcessIO AppInstance
+startApp :: Text -> App -> AppSharedContext -> AppID -> ProcessIO AppInstance
 startApp prefix app shared wid = do
     -- Start app process
     pipe <- atomically newPipe
@@ -196,7 +196,7 @@ startApp prefix app shared wid = do
 -- | Start the application that is in charge of starting the other apps.
 startShellApp :: AppSet -> Text -> App -> Display -> ProcessIO (AppSharedContext, AppInstance)
 startShellApp appSet prefix app display = do
-    let wid = WinID 0
+    let wid = AppID 0
     pipe <- atomically newPipe
     mvShared <- newEmptyMVar
     process <- spawnProcess (from prefix <> app.name) do
@@ -217,7 +217,7 @@ startApps apps display = do
     pure shared
   where
     go shared (i, app) = do
-        let wid = WinID i
+        let wid = AppID i
         appInstance <- startApp "app-" app shared wid
         atomically (registerApp shared.apps appInstance)
 
@@ -232,7 +232,7 @@ tagIcon = \case
     "Utility" -> Just "ri-tools-line"
     _ -> Nothing
 
-butlerCheckbox :: WinID -> Text -> [Pair] -> Bool -> Maybe Text -> [Attribute]
+butlerCheckbox :: AppID -> Text -> [Pair] -> Bool -> Maybe Text -> [Attribute]
 butlerCheckbox wid name attrs value mConfirm
     | value = checked_ : attributes
     | otherwise = attributes
@@ -243,23 +243,23 @@ butlerCheckbox wid name attrs value mConfirm
         Nothing -> baseAction
     attributes = [type_ "checkbox", onclick_ (action <> "; return false")]
 
-sendTriggerScriptConfirm :: WinID -> Text -> [Pair] -> Maybe Text -> Text
+sendTriggerScriptConfirm :: AppID -> Text -> [Pair] -> Maybe Text -> Text
 sendTriggerScriptConfirm wid name attrs mConfirm = case mConfirm of
     Nothing -> script
     Just txt -> "if (window.confirm(\"" <> txt <> "\")) {" <> script <> ";}"
   where
     script = sendTriggerScript wid name attrs
 
-sendTriggerScript :: WinID -> Text -> [Pair] -> Text
+sendTriggerScript :: AppID -> Text -> [Pair] -> Text
 sendTriggerScript wid name attrs =
     "sendTrigger(" <> showT wid <> ", \"" <> name <> "\", " <> decodeUtf8 (from obj) <> ")"
   where
     obj = encodeJSON (object attrs)
 
 startAppScript :: App -> [Pair] -> Text
-startAppScript app args = sendTriggerScript (WinID 0) "start-app" (["name" .= app.name] <> args)
+startAppScript app args = sendTriggerScript (AppID 0) "start-app" (["name" .= app.name] <> args)
 
-appSetHtml :: Monad m => WinID -> AppSet -> HtmlT m ()
+appSetHtml :: Monad m => AppID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
     ul_ do
         forM_ cats \cat -> do

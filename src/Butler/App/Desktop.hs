@@ -28,8 +28,8 @@ import Butler.Service.FileService
 desktopApp :: [Service] -> App
 desktopApp services = defaultApp "desktop" (startDesktopApp services)
 
-controlWin :: WinID
-controlWin = WinID 0
+controlWin :: AppID
+controlWin = AppID 0
 
 deskApp :: AppSet -> App
 deskApp appSet = defaultApp "welcome" startWelcomeApp
@@ -41,12 +41,12 @@ deskApp appSet = defaultApp "welcome" startWelcomeApp
 
 startDesktopApp :: [Service] -> AppContext -> ProcessIO ()
 startDesktopApp services ctx = do
-    wm <- newWindowManager (WinID (length services))
+    wm <- newWindowManager (AppID (length services))
 
     let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
 
     forM_ (zip [1 ..] services) \(wid, Service service) -> do
-        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared (WinID wid)
+        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared (AppID wid)
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
 
@@ -127,7 +127,7 @@ startDesktopApp services ctx = do
                 with div_ [id_ "display-tray", hxSwapOob_ "afterbegin"] do
                     with span_ [id_ (withWID wid "tray")] mempty
 
-        handleWinEvent :: DisplayClient -> LByteString -> Text -> WinID -> Value -> ProcessIO ()
+        handleWinEvent :: DisplayClient -> LByteString -> Text -> AppID -> Value -> ProcessIO ()
         handleWinEvent client buf ev wid v = do
             doBroadcast <-
                 case ( ev
@@ -188,7 +188,7 @@ startDesktopApp services ctx = do
             AppDisplay _ -> pure ()
             AppData de -> case decode' (from de.buffer) of
                 Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _Integer) of
-                    (Just winEvent, Just (WinID . unsafeFrom -> winId)) -> do
+                    (Just winEvent, Just (AppID . unsafeFrom -> winId)) -> do
                         handleWinEvent de.client (from de.buffer) winEvent winId obj
                     _ -> logError "invalid win event" ["buf" .= BSLog de.buffer]
                 Nothing -> logError "unknown win event" ["buf" .= BSLog de.buffer]
@@ -224,7 +224,7 @@ swapApp wm shared app = do
         Just prevApp -> delApp shared prevApp
     addApp wm shared app
 
-delWin :: WindowManager -> AppContext -> WinID -> STM ()
+delWin :: WindowManager -> AppContext -> AppID -> STM ()
 delWin wm ctx wid = do
     Map.lookup wid <$> getApps ctx.shared.apps >>= \case
         Nothing -> pure ()
@@ -243,19 +243,19 @@ desktopHtml services dir windows = do
                 withTrigger "click" controlWin "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
                     with i_ [class_ "ri-computer-line"] mempty
                 renderFileIcons controlWin dir
-                filesUploadButton (WinID 0) (getFileLoc dir Nothing)
+                filesUploadButton (AppID 0) (getFileLoc dir Nothing)
 
         -- bottom bar
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white z-50"] do
             with' div_ "grow" do
-                with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", wid_ (WinID 0) "wm-start", wsSend] ">>= start"
+                with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", wid_ (AppID 0) "wm-start", wsSend] ">>= start"
                 with span_ [id_ "display-bar"] do
                     forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center justify-center"] do
                     forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
-                    with span_ [wid_ (WinID 0) "tray"] mempty
-                    forM_ (zip [1 ..] services) \(WinID -> wid, _) ->
+                    with span_ [wid_ (AppID 0) "tray"] mempty
+                    forM_ (zip [1 ..] services) \(AppID -> wid, _) ->
                         with span_ [wid_ wid "tray"] mempty
                     statusHtml True
 
@@ -264,7 +264,7 @@ desktopHtml services dir windows = do
         with div_ [id_ "backstore"] do
             renderWindows controlWin windows
 
-welcomeWin :: Monad m => AppSet -> WinID -> HtmlT m ()
+welcomeWin :: Monad m => AppSet -> AppID -> HtmlT m ()
 welcomeWin appSet wid = do
     with div_ [wid_ wid "w", class_ "grid grid-cols-1 divide-y"] do
         with div_ [class_ "p-2"] do
@@ -287,7 +287,7 @@ statusHtml s =
             ]
             mempty
 
-handleWinSwap :: WindowManager -> AppContext -> WinID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
+handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
 handleWinSwap wm ctx wid appName mEvent = do
     mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared wid
     case mGuiApp of

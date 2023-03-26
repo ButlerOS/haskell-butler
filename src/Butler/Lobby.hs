@@ -93,8 +93,8 @@ shellHandler desktop shared event = case event of
             Just hdl -> hdl event
             Nothing -> logError "Unknown chan" ["chan" .= chan]
 
-chatWin :: WinID
-chatWin = WinID 0
+chatWin :: AppID
+chatWin = AppID 0
 
 lobbyHandler :: Lobby -> ChatServer -> DisplayEvent -> ProcessIO ()
 lobbyHandler dm chat = \case

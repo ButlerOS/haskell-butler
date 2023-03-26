@@ -54,13 +54,13 @@ withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
 
 withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
 withAppInstance app cb = withTestSharedContext (newAppSet [app]) \appSharedContext -> do
-    appInstance <- startApp "app" app appSharedContext (WinID 1)
+    appInstance <- startApp "app" app appSharedContext (AppID 1)
     cb appSharedContext appInstance
 
 startTestService :: AppSharedContext -> Service -> ProcessIO ()
 startTestService shared (Service app) = do
     -- TODO: increase win-id for next service
-    void $ startApp "srv" app shared (WinID 2)
+    void $ startApp "srv" app shared (AppID 2)
 
 butlerAppTestCase :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> TestTree
 butlerAppTestCase app cb = butlerTestCase ("Butler.App." <> via @Text app.name) do

@@ -270,7 +270,7 @@ startNoterApp ctx = do
             _ -> pure ()
 
 -- See https://developer.mozilla.org/en-US/docs/Web/API/HTMLTextAreaElement
-noterClient :: WinID -> Text
+noterClient :: AppID -> Text
 noterClient wid =
     [raw|
 function setupNoterClient(wid) {

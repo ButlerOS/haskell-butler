@@ -20,8 +20,8 @@ data Window = Window
 
 data WindowsState = WindowsState
     { windows :: IntMap Window
-    , maxID :: WinID
-    , focus :: Maybe WinID
+    , maxID :: AppID
+    , focus :: Maybe AppID
     }
     deriving (Generic, Serialise)
 
@@ -29,41 +29,41 @@ type Windows = MemoryVar WindowsState
 
 data WindowManager = WindowManager
     { windows :: MemoryVar WindowsState
-    , apps :: MemoryVar (Map WinID ProgramName)
+    , apps :: MemoryVar (Map AppID ProgramName)
     }
 
-newWindowManager :: WinID -> ProcessIO WindowManager
+newWindowManager :: AppID -> ProcessIO WindowManager
 newWindowManager minWID =
     WindowManager
         <$> (snd <$> newProcessMemory "wins.bin" (pure (newWindows minWID)))
         <*> (snd <$> newProcessMemory "apps.bin" (pure mempty))
 
-getWindowIDs :: Windows -> STM [WinID]
+getWindowIDs :: Windows -> STM [AppID]
 getWindowIDs ws = do
     windowsState <- readMemoryVar ws
-    pure $ WinID <$> IM.keys windowsState.windows
+    pure $ AppID <$> IM.keys windowsState.windows
 
-newWindows :: WinID -> WindowsState
+newWindows :: AppID -> WindowsState
 newWindows minWID = WindowsState mempty minWID Nothing
 
-addWindowApp :: WindowManager -> WinID -> Process -> STM ()
+addWindowApp :: WindowManager -> AppID -> Process -> STM ()
 addWindowApp wm wid process = do
     modifyMemoryVar wm.apps (Map.insert wid process.program)
     void $ updateWindow wm.windows wid (#title .~ processID process)
 
-delWindowApp :: WindowManager -> WinID -> STM ()
+delWindowApp :: WindowManager -> AppID -> STM ()
 delWindowApp wm wid = do
     deleteWindow wm.windows wid
     modifyMemoryVar wm.apps (Map.delete wid)
 
-lookupWindow :: Windows -> WinID -> STM (Maybe Window)
-lookupWindow ws (WinID wid) = IM.lookup wid . (.windows) <$> readMemoryVar ws
+lookupWindow :: Windows -> AppID -> STM (Maybe Window)
+lookupWindow ws (AppID wid) = IM.lookup wid . (.windows) <$> readMemoryVar ws
 
-deleteWindow :: Windows -> WinID -> STM ()
-deleteWindow ws (WinID wid) = modifyMemoryVar ws (#windows %~ IM.delete wid)
+deleteWindow :: Windows -> AppID -> STM ()
+deleteWindow ws (AppID wid) = modifyMemoryVar ws (#windows %~ IM.delete wid)
 
-updateWindow :: Windows -> WinID -> (Window -> Window) -> STM Bool
-updateWindow ws (WinID wid) f = stateMemoryVar ws $ \s ->
+updateWindow :: Windows -> AppID -> (Window -> Window) -> STM Bool
+updateWindow ws (AppID wid) f = stateMemoryVar ws $ \s ->
     case IM.lookup wid s.windows of
         Nothing -> (False, s)
         Just win ->
@@ -72,12 +72,12 @@ updateWindow ws (WinID wid) f = stateMemoryVar ws $ \s ->
                     then (False, s)
                     else (True, s & #windows %~ IM.insert wid newWin)
 
-newWindow :: Windows -> Text -> STM (WinID, Window)
+newWindow :: Windows -> Text -> STM (AppID, Window)
 newWindow ws title = stateMemoryVar ws $ \s ->
-    let WinID prev = s.maxID
+    let AppID prev = s.maxID
         next = prev + 1
         current = IM.size s.windows
-        wid = WinID next
+        wid = AppID next
         win =
             Window
                 (0 + 23 * current, 0 + 23 * current)
@@ -85,17 +85,17 @@ newWindow ws title = stateMemoryVar ws $ \s ->
                 title
      in ((wid, win), s & (#maxID .~ wid) . (#windows %~ IM.insert next win))
 
-renderWindows :: WinID -> Windows -> HtmlT STM ()
+renderWindows :: AppID -> Windows -> HtmlT STM ()
 renderWindows controlWID ws = do
     w <- lift (readMemoryVar ws)
     let windows = IM.toAscList w.windows
-        createWindows = map (renderWindow . first WinID) windows
+        createWindows = map (renderWindow . first AppID) windows
         script = windowScript controlWID : createWindows
     forM_ (fst <$> windows) \wid ->
         with div_ [id_ ("w-" <> showT wid)] mempty
     with (script_ $ Text.intercalate ";" script) [type_ "module"]
 
-windowScript :: WinID -> Text
+windowScript :: AppID -> Text
 windowScript wid =
     [raw|
 import WinBox from '/xstatic/winbox.js'
@@ -165,8 +165,8 @@ function setupWindowManager(chan) {
         <> showT wid
         <> ");"
 
-renderWindow :: (WinID, Window) -> Text
-renderWindow (WinID idx, Window (x, y) (w, h) title) = do
+renderWindow :: (AppID, Window) -> Text
+renderWindow (AppID idx, Window (x, y) (w, h) title) = do
     let attr k v = k <> ": " <> showT v
         attrs =
             [ attr "x" x

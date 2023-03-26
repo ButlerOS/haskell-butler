@@ -70,13 +70,13 @@ addUserMessage srv um = do
     broadcast srv.events (UserChat um)
     addHistory srv.history um
 
-updateChat :: WinID -> DisplayClient -> ChatEvent -> HtmlT STM ()
+updateChat :: AppID -> DisplayClient -> ChatEvent -> HtmlT STM ()
 updateChat wid client = \case
     UserChat um -> appendUserMessage wid client um
     ChatUserJoined user -> appendUser wid client user
     ChatUserLeft user -> with div_ [id_ (withWID wid ("chat-" <> from user)), hxSwapOob_ "delete"] mempty
 
-appendUserMessage :: WinID -> DisplayClient -> UserMessage -> HtmlT STM ()
+appendUserMessage :: AppID -> DisplayClient -> UserMessage -> HtmlT STM ()
 appendUserMessage wid _client um = do
     with div_ [id_ (withWID wid "chat-history"), hxSwapOob_ "afterbegin"] do
         renderUM um
@@ -89,12 +89,12 @@ renderUM um = do
         ": "
         span_ (toHtml um.body)
 
-appendUser :: WinID -> DisplayClient -> UserName -> HtmlT STM ()
+appendUser :: AppID -> DisplayClient -> UserName -> HtmlT STM ()
 appendUser wid client user = do
     with div_ [id_ (withWID wid "chat-list"), hxSwapOob_ "beforeend"] do
         renderUser wid client user
 
-renderUser :: WinID -> DisplayClient -> UserName -> HtmlT STM ()
+renderUser :: AppID -> DisplayClient -> UserName -> HtmlT STM ()
 renderUser wid client user = do
     username <- lift (readTVar client.session.username)
     with li_ (highlightSelf username [id_ (withWID wid ("chat-" <> from user))]) $ userIcon user
@@ -107,7 +107,7 @@ inputHtml :: HtmlT STM ()
 inputHtml =
     with (input_ mempty) [class_ "w-full", id_ "chat-input", name_ "message", type_ "text", placeholder_ "Chat message"]
 
-renderChat :: WinID -> ChatServer -> DisplayClient -> HtmlT STM ()
+renderChat :: AppID -> ChatServer -> DisplayClient -> HtmlT STM ()
 renderChat wid srv client = do
     with div_ [id_ (withWID wid "w"), class_ "border"] do
         with div_ [class_ "flex"] do
@@ -122,7 +122,7 @@ renderChat wid srv client = do
             inputHtml
   where
     heightLimit = case wid of
-        WinID 0 -> "max-h-44 "
+        AppID 0 -> "max-h-44 "
         _ -> "max-h-72 "
 
 chatApp :: ChatServer -> App

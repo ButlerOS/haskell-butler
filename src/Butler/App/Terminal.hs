@@ -17,13 +17,13 @@ data XtermServer = XtermServer
 newXtermServer :: STM XtermServer
 newXtermServer = XtermServer <$> newTChan <*> newTVar Nothing
 
-renderApp :: WinID -> XtermServer -> HtmlT STM ()
+renderApp :: AppID -> XtermServer -> HtmlT STM ()
 renderApp wid server =
     with div_ [wid_ wid "w", class_ "w-full h-full border-2 border-indigo-600"] do
         mDim <- lift (readTVar server.dimension)
         script_ (termClient wid mDim)
 
-renderTray :: WinID -> XtermServer -> HtmlT STM ()
+renderTray :: AppID -> XtermServer -> HtmlT STM ()
 renderTray wid server = do
     with span_ [wid_ wid "bar", class_ "inline-block bg-stone-600 mx-1 px-1"] do
         span_ do
@@ -141,7 +141,7 @@ startTermApp name ctx = do
 
     supervisor
 
-termClient :: WinID -> Maybe (Int, Int) -> Text
+termClient :: AppID -> Maybe (Int, Int) -> Text
 termClient wid mDim =
     [raw|
 if (typeof butlerTerminals === "undefined") {

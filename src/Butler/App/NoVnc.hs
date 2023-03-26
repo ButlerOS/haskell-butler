@@ -7,7 +7,7 @@ import Data.Map.Strict qualified as Map
 import Network.Run.TCP (runTCPClient)
 import Network.Socket.ByteString (recv, sendAll)
 
-renderTray :: WinID -> HtmlT STM ()
+renderTray :: AppID -> HtmlT STM ()
 renderTray wid = do
     with span_ [id_ (withWID wid "tray"), class_ "inline-block bg-stone-600 mx-1 px-1"] do
         span_ do
@@ -91,7 +91,7 @@ startVncApp ctx = do
             AppDisplay (UserJoined client) -> atomically (sendHtml client draw)
             _ -> pure ()
 
-vncClient :: WinID -> (Int, Int) -> Text
+vncClient :: AppID -> (Int, Int) -> Text
 vncClient wid (width, height) =
     [raw|
 import RFB from '/xstatic/noVNC.js';

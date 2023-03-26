@@ -7,7 +7,7 @@ import Butler.Core.Logger
 renderLog :: Event SystemEvent -> HtmlT STM ()
 renderLog se = toHtml (showT se.createdAt <> " " <> showT se.body)
 
-renderLogs :: OS -> WinID -> HtmlT STM ()
+renderLogs :: OS -> AppID -> HtmlT STM ()
 renderLogs os wid = do
     events <- reverse <$> lift (readLogs os.logger)
     with div_ [id_ (withWID wid "w"), class_ ""] do

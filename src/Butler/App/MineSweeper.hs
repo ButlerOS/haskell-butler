@@ -103,13 +103,13 @@ getAdjCellCoords MSCellCoord{..} =
             , MSCellCoord cx (cy + 1)
             ]
 
-renderApp :: WinID -> TVar MSState -> HtmlT STM ()
+renderApp :: AppID -> TVar MSState -> HtmlT STM ()
 renderApp wid state = do
     div_ [id_ (withWID wid "w"), class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
         renderPanel wid state
         renderBoard wid state
 
-renderPanel :: WinID -> TVar MSState -> HtmlT STM ()
+renderPanel :: AppID -> TVar MSState -> HtmlT STM ()
 renderPanel wid state = do
     appState <- lift (readTVar state)
     div_ [id_ (withWID wid "MSPanel"), class_ "bg-gray-200 m-1 flex justify-between"] $ do
@@ -119,7 +119,7 @@ renderPanel wid state = do
             Gameover -> "☹"
         div_ [class_ "w-10 text-right"] "0"
 
-renderBoard :: WinID -> TVar MSState -> HtmlT STM ()
+renderBoard :: AppID -> TVar MSState -> HtmlT STM ()
 renderBoard wid state = do
     appState <- lift (readTVar state)
     div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do

@@ -224,7 +224,7 @@ whiteStone = mkStone "$wrg" do
         stop_ [offset_ ".9", stop_color_ "#DDD"]
         stop_ [offset_ "1", stop_color_ "#777"]
 
-renderTable :: WinID -> GameKind -> HtmlT STM ()
+renderTable :: AppID -> GameKind -> HtmlT STM ()
 renderTable wid kind = do
     void $ with div_ [class_ "flex flex-row flex-grow"] do
         with div_ [class_ "flex flex-col my-6"] do
@@ -246,7 +246,7 @@ renderTable wid kind = do
                 _ -> board
     script_ (tabletopClient wid kind)
 
-renderCurrentGame :: WinID -> Maybe TableState -> Text -> HtmlT STM ()
+renderCurrentGame :: AppID -> Maybe TableState -> Text -> HtmlT STM ()
 renderCurrentGame wid mTableState name = with div_ [wid_ wid "current-game"] do
     toHtml ("Playing: " <> name)
     isClean <- case mTableState of
@@ -255,7 +255,7 @@ renderCurrentGame wid mTableState name = with div_ [wid_ wid "current-game"] do
     unless isClean do
         " *"
 
-renderLoader :: GameState -> WinID -> HtmlT STM ()
+renderLoader :: GameState -> AppID -> HtmlT STM ()
 renderLoader gameState wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
     "Game List"
     mTS <- case gameState.status of
@@ -277,7 +277,7 @@ renderLoader gameState wid = with div_ [wid_ wid "tabletop-game-list", class_ "f
             Nothing -> error "Game without ID must not be added to the saved list"
     withTrigger_ "click" wid "new-game" button_ [class_ btnGreenClass] "New Game"
 
-renderSelector :: WinID -> HtmlT STM ()
+renderSelector :: AppID -> HtmlT STM ()
 renderSelector wid = with div_ [class_ "flex-grow"] do
     "Select a game"
     ul_ do
@@ -289,7 +289,7 @@ renderSelector wid = with div_ [class_ "flex-grow"] do
         gameButton "Chess" Chess
         gameButton "Checker" Checker
 
-mountUI :: GameState -> WinID -> HtmlT STM ()
+mountUI :: GameState -> AppID -> HtmlT STM ()
 mountUI gameState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] do
     case gameState.status of
         Selecting{} -> renderSelector wid
@@ -516,7 +516,7 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()
 
-tabletopClient :: WinID -> GameKind -> Text
+tabletopClient :: AppID -> GameKind -> Text
 tabletopClient wid kind =
     [raw|
 function startTabletop(wid, initialObjects) {

@@ -95,7 +95,7 @@ delMumbler (AppState nm) client = NM.delete nm (from client.process.pid)
 getMumbler :: AppState -> DisplayClient -> STM (Maybe MumblerState)
 getMumbler (AppState nm) client = NM.lookup nm (from client.process.pid)
 
-appStateHtml :: WinID -> AppState -> HtmlT STM ()
+appStateHtml :: AppID -> AppState -> HtmlT STM ()
 appStateHtml wid (AppState nm) = do
     with ul_ [id_ (withWID wid "mumblers"), class_ "list-disc list-inside"] do
         users <- lift (NM.elems nm)

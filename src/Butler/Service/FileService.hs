@@ -16,7 +16,7 @@ import Data.ByteString qualified as BS
 fileService :: Service
 fileService = Service $ defaultApp "file-service" startFileService
 
-filesUploadButton :: Monad m => WinID -> FileLoc -> HtmlT m ()
+filesUploadButton :: Monad m => AppID -> FileLoc -> HtmlT m ()
 filesUploadButton wid dname = do
     with (input_ mempty) [wid_ wid inputID, multiple_ "", type_ "file", onchange_ changeScript]
   where
@@ -62,7 +62,7 @@ data UploadRequest = UploadRequest
     -- ^ The target directory name
     , uid :: Natural
     -- ^ The client Upload Request Id
-    , wid :: WinID
+    , wid :: AppID
     -- ^ The target window
     , files :: [FileUploadRequest]
     -- ^ The list of files to be uploaded
@@ -137,7 +137,7 @@ startFileService ctx = do
                 Nothing -> logError "Unknown data event" ["ev" .= ev]
             ev -> logDebug "Got ev" ["ev" .= ev]
 
-fileSystemClient :: WinID -> Text
+fileSystemClient :: AppID -> Text
 fileSystemClient wid =
     [raw|
 function setupFileSystemClient(wid) {

@@ -9,7 +9,7 @@ import Data.Aeson (Value (Number))
 
 data PEState = PEAll | PEScopped Pid
 
-renderPE :: OS -> TVar PEState -> WinID -> HtmlT STM ()
+renderPE :: OS -> TVar PEState -> AppID -> HtmlT STM ()
 renderPE os stV wid = do
     st <- lift (readTVar stV)
     let startingPid = case st of

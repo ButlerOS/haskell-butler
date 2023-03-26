@@ -14,13 +14,13 @@ data ClockState = ClockUTC | ClockGMT | ClockEDT deriving (Show)
 dropMilliSec :: UTCTime -> UTCTime
 dropMilliSec (UTCTime day sec) = UTCTime day (fromInteger $ truncate sec)
 
-clockValueHtml :: Monad m => WinID -> TimeZone -> LocalTime -> HtmlT m ()
+clockValueHtml :: Monad m => AppID -> TimeZone -> LocalTime -> HtmlT m ()
 clockValueHtml wid tz now =
     with div_ [id_ (withWID wid "clock-value")] do
         div_ $ toHtml (formatTime defaultTimeLocale "%F" now)
         with div_ [class_ "flex justify-center"] $ toHtml (formatTime defaultTimeLocale "%R" now <> " " <> show tz)
 
-clockHtml :: Monad m => WinID -> HtmlT m () -> HtmlT m ()
+clockHtml :: Monad m => AppID -> HtmlT m () -> HtmlT m ()
 clockHtml wid inner =
     with div_ [id_ (withWID wid "w"), class_ "bg-slate-200 rounded-full w-32 h-32 flex m-auto"] do
         with div_ [class_ "m-auto flex flex-col items-center justify-center"] do
@@ -41,7 +41,7 @@ clockHtml wid inner =
             ]
             (toHtml tz)
 
-clockContent :: WinID -> TVar ClockState -> TVar UTCTime -> HtmlT STM ()
+clockContent :: AppID -> TVar ClockState -> TVar UTCTime -> HtmlT STM ()
 clockContent wid s tNow = do
     state <- lift (readTVar s)
     now <- lift (readTVar tNow)

@@ -21,7 +21,7 @@ startPainterApp ctx = do
             ae@AppDisplay{} -> sendHtmlOnConnect mountUI ae
             _ -> pure ()
 
-painterClient :: WinID -> Text
+painterClient :: AppID -> Text
 painterClient wid =
     [raw|
 function setupPainterClient(Wid) {
