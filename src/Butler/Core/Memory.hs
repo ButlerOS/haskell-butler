@@ -19,15 +19,21 @@ data MemoryVar a = MemoryVar
     }
 
 -- | Instanciate a new 'MemoryVar' by providing a 'Storage' and a 'StorageAddress'
-newMemoryVar :: Serialise a => MonadIO m => Storage -> StorageAddress -> m a -> m (a, MemoryVar a)
-newMemoryVar storage addr initialise = do
+newMemoryVar :: Serialise a => MonadIO m => (Text -> [Pair] -> m ()) -> Storage -> StorageAddress -> m a -> m (a, MemoryVar a)
+newMemoryVar logError storage addr initialise = do
     bufM <- readStorage storage addr
-    value <- case bufM of
-        Just buf -> pure $ deserialise (from buf)
-        Nothing -> do
+    let mkNewValue = do
             v <- initialise
             atomically $ doSave v
             pure v
+
+    value <- case bufM of
+        Just buf -> case deserialiseOrFail (from buf) of
+            Left err -> do
+                logError "Loading memory failed" ["addr" .= addr, "err" .= show err]
+                mkNewValue
+            Right x -> pure x
+        Nothing -> mkNewValue
 
     var <- newTVarIO value
     let save = do

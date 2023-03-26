@@ -135,8 +135,7 @@ logDebug = processLog getLocName EventDebug
 newProcessMemory :: Serialise a => StorageAddress -> ProcessIO a -> ProcessIO (a, MemoryVar a)
 newProcessMemory addr initialize = do
     os <- asks os
-    p <- asks process
-    liftIO $ newMemoryVar os.storage addr (runProcessIO os p initialize)
+    newMemoryVar logError os.storage addr initialize
 
 -- | Change the root storage directory of a process.
 chroot :: StorageAddress -> ProcessIO a -> ProcessIO a
