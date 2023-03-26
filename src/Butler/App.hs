@@ -257,6 +257,24 @@ withTrigger_ hxTrigger wid (TriggerName trigger) elt attrs =
 withTrigger :: With a => Text -> AppID -> TriggerName -> [Pair] -> a -> [Attribute] -> a
 withTrigger hxTrigger wid trigger vals elt attrs = withTrigger_ hxTrigger wid trigger elt (encodeVal vals : attrs)
 
+-- Make the Html element to Trigger an HTMX event on Natural Element Event (https://htmx.org/docs/#triggers)
+withEvent :: Monad m => AppID -> TriggerName -> [Pair] -> HtmlT m () -> HtmlT m ()
+withEvent appId (TriggerName trigger) vals elm =
+    with
+        elm
+        (wid_ appId trigger : wsSend : encodeVal vals : mempty)
+
+-- Make the Html element to Trigger an HTMX event on Custom Event
+withCustomEvent :: Monad m => Text -> AppID -> TriggerName -> [Pair] -> HtmlT m () -> HtmlT m ()
+withCustomEvent eventType appId (TriggerName trigger) vals elm =
+    with
+        elm
+        (wid_ appId trigger : wsSend : encodeVal vals : [hxTrigger_ eventType])
+
+-- Make the Html element to Trigger an HTMX event on Click event
+withClickEvent :: Monad m => AppID -> TriggerName -> [Pair] -> HtmlT m () -> HtmlT m ()
+withClickEvent = withCustomEvent "click"
+
 butlerCheckbox :: AppID -> Text -> [Pair] -> Bool -> Maybe Text -> [Attribute]
 butlerCheckbox wid name attrs value mConfirm
     | value = checked_ : attributes
