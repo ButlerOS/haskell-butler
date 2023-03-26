@@ -59,8 +59,14 @@ module Butler (
     serveDashboardApps,
     publicDisplayApp,
     Service (..),
+    AppID,
 
     -- * GUI toolkit
+    wid_,
+    withTrigger,
+    withTrigger_,
+    withWID,
+    dropWID,
     sendHtmlOnConnect,
     module Butler.Display.GUI,
     module Butler.Window,
@@ -74,6 +80,7 @@ import Control.Concurrent.CGroup qualified
 import Main.Utf8
 
 import Butler.App
+import Butler.AppID
 import Butler.Auth
 import Butler.Core
 import Butler.Core.Clock

@@ -49,6 +49,7 @@ library
       Butler.App.SoundTest
       Butler.App.Tabletop
       Butler.App.Terminal
+      Butler.AppID
       Butler.Auth
       Butler.Auth.Guest
       Butler.Auth.Invitation

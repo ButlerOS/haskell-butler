@@ -171,10 +171,10 @@ instance From SoundChannelID Natural where
     from (SoundChannelID chan) = chan
 
 instance From AppID SoundChannelID where
-    from (AppID wid) = SoundChannelID (unsafeFrom wid)
+    from wid = SoundChannelID (from wid)
 
-instance From SoundChannelID AppID where
-    from (SoundChannelID chan) = AppID (unsafeFrom chan)
+-- instance From SoundChannelID AppID where
+--    from (SoundChannelID chan) = AppID (unsafeFrom chan)
 
 data SoundClientStatus
     = SoundClientInitializing Bool
@@ -233,7 +233,7 @@ stopSoundChannel sc soundChannel = do
     broadcast sc.events (SoundChannelEvent soundChannel.id)
 
 mkControlMessage :: SoundCard -> Text -> [Pair] -> LByteString
-mkControlMessage sc op attrs = encodeMessageL sc.wid $ LBS.cons 0 buf
+mkControlMessage sc op attrs = encodeMessage (from sc.wid) $ LBS.cons 0 buf
   where
     buf = encodeJSON (KM.fromList $ ["op" .= op] <> attrs)
 

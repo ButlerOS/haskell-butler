@@ -71,7 +71,7 @@ peApp =
                     Just pid -> do
                         logInfo "Killing" ["pid" .= pid]
                         void $ killProcess (Pid (unsafeFrom pid))
-                    Nothing -> case withoutWID ev.trigger of
+                    Nothing -> case ev.trigger of
                         "ps-toggle" -> do
                             st <- readTVarIO stV
                             atomically $ writeTVar stV $ case st of

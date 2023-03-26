@@ -177,7 +177,7 @@ startNoterApp ctx = do
                                 (Just (dirtyChanged, body), newState)
                 case mBody of
                     Just (dirtyChanged, body) -> do
-                        sendsBinaryButSelf client ctx.shared.clients (encodeMessageL ctx.wid (encodeJSON body))
+                        sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from ctx.wid) (encodeJSON body))
                         forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Insert failed" ["client" .= client, "txt" .= txt]
             Delete dir deleteSize -> do
@@ -210,7 +210,7 @@ startNoterApp ctx = do
                                 (Just (dirtyChanged, body), newState)
                 case mBody of
                     Just (dirtyChanged, body) -> do
-                        sendsBinaryButSelf client ctx.shared.clients (encodeMessageL ctx.wid (encodeJSON body))
+                        sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from ctx.wid) (encodeJSON body))
                         forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Delete failed" ["client" .= client]
 
@@ -230,7 +230,7 @@ startNoterApp ctx = do
             AppTrigger ev -> case ev.trigger of
                 "refresh" -> atomically do
                     content <- (.content) <$> readTVar tState
-                    sendBinary ev.client (encodeMessageL ctx.wid (encodeJSON $ object ["text" .= Rope.toText content]))
+                    sendBinary ev.client (encodeMessage (from ctx.wid) (encodeJSON $ object ["text" .= Rope.toText content]))
                 "save-file" -> do
                     state <- readTVarIO tState
                     case state.status of

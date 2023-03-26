@@ -4,6 +4,7 @@ import Data.Set qualified as Set
 
 import Butler
 import Butler.App
+import Butler.AppID
 import Butler.GUI.File
 import Butler.Service.FileService
 
@@ -76,7 +77,7 @@ startFileManagerApp ctx = do
                                 Directory{} -> withTrigger "click" ctx.wid "chdir" ["fp" .= fn] span_ [class_ "cursor-pointer"] (toHtml name)
                                 File file ->
                                     let vals = ["name" .= ProgramName "file-viewer", "fp" .= getFileLoc dir (Just file)]
-                                     in withTrigger "click" (AppID 0) "start-app" vals span_ [class_ "cursor-pointer"] (toHtml name)
+                                     in withTrigger "click" shellAppID "start-app" vals span_ [class_ "cursor-pointer"] (toHtml name)
 
         renderMoveTarget :: Directory -> HtmlT STM ()
         renderMoveTarget dir = do

@@ -11,6 +11,7 @@ import Lucid.Htmx
 import Butler
 import Butler.App
 import Butler.App.Desktop
+import Butler.AppID
 import Butler.Core
 import Butler.Core.Logger
 import Butler.Display
@@ -48,7 +49,7 @@ lobbyProgram appSet services chat display = do
             Just (DesktopRunning desktop) -> pure (wss, desktop)
             mDesktopStatus -> do
                 let desktopID = "desktop-" <> into @StorageAddress name
-                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop-" (desktopApp services){name = via @Text name} display
+                (shared, shellInstance) <- chroot desktopID $ startShellApp appSet "desktop-" (desktopApp services & #name .~ via @Text name) display
 
                 when (isNothing mDesktopStatus) do
                     atomically $ modifyMemoryVar dm.desktopsList (name :)
@@ -93,9 +94,6 @@ shellHandler desktop shared event = case event of
             Just hdl -> hdl event
             Nothing -> logError "Unknown chan" ["chan" .= chan]
 
-chatWin :: AppID
-chatWin = AppID 0
-
 lobbyHandler :: Lobby -> ChatServer -> DisplayEvent -> ProcessIO ()
 lobbyHandler dm chat = \case
     UserConnected "htmx" client -> do
@@ -107,6 +105,7 @@ lobbyHandler dm chat = \case
         wss <- readMVar dm.desktops
         chatChan <- atomically (newChatReader chat)
         sleep 60
+        let chatWin = shellAppID
         atomically $ sendHtml client (lobbyHtml wss (renderChat chatWin chat client))
         spawnThread_ $ forever do
             ev <- atomically (readTChan chatChan)

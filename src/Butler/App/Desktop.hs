@@ -7,7 +7,6 @@ module Butler.App.Desktop (
     Desktop (..),
 ) where
 
-import Data.IntMap.Strict qualified as IM
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
@@ -15,6 +14,7 @@ import Lucid.Htmx
 
 import Butler
 import Butler.App
+import Butler.AppID
 import Butler.Core
 import Butler.Core.Logger
 import Butler.Core.Processor
@@ -28,9 +28,6 @@ import Butler.Service.FileService
 desktopApp :: [Service] -> App
 desktopApp services = defaultApp "desktop" (startDesktopApp services)
 
-controlWin :: AppID
-controlWin = AppID 0
-
 deskApp :: AppSet -> App
 deskApp appSet = defaultApp "welcome" startWelcomeApp
   where
@@ -41,22 +38,24 @@ deskApp appSet = defaultApp "welcome" startWelcomeApp
 
 startDesktopApp :: [Service] -> AppContext -> ProcessIO ()
 startDesktopApp services ctx = do
-    wm <- newWindowManager (AppID (length services))
+    wm <- newWindowManager
 
     let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
 
-    forM_ (zip [1 ..] services) \(wid, Service service) -> do
-        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared (AppID wid)
+    forM_ services \(Service service) -> do
+        wid <- atomically (nextAppID ctx.shared.appIDCounter)
+        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared wid
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
 
-    spawnThread_ $ renderOnChange (renderFileIcons controlWin dir) \newHtml -> do
+    spawnThread_ $ renderOnChange (renderFileIcons shellAppID dir) \newHtml -> do
         logInfo "Updating desktop directory ui" []
         sendsHtml ctx.shared.clients newHtml
 
     Map.toList <$> atomically (readMemoryVar wm.apps) >>= \case
         [] -> do
-            (wid, _) <- atomically $ newWindow wm.windows "Welcome"
+            wid <- atomically (nextAppID ctx.shared.appIDCounter)
+            void $ atomically $ newWindow wm.windows wid "Welcome"
             atomically . addApp wm ctx.shared =<< startDeskApp wid
         xs -> do
             logInfo "Restoring apps" ["apps" .= xs]
@@ -70,7 +69,7 @@ startDesktopApp services ctx = do
                         whenM (isNothing <$> atomically (lookupWindow wm.windows wid)) do
                             logError "Missing window for app" ["prog" .= prog]
                             atomically $ addWindowApp wm wid app.process
-                        if coerce wid <= length services
+                        if from wid <= length services
                             then logError "Can't restore app, conflict with services" ["app" .= prog, "wid" .= wid]
                             else atomically $ registerApp ctx.shared.apps app
                     Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
@@ -105,7 +104,8 @@ startDesktopApp services ctx = do
         createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
         createNewWindow name mEvent = do
             (wid, script) <- atomically do
-                (winId, win) <- newWindow wm.windows (from name)
+                winId <- nextAppID ctx.shared.appIDCounter
+                win <- newWindow wm.windows winId (from name)
                 let script = renderWindow (winId, win)
                 pure (winId, script)
 
@@ -152,11 +152,11 @@ startDesktopApp services ctx = do
                         logError "invalid win-event" ["v" .= v]
                         pure False
             when doBroadcast do
-                sendsBinaryButSelf client ctx.shared.clients (encodeMessageL controlWin buf)
+                sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from shellAppID) buf)
 
         desktop =
             Desktop
-                { mountUI = desktopHtml services dir wm.windows
+                { mountUI = desktopHtml ctx.shared.apps dir wm.windows
                 , thumbnail = do
                     let attr :: Text -> HtmlT STM () -> HtmlT STM ()
                         attr k v =
@@ -170,7 +170,7 @@ startDesktopApp services ctx = do
                     attr "clients" do
                         with div_ [class_ "flex"] do
                             traverse_ (\c -> userIcon =<< lift (readTVar c.session.username)) clients
-                    wins <- IM.size . (.windows) <$> lift (readMemoryVar wm.windows)
+                    wins <- Map.size . (.windows) <$> lift (readMemoryVar wm.windows)
                     attr "wins" (toHtml (show wins))
                 }
 
@@ -187,8 +187,8 @@ startDesktopApp services ctx = do
                         script_ "htmx.find('#display-ws').setAttribute('ws-connect', '/ws/htmx?reconnect=true')"
             AppDisplay _ -> pure ()
             AppData de -> case decode' (from de.buffer) of
-                Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _Integer) of
-                    (Just winEvent, Just (AppID . unsafeFrom -> winId)) -> do
+                Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _JSON) of
+                    (Just winEvent, Just winId) -> do
                         handleWinEvent de.client (from de.buffer) winEvent winId obj
                     _ -> logError "invalid win event" ["buf" .= BSLog de.buffer]
                 Nothing -> logError "unknown win event" ["buf" .= BSLog de.buffer]
@@ -231,8 +231,8 @@ delWin wm ctx wid = do
         Just prevApp -> delApp ctx.shared prevApp
     delWindowApp wm wid
 
-desktopHtml :: [Service] -> Directory -> Windows -> HtmlT STM ()
-desktopHtml services dir windows = do
+desktopHtml :: Apps -> Directory -> Windows -> HtmlT STM ()
+desktopHtml apps dir windows = do
     wids <- lift (getWindowIDs windows)
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
         script_ butlerHelpersScript
@@ -240,29 +240,29 @@ desktopHtml services dir windows = do
         with div_ [id_ "win-root", class_ "flex grow"] do
             with div_ [class_ "flex flex-col"] do
                 let deskDiv = "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer"
-                withTrigger "click" controlWin "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
+                withTrigger "click" shellAppID "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
                     with i_ [class_ "ri-computer-line"] mempty
-                renderFileIcons controlWin dir
-                filesUploadButton (AppID 0) (getFileLoc dir Nothing)
+                renderFileIcons shellAppID dir
+                filesUploadButton shellAppID (getFileLoc dir Nothing)
 
         -- bottom bar
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white z-50"] do
             with' div_ "grow" do
-                with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", wid_ (AppID 0) "wm-start", wsSend] ">>= start"
+                with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", wid_ shellAppID "wm-start", wsSend] ">>= start"
                 with span_ [id_ "display-bar"] do
                     forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center justify-center"] do
-                    forM_ wids \wid -> with span_ [wid_ wid "tray"] mempty
-                    with span_ [wid_ (AppID 0) "tray"] mempty
-                    forM_ (zip [1 ..] services) \(AppID -> wid, _) ->
+                    with span_ [wid_ shellAppID "tray"] mempty
+                    appIDs <- Map.keys <$> lift (getApps apps)
+                    forM_ appIDs \wid ->
                         with span_ [wid_ wid "tray"] mempty
                     statusHtml True
 
         with div_ [id_ "reconnect_script"] mempty
 
         with div_ [id_ "backstore"] do
-            renderWindows controlWin windows
+            renderWindows shellAppID windows
 
 welcomeWin :: Monad m => AppSet -> AppID -> HtmlT m ()
 welcomeWin appSet wid = do
@@ -308,7 +308,7 @@ handleWinSwap wm ctx wid appName mEvent = do
             Nothing -> pure ()
 
     broadcastWinMessage body =
-        sendsBinary ctx.shared.clients (encodeMessageL controlWin (encodeJSON $ object body))
+        sendsBinary ctx.shared.clients (encodeMessage (from shellAppID) (encodeJSON $ object body))
 
     broadcastSize :: (Int, Int) -> ProcessIO ()
     broadcastSize (x, y) =

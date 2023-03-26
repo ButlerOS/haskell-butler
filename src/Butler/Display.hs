@@ -39,7 +39,6 @@ import Butler.Core.Network
 import Butler.Core.Process
 import Butler.Core.Storage
 import Butler.Display.Client
-import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Display.WebSocket
 import Butler.Prelude

@@ -1,6 +1,5 @@
 -- | GUI toolkit
 module Butler.Display.GUI (
-    AppID (..),
     GuiEvent (..),
     TriggerName (..),
     HtmxEvent (..),
@@ -9,14 +8,6 @@ module Butler.Display.GUI (
     -- * ID encoding
     decodeNaturalSuffix,
     encodeNaturalSuffix,
-
-    -- * triggers
-    wid_,
-    withTrigger,
-    withTrigger_,
-    withoutWID,
-    withWID,
-    dropWID,
 
     -- * helpers
     with',
@@ -109,34 +100,8 @@ newtype TriggerName = TriggerName Text
 instance From Natural TriggerName where
     from = TriggerName . from . show
 
-newtype AppID = AppID Int
-    deriving newtype (Eq, Ord, Show, ToJSON, Serialise, FromJSON)
-
-instance From AppID Natural where
-    from (AppID n) = unsafeFrom n
-
 with' :: With a => a -> Text -> a
 with' x n = with x [class_ n]
-
--- This needs to be kept in sync with the Butler.Frame.butlerHelpersScript javascript implementation 'withWID'
-withWID :: AppID -> Text -> Text
-withWID winID n = n <> "-" <> showT winID
-
-dropWID :: Text -> Text
-dropWID = Text.dropWhileEnd (== '-') . Text.dropWhileEnd isDigit
-
-withoutWID :: TriggerName -> TriggerName
-withoutWID (TriggerName n) = TriggerName $ dropWID n
-
-wid_ :: AppID -> Text -> _
-wid_ wid n = id_ (withWID wid n)
-
-withTrigger_ :: With a => Text -> AppID -> TriggerName -> a -> [Attribute] -> a
-withTrigger_ hxTrigger wid (TriggerName trigger) elt attrs =
-    with elt (wid_ wid trigger : wsSend : hxTrigger_ hxTrigger : attrs)
-
-withTrigger :: With a => Text -> AppID -> TriggerName -> [Pair] -> a -> [Attribute] -> a
-withTrigger hxTrigger wid trigger vals elt attrs = withTrigger_ hxTrigger wid trigger elt (encodeVal vals : attrs)
 
 wsSend :: Attribute
 wsSend = makeAttribute "ws-send" ""

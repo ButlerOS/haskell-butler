@@ -318,17 +318,17 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
     let newObject :: OName -> OName -> LByteString
         newObject src elt =
             let msg = object ["new" .= elt, "src" .= src]
-             in encodeMessageL ctx.wid (encodeJSON msg)
+             in encodeMessage (from ctx.wid) (encodeJSON msg)
 
         moveObject :: OName -> (Word, Word) -> LByteString
         moveObject elt (x, y) =
             let msg = object ["elt" .= elt, "x" .= x, "y" .= y]
-             in encodeMessageL ctx.wid (encodeJSON msg)
+             in encodeMessage (from ctx.wid) (encodeJSON msg)
 
         delObject :: OName -> LByteString
         delObject elt =
             let msg = object ["del" .= elt]
-             in encodeMessageL ctx.wid (encodeJSON msg)
+             in encodeMessage (from ctx.wid) (encodeJSON msg)
 
     let clientHandler :: TableState -> DisplayClient -> TableEvent -> ProcessIO ()
         clientHandler tableState client = \case

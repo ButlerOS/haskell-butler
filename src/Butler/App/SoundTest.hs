@@ -118,8 +118,7 @@ startSoundTest ctx = do
             AppDisplay _ -> sendHtmlOnConnect render ae
             AppTrigger ev -> case state of
                 Pending -> do
-                    logInfo "got ev" ["ev" .= ev]
-                    case withoutWID ev.trigger of
+                    case ev.trigger of
                         "playback-test" -> do
                             process <- delayPlayback soundCard wid ev.client
                             setStatus (DelayPlayback process ev.client)
@@ -128,14 +127,14 @@ startSoundTest ctx = do
                             setStatus (Streaming process)
                         _ -> logError "unknown trigger" ["ev" .= ev]
                     sendsHtml clients render
-                DelayPlayback process _client -> case withoutWID ev.trigger of
+                DelayPlayback process _client -> case ev.trigger of
                     "stop" -> do
                         logInfo "Stopping record" ["ev" .= ev]
                         void $ killProcess process.pid
                         setStatus Pending
                         sendsHtml clients render
                     _ -> logError "unknown rec trigger" ["ev" .= ev]
-                Streaming process -> case withoutWID ev.trigger of
+                Streaming process -> case ev.trigger of
                     "stop" -> do
                         logInfo "Stopping streamming" ["ev" .= ev]
                         void $ killProcess process.pid

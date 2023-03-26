@@ -105,14 +105,14 @@ getAdjCellCoords MSCellCoord{..} =
 
 renderApp :: AppID -> TVar MSState -> HtmlT STM ()
 renderApp wid state = do
-    div_ [id_ (withWID wid "w"), class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
+    div_ [wid_ wid "w", class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
         renderPanel wid state
         renderBoard wid state
 
 renderPanel :: AppID -> TVar MSState -> HtmlT STM ()
 renderPanel wid state = do
     appState <- lift (readTVar state)
-    div_ [id_ (withWID wid "MSPanel"), class_ "bg-gray-200 m-1 flex justify-between"] $ do
+    div_ [wid_ wid "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
         div_ [class_ "w-10"] "9 💣"
         withEvent (withWID wid "play") [mkHxVals [("play", "")]] $ div_ [class_ "bg-gray-300 border-2"] $ case appState.state of
             Play -> "🙂"

@@ -119,7 +119,7 @@ startTermApp name ctx = do
                     Pty.threadWaitReadPty pty
                     Pty.readPty pty
                 -- logDebug (prog <> "-read") ["buf" .= BSLog outputData]
-                sendsBinary clients (encodeMessageL wid (from outputData))
+                sendsBinary clients (encodeMessage (from wid) (from outputData))
 
     let welcomeMessage = "\rConnected to " <> encodeUtf8 prog
     statusMsg <- newTVarIO welcomeMessage
@@ -131,7 +131,7 @@ startTermApp name ctx = do
             now <- getTime
             let errorMessage = "\r\n" <> from now <> " " <> encodeUtf8 prog <> " exited: " <> encodeUtf8 (from $ show res) <> "\r\n"
             atomically $ writeTVar statusMsg errorMessage
-            sendsBinary clients (encodeMessageL wid (from errorMessage))
+            sendsBinary clients (encodeMessage (from wid) (from errorMessage))
 
             let waitForR = do
                     inputData <- atomically $ readTChan server.inputChan

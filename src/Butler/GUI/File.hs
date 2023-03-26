@@ -1,6 +1,7 @@
 module Butler.GUI.File where
 
 import Butler
+import Butler.AppID
 
 renderFileIcon :: Entry -> (Text, FileName)
 renderFileIcon = \case
@@ -15,6 +16,6 @@ renderFileIcons wid rootDir = with div_ [wid_ wid "file-list"] do
             (loc, program) = case child of
                 Directory dir -> (getFileLoc dir Nothing, ProgramName "file-manager")
                 File file -> (getFileLoc rootDir (Just file), ProgramName "file-viewer")
-        withTrigger "click" (AppID 0) "start-app" ["name" .= program, "fp" .= loc] div_ [class_ "cursor-pointer"] do
+        withTrigger "click" shellAppID "start-app" ["name" .= program, "fp" .= loc] div_ [class_ "cursor-pointer"] do
             with i_ [class_ ("mx-2 my-3 w-6 " <> icon)] do
                 toHtml name

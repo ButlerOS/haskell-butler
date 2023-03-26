@@ -126,7 +126,7 @@ startSeatApp ctx = do
                             writeTVar seat.cursor (x, y)
                             pure do
                                 let cbuf = encodeJSON (object ["x" .= x, "y" .= y, "pid" .= client.process.pid])
-                                sendsBinary clients (encodeMessageL (from wid) cbuf)
+                                sendsBinary clients (encodeMessage (from wid) cbuf)
                 when isNew do
                     sendsHtml clients (appendSeat seat)
                 action

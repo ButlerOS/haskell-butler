@@ -121,9 +121,7 @@ renderChat wid srv client = do
         with form_ [wsSend, hxTrigger_ "submit", id_ $ withWID wid "chat-message"] do
             inputHtml
   where
-    heightLimit = case wid of
-        AppID 0 -> "max-h-44 "
-        _ -> "max-h-72 "
+    heightLimit = "max-h-44"
 
 chatApp :: ChatServer -> App
 chatApp srv =

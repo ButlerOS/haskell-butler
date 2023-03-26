@@ -7,6 +7,7 @@ import Data.Text qualified as Text
 import Lucid
 import Network.WebSockets qualified as WS
 
+import Butler.AppID
 import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Dynamic
@@ -75,12 +76,12 @@ eventFromMessage :: DisplayClient -> WS.DataMessage -> Maybe (AppID, AppEvent)
 eventFromMessage client = \case
     WS.Text lbs _ -> do
         htmxEvent <- decodeJSON @HtmxEvent lbs
-        (wid, TriggerName -> trigger) <- decodeNaturalSuffix htmxEvent.trigger
-        pure (AppID (unsafeFrom wid), AppTrigger (GuiEvent client trigger htmxEvent.body))
+        (wid, TriggerName -> trigger) <- decodeAppID htmxEvent.trigger
+        pure (wid, AppTrigger (GuiEvent client trigger htmxEvent.body))
     WS.Binary lbs -> do
         let rawBuf = from lbs
-        (wid, buf) <- decodeMessage rawBuf
-        pure (AppID $ unsafeFrom wid, AppData (DataEvent client buf rawBuf))
+        (wid, buf) <- decodeAppIDMessage rawBuf
+        pure (wid, AppData (DataEvent client buf rawBuf))
 
 -- | A graphical application definition.
 data App = App
@@ -100,6 +101,7 @@ data App = App
     , start :: AppContext -> ProcessIO ()
     -- ^ Start action.
     }
+    deriving (Generic)
 
 newtype Service = Service App
 
@@ -132,13 +134,19 @@ data AppSharedContext = AppSharedContext
     , clients :: DisplayClients
     -- ^ the list of all the connected clients. To send update, app should uses `sendsHtml clients ""`
     , dynamics :: Dynamics
+    , appIDCounter :: AppIDCounter
     , apps :: Apps
     , extraHandlers :: TVar (Map ChannelName (DisplayEvent -> ProcessIO ()))
     }
 
 newAppSharedContext :: Display -> ProcessEnv -> AppSet -> STM AppSharedContext
 newAppSharedContext display processEnv appSet =
-    AppSharedContext display processEnv appSet <$> newDisplayClients <*> newDynamics <*> newApps <*> newTVar mempty
+    AppSharedContext display processEnv appSet
+        <$> newDisplayClients
+        <*> newDynamics
+        <*> newAppIDCounter
+        <*> newApps
+        <*> newTVar mempty
 
 newtype Apps = Apps (TVar (Map AppID AppInstance))
 
@@ -196,7 +204,7 @@ startApp prefix app shared wid = do
 -- | Start the application that is in charge of starting the other apps.
 startShellApp :: AppSet -> Text -> App -> Display -> ProcessIO (AppSharedContext, AppInstance)
 startShellApp appSet prefix app display = do
-    let wid = AppID 0
+    let wid = shellAppID
     pipe <- atomically newPipe
     mvShared <- newEmptyMVar
     process <- spawnProcess (from prefix <> app.name) do
@@ -213,11 +221,11 @@ startApps :: [App] -> Display -> ProcessIO AppSharedContext
 startApps apps display = do
     processEnv <- ask
     shared <- atomically (newAppSharedContext display processEnv (newAppSet apps))
-    traverse_ (go shared) (zip [0 ..] apps)
+    traverse_ (go shared) apps
     pure shared
   where
-    go shared (i, app) = do
-        let wid = AppID i
+    go shared app = do
+        wid <- atomically (nextAppID shared.appIDCounter)
         appInstance <- startApp "app-" app shared wid
         atomically (registerApp shared.apps appInstance)
 
@@ -231,6 +239,23 @@ tagIcon = \case
     "System" -> Just "ri-settings-3-line"
     "Utility" -> Just "ri-tools-line"
     _ -> Nothing
+
+-- This needs to be kept in sync with the Butler.Frame.butlerHelpersScript javascript implementation 'withWID'
+withWID :: AppID -> Text -> Text
+withWID winID n = n <> "-" <> showT winID
+
+dropWID :: Text -> Text
+dropWID = Text.dropWhileEnd (== '-') . Text.dropWhileEnd isDigit
+
+wid_ :: AppID -> Text -> _
+wid_ wid n = id_ (withWID wid n)
+
+withTrigger_ :: With a => Text -> AppID -> TriggerName -> a -> [Attribute] -> a
+withTrigger_ hxTrigger wid (TriggerName trigger) elt attrs =
+    with elt (wid_ wid trigger : wsSend : hxTrigger_ hxTrigger : attrs)
+
+withTrigger :: With a => Text -> AppID -> TriggerName -> [Pair] -> a -> [Attribute] -> a
+withTrigger hxTrigger wid trigger vals elt attrs = withTrigger_ hxTrigger wid trigger elt (encodeVal vals : attrs)
 
 butlerCheckbox :: AppID -> Text -> [Pair] -> Bool -> Maybe Text -> [Attribute]
 butlerCheckbox wid name attrs value mConfirm
@@ -257,7 +282,7 @@ sendTriggerScript wid name attrs =
     obj = encodeJSON (object attrs)
 
 startAppScript :: App -> [Pair] -> Text
-startAppScript app args = sendTriggerScript (AppID 0) "start-app" (["name" .= app.name] <> args)
+startAppScript app args = sendTriggerScript shellAppID "start-app" (["name" .= app.name] <> args)
 
 appSetHtml :: Monad m => AppID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do

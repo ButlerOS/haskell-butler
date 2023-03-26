@@ -5,7 +5,6 @@ module Butler.Frame (
     DataEvent (..),
 
     -- * helper
-    encodeMessageL,
     encodeMessage,
     decodeMessage,
     butlerHelpersScript,
@@ -13,7 +12,6 @@ module Butler.Frame (
 
 import Butler.Core.Logger
 import Butler.Display.Client
-import Butler.Display.GUI
 import Butler.Prelude
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -28,9 +26,6 @@ data DataEvent = DataEvent
 
 instance ToJSON DataEvent where
     toJSON de = object ["client" .= de.client, "data" .= BSLog de.rawBuffer]
-
-encodeMessageL :: AppID -> LByteString -> LByteString
-encodeMessageL wid = encodeMessage (from wid)
 
 encodeMessage :: Natural -> LByteString -> LByteString
 encodeMessage chan = LBS.cons b

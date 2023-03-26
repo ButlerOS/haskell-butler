@@ -1,6 +1,7 @@
 module Butler.Test where
 
 import Butler.App
+import Butler.AppID
 import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Process
@@ -53,14 +54,15 @@ withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
     cb appSharedContext
 
 withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
-withAppInstance app cb = withTestSharedContext (newAppSet [app]) \appSharedContext -> do
-    appInstance <- startApp "app" app appSharedContext (AppID 1)
-    cb appSharedContext appInstance
+withAppInstance app cb = withTestSharedContext (newAppSet [app]) \shared -> do
+    wid <- atomically (nextAppID shared.appIDCounter)
+    appInstance <- startApp "app" app shared wid
+    cb shared appInstance
 
 startTestService :: AppSharedContext -> Service -> ProcessIO ()
 startTestService shared (Service app) = do
-    -- TODO: increase win-id for next service
-    void $ startApp "srv" app shared (AppID 2)
+    wid <- atomically (nextAppID shared.appIDCounter)
+    void $ startApp "srv" app shared wid
 
 butlerAppTestCase :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> TestTree
 butlerAppTestCase app cb = butlerTestCase ("Butler.App." <> via @Text app.name) do

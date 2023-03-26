@@ -1,14 +1,13 @@
 module Butler.Window where
 
-import Data.IntMap.Strict qualified as IM
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 
+import Butler.AppID
 import Butler.Core
 import Butler.Core.Memory
 import Butler.Core.Process
-import Butler.Display.GUI
 import Butler.Prelude
 
 data Window = Window
@@ -19,8 +18,7 @@ data Window = Window
     deriving (Eq, Generic, Serialise)
 
 data WindowsState = WindowsState
-    { windows :: IntMap Window
-    , maxID :: AppID
+    { windows :: Map AppID Window
     , focus :: Maybe AppID
     }
     deriving (Generic, Serialise)
@@ -32,19 +30,19 @@ data WindowManager = WindowManager
     , apps :: MemoryVar (Map AppID ProgramName)
     }
 
-newWindowManager :: AppID -> ProcessIO WindowManager
-newWindowManager minWID =
+newWindowManager :: ProcessIO WindowManager
+newWindowManager =
     WindowManager
-        <$> (snd <$> newProcessMemory "wins.bin" (pure (newWindows minWID)))
+        <$> (snd <$> newProcessMemory "wins.bin" (pure newWindows))
         <*> (snd <$> newProcessMemory "apps.bin" (pure mempty))
 
 getWindowIDs :: Windows -> STM [AppID]
 getWindowIDs ws = do
     windowsState <- readMemoryVar ws
-    pure $ AppID <$> IM.keys windowsState.windows
+    pure $ Map.keys windowsState.windows
 
-newWindows :: AppID -> WindowsState
-newWindows minWID = WindowsState mempty minWID Nothing
+newWindows :: WindowsState
+newWindows = WindowsState mempty Nothing
 
 addWindowApp :: WindowManager -> AppID -> Process -> STM ()
 addWindowApp wm wid process = do
@@ -57,39 +55,39 @@ delWindowApp wm wid = do
     modifyMemoryVar wm.apps (Map.delete wid)
 
 lookupWindow :: Windows -> AppID -> STM (Maybe Window)
-lookupWindow ws (AppID wid) = IM.lookup wid . (.windows) <$> readMemoryVar ws
+lookupWindow ws wid = Map.lookup wid . (.windows) <$> readMemoryVar ws
 
 deleteWindow :: Windows -> AppID -> STM ()
-deleteWindow ws (AppID wid) = modifyMemoryVar ws (#windows %~ IM.delete wid)
+deleteWindow ws wid = modifyMemoryVar ws (#windows %~ Map.delete wid)
 
 updateWindow :: Windows -> AppID -> (Window -> Window) -> STM Bool
-updateWindow ws (AppID wid) f = stateMemoryVar ws $ \s ->
-    case IM.lookup wid s.windows of
+updateWindow ws wid f = stateMemoryVar ws $ \s ->
+    case Map.lookup wid s.windows of
         Nothing -> (False, s)
         Just win ->
             let newWin = f win
              in if newWin == win
                     then (False, s)
-                    else (True, s & #windows %~ IM.insert wid newWin)
+                    else (True, s & #windows %~ Map.insert wid newWin)
 
-newWindow :: Windows -> Text -> STM (AppID, Window)
-newWindow ws title = stateMemoryVar ws $ \s ->
-    let AppID prev = s.maxID
-        next = prev + 1
-        current = IM.size s.windows
-        wid = AppID next
+newWindow :: Windows -> AppID -> Text -> STM Window
+newWindow ws appID title = stateMemoryVar ws $ \s ->
+    let
+        current = Map.size s.windows
         win =
             Window
                 (0 + 23 * current, 0 + 23 * current)
                 (640, 420)
                 title
-     in ((wid, win), s & (#maxID .~ wid) . (#windows %~ IM.insert next win))
+     in
+        (win, s & (#windows %~ Map.insert appID win))
 
 renderWindows :: AppID -> Windows -> HtmlT STM ()
 renderWindows controlWID ws = do
     w <- lift (readMemoryVar ws)
-    let windows = IM.toAscList w.windows
-        createWindows = map (renderWindow . first AppID) windows
+    let windows :: [(AppID, Window)]
+        windows = Map.toList w.windows
+        createWindows = map renderWindow windows
         script = windowScript controlWID : createWindows
     forM_ (fst <$> windows) \wid ->
         with div_ [id_ ("w-" <> showT wid)] mempty
@@ -166,7 +164,7 @@ function setupWindowManager(chan) {
         <> ");"
 
 renderWindow :: (AppID, Window) -> Text
-renderWindow (AppID idx, Window (x, y) (w, h) title) = do
+renderWindow (idx, Window (x, y) (w, h) title) = do
     let attr k v = k <> ": " <> showT v
         attrs =
             [ attr "x" x

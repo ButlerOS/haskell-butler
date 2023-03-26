@@ -108,7 +108,7 @@ startFileService ctx = do
                     -- Got a valid UploadRequest, setup the PendingUpload file and returns their id (PUI)
                     puis <- traverse (handleFileUploadRequest dir) uploadRequest.files
                     let resp = encodeMessage uploadRequest.uid $ encodeJSON puis
-                    atomically $ sendBinary client (encodeMessageL ctx.wid resp)
+                    atomically $ sendBinary client (encodeMessage (from ctx.wid) resp)
                 _ -> logError "Unknown dir" ["req" .= uploadRequest]
 
         handlePendingUpload :: Natural -> ByteString -> ProcessIO ()
