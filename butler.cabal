@@ -48,6 +48,7 @@ library
       Butler.App.SessionManager
       Butler.App.SoundTest
       Butler.App.Tabletop
+      Butler.App.Template
       Butler.App.Terminal
       Butler.AppID
       Butler.Auth

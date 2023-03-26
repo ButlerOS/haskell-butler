@@ -29,6 +29,7 @@ import Butler.App.QRTest
 import Butler.App.SessionManager
 import Butler.App.SoundTest
 import Butler.App.Tabletop
+import Butler.App.Template
 import Butler.App.Terminal
 
 import Butler.Service.Cursor
@@ -155,6 +156,7 @@ demoDesktop extraApps = do
             , noterApp
             , painterApp
             , pokerPlannerApp
+            , templateApp
             ]
                 <> extraApps
 
