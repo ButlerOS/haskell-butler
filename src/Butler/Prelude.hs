@@ -35,7 +35,7 @@ module Butler.Prelude (
     (.=),
     (.:?),
     (.:),
-    Data.Aeson.Value (Object, String),
+    Data.Aeson.Value (Null, Object, String),
     Data.Aeson.Types.Pair,
     Data.Aeson.decode',
     Data.Aeson.FromJSON (parseJSON),

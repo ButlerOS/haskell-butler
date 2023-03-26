@@ -9,19 +9,24 @@ module Butler.Database (
     dbInsert,
     dbUpdate,
 
+    -- * newtypes
+    UUIDB,
+    ValueB,
+
     -- * re-export
     SQLData (..),
-    FromField,
+    FromField (..),
     ToField (..),
     NamedParam ((:=)),
     Only (..),
 )
 where
 
+import Data.UUID qualified as UUID
 import Database.Migrant hiding (withTransaction)
 import Database.Migrant.Driver.Sqlite ()
 import Database.SQLite.Simple
-import Database.SQLite.Simple.FromField (FromField)
+import Database.SQLite.Simple.FromField (FromField (..), fieldData)
 import Database.SQLite.Simple.ToField (ToField (..))
 
 import Butler.Core
@@ -85,3 +90,31 @@ dbInsert (Database mvConn) q args = withMVar mvConn \conn -> liftIO do
 
 dbQuery :: (MonadUnliftIO m, FromRow r) => Database -> Query -> [NamedParam] -> m [r]
 dbQuery (Database mvConn) q args = withMVar mvConn \conn -> liftIO (queryNamed conn q args)
+
+-- | A storable 'UUID'
+newtype UUIDB = UUIDB UUID
+
+instance From UUIDB UUID where from = coerce
+instance From UUID UUIDB where from = coerce
+instance ToField UUIDB where toField = SQLText . UUID.toText . from
+
+instance FromField UUIDB where
+    fromField f = case fieldData f of
+        SQLText txt -> case UUID.fromText txt of
+            Just uuid -> pure (UUIDB uuid)
+            Nothing -> fail ("Invalid uuid: " <> show txt)
+        _ -> fail "Invalid uuid type"
+
+-- | A storable 'Value'
+newtype ValueB = ValueB Value
+
+instance From ValueB Value where from = coerce
+instance From Value ValueB where from = coerce
+instance ToField ValueB where toField = SQLBlob . from . encodeJSON . into @Value
+
+instance FromField ValueB where
+    fromField f = case fieldData f of
+        SQLBlob buf -> case decodeJSON (from buf) of
+            Just v -> pure (ValueB v)
+            Nothing -> fail ("Invalid json: " <> show buf)
+        _ -> fail "Invalid json type"

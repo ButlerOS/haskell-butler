@@ -74,13 +74,6 @@ startDesktopApp services ctx = do
                             else atomically $ registerApp ctx.shared.apps app
                     Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
 
-    -- This act as a ping thread
-    let updateStatus s = do
-            sendsHtml ctx.shared.clients $ statusHtml s
-            sleep 5_000
-            updateStatus (not s)
-    spawnThread_ (updateStatus True)
-
     let
         handleNewApp value = case value ^? key "name" . _JSON of
             Just name -> do
@@ -249,7 +242,6 @@ desktopHtml apps dir windows = do
                     appIDs <- Map.keys <$> lift (getApps apps)
                     forM_ appIDs \wid ->
                         with span_ [wid_ wid "tray"] mempty
-                    statusHtml True
 
         with div_ [id_ "reconnect_script"] mempty
 
@@ -266,18 +258,6 @@ welcomeWin appSet wid = do
             "Press start!"
         with div_ [class_ "m-2"] do
             appSetHtml wid appSet
-
-statusHtml :: Monad m => Bool -> HtmlT m ()
-statusHtml s =
-    let cls = bool "bg-sky-400" "bg-sky-300" s
-     in with
-            span_
-            [ id_ "display-pulse"
-            , class_ $ "m-auto ml-1 h-3 w-3 center rounded-full opacity-75 cursor-pointer " <> cls
-            , hxTrigger_ "click"
-            , wsSend
-            ]
-            mempty
 
 handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
 handleWinSwap wm ctx wid appName mEvent = do

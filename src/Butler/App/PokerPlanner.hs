@@ -3,7 +3,7 @@ module Butler.App.PokerPlanner (pokerPlannerApp) where
 import Butler
 import Butler.Display.Session
 import Butler.Display.User
-import Data.Aeson (Value (Null, Number))
+import Data.Aeson (Value (Number))
 import Data.Function (on)
 import Data.List (minimumBy)
 import Data.Map.Strict qualified as Map

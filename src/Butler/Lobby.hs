@@ -66,8 +66,8 @@ lobbyProgram appSet services chat display = do
 shellHandler :: Desktop -> AppSharedContext -> DisplayEvent -> ProcessIO ()
 shellHandler desktop shared event = case event of
     UserConnected "htmx" client -> do
-        -- No need to spawn a ping thread because the desktop update the status periodically.
         spawnThread_ (sendThread client)
+        spawnThread_ (pingThread client)
         atomically $ sendHtml client desktop.mountUI
         atomically $ addClient shared.clients client
 

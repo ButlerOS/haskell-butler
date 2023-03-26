@@ -32,6 +32,7 @@ import Butler.App.Tabletop
 import Butler.App.Template
 import Butler.App.Terminal
 
+import Butler.Service.Assistant
 import Butler.Service.Cursor
 import Butler.Service.FileService
 import Butler.Service.SoundBlaster
@@ -88,11 +89,11 @@ multiDesktop :: IO ()
 multiDesktop = run (demoDesktop [])
 
 demoDesktop :: [App] -> ProcessIO Void
-demoDesktop extraApps = do
+demoDesktop extraApps = withAssistantSupervisor \assistantSupervisor -> do
     let authApp = invitationAuthApp indexHtml
     desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram (mkAppSet chat) services chat display
+        lobbyProgram (mkAppSet chat) (services assistantSupervisor) chat display
     void $ waitProcess desktop
     error "oops"
   where
@@ -129,11 +130,12 @@ demoDesktop extraApps = do
     });
     |]
 
-    services =
+    services assistantSupervisor =
         [ soundBlasterService
         , cursorService
         , sshAgentService
         , fileService
+        , assistantService assistantSupervisor
         ]
 
     mkAppSet chat =
