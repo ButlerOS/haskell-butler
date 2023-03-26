@@ -2,6 +2,7 @@
   [ "Main.main"
   , "ButlerDemos.multiDesktop"
   , "Butler.Database"
+  , "Butler.App"
   , "^Paths_.*"
   , ".*.runTest"
   , ".*.test_"
