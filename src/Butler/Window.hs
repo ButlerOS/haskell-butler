@@ -47,7 +47,9 @@ newWindows = WindowsState mempty Nothing
 addWindowApp :: WindowManager -> AppID -> Process -> STM ()
 addWindowApp wm wid process = do
     modifyMemoryVar wm.apps (Map.insert wid process.program)
-    void $ updateWindow wm.windows wid (#title .~ processID process)
+    Map.lookup wid . (.windows) <$> readMemoryVar wm.windows >>= \case
+        Nothing -> void $ newWindow wm.windows wid (processID process)
+        Just _win -> void $ updateWindow wm.windows wid (#title .~ processID process)
 
 delWindowApp :: WindowManager -> AppID -> STM ()
 delWindowApp wm wid = do

@@ -198,8 +198,9 @@ startApp prefix app shared wid = do
     let ctx = AppContext wid pipe shared
     process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
-
-    pure $ AppInstance{app, process, wid, pipe}
+    let appInstance = AppInstance{app, process, wid, pipe}
+    atomically (registerApp shared.apps appInstance)
+    pure appInstance
 
 -- | Start the application that is in charge of starting the other apps.
 startShellApp :: AppSet -> Text -> App -> Display -> ProcessIO (AppSharedContext, AppInstance)
@@ -226,8 +227,7 @@ startApps apps display = do
   where
     go shared app = do
         wid <- atomically (nextAppID shared.appIDCounter)
-        appInstance <- startApp "app-" app shared wid
-        atomically (registerApp shared.apps appInstance)
+        startApp "app-" app shared wid
 
 tagIcon :: AppTag -> Maybe Text
 tagIcon = \case

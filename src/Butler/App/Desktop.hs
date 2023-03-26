@@ -217,13 +217,6 @@ addApp wm shared app = do
     registerApp shared.apps app
     addWindowApp wm app.wid app.process
 
-swapApp :: WindowManager -> AppSharedContext -> AppInstance -> STM ()
-swapApp wm shared app = do
-    Map.lookup app.wid <$> getApps shared.apps >>= \case
-        Nothing -> pure ()
-        Just prevApp -> delApp shared prevApp
-    addApp wm shared app
-
 delWin :: WindowManager -> AppContext -> AppID -> STM ()
 delWin wm ctx wid = do
     Map.lookup wid <$> getApps ctx.shared.apps >>= \case
@@ -253,7 +246,6 @@ desktopHtml apps dir windows = do
                     forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center justify-center"] do
-                    with span_ [wid_ shellAppID "tray"] mempty
                     appIDs <- Map.keys <$> lift (getApps apps)
                     forM_ appIDs \wid ->
                         with span_ [wid_ wid "tray"] mempty
@@ -289,6 +281,10 @@ statusHtml s =
 
 handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
 handleWinSwap wm ctx wid appName mEvent = do
+    atomically do
+        Map.lookup wid <$> getApps ctx.shared.apps >>= \case
+            Just prevApp -> delApp ctx.shared prevApp
+            Nothing -> pure ()
     mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared wid
     case mGuiApp of
         Just guiApp -> swapWindow guiApp
@@ -296,7 +292,7 @@ handleWinSwap wm ctx wid appName mEvent = do
   where
     swapWindow :: AppInstance -> ProcessIO ()
     swapWindow guiApp = do
-        atomically $ swapApp wm ctx.shared guiApp
+        atomically $ addWindowApp wm guiApp.wid guiApp.process
         forM_ mEvent $ writePipe guiApp.pipe
         clients <- atomically $ getClients ctx.shared.clients
         forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
