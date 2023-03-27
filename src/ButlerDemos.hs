@@ -89,11 +89,11 @@ multiDesktop :: IO ()
 multiDesktop = run (demoDesktop [])
 
 demoDesktop :: [App] -> ProcessIO Void
-demoDesktop extraApps = withAssistantSupervisor \assistantSupervisor -> do
+demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     let authApp = invitationAuthApp indexHtml
     desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram (mkAppSet chat) (services assistantSupervisor) chat display
+        lobbyProgram (mkAppSet chat) (services butlerSupervisor) chat display
     void $ waitProcess desktop
     error "oops"
   where
@@ -130,12 +130,12 @@ demoDesktop extraApps = withAssistantSupervisor \assistantSupervisor -> do
     });
     |]
 
-    services assistantSupervisor =
+    services butlerSupervisor =
         [ soundBlasterService
         , cursorService
         , sshAgentService
         , fileService
-        , assistantService assistantSupervisor
+        , butlerService butlerSupervisor
         ]
 
     mkAppSet chat =
