@@ -93,7 +93,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     let authApp = invitationAuthApp indexHtml
     desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram (mkAppSet chat) (services butlerSupervisor) chat display
+        lobbyProgram butlerSupervisor (mkAppSet chat) (services butlerSupervisor) chat display
     void $ waitProcess desktop
     error "oops"
   where

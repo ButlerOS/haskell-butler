@@ -1,6 +1,15 @@
 -- | This module contains the logic for assistants: personnal programs for helping users.
-module Butler.Service.Assistant (withButlerSupervisor, butlerService) where
+module Butler.Service.Assistant (
+    ButlerSupervisor,
+    Butler (..),
+    ButlerEvent (..),
+    ButlerSyncEvent (..),
+    withButlerSupervisor,
+    butlerService,
+    getSessionButler,
+) where
 
+import Data.List (find)
 import Data.Map.Strict qualified as Map
 
 import Butler.App
@@ -31,13 +40,15 @@ data ButlerEvent
     = ButlerJoined AppID DisplayClient
     | ButlerLeft DisplayClient
     | ButlerEvent GuiEvent
+    | ButlerSync ButlerSyncEvent
     deriving (Generic, ToJSON)
 
-instance From ButlerEvent Session where
-    from = \case
-        ButlerJoined _ client -> client.session
-        ButlerLeft client -> client.session
-        ButlerEvent ev -> ev.client.session
+data ButlerSyncEvent = ButlerSyncEvent
+    { client :: DisplayClient
+    , trigger :: TriggerName
+    , sync :: SyncEvent
+    }
+    deriving (Generic, ToJSON)
 
 -- | Create the 'ButlerSupervisor' to start the 'butlerService'.
 withButlerSupervisor :: (ButlerSupervisor -> ProcessIO a) -> ProcessIO a
@@ -53,15 +64,15 @@ butlerService = Service . defaultApp "assistant" . startButlerService
 startButlerService :: ButlerSupervisor -> AppContext -> ProcessIO ()
 startButlerService supervisor ctx = do
     let
-        sendButler ev = do
-            assistant <- getSessionButler supervisor (into @Session ev)
+        sendButler session ev = do
+            assistant <- getSessionButler supervisor session
             writePipe assistant.pipe ev
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserJoined client) -> sendButler (ButlerJoined ctx.wid client)
-            AppDisplay (UserLeft client) -> sendButler (ButlerLeft client)
-            AppTrigger ev -> sendButler (ButlerEvent ev)
+            AppDisplay (UserJoined client) -> sendButler client.session (ButlerJoined ctx.wid client)
+            AppDisplay (UserLeft client) -> sendButler client.session (ButlerLeft client)
+            AppTrigger ev -> sendButler ev.client.session (ButlerEvent ev)
             ev -> logError "Unknown event" ["ev" .= ev]
 
 -- | Find or create the session's butler.
@@ -111,7 +122,9 @@ newButlerApp session program value = do
 
 -- | A butler app instance.
 data ButlerAppInstance = ButlerAppInstance
-    { handleEvent :: ButlerInstance -> ButlerEvent -> ProcessIO ()
+    { app :: ButlerApp
+    , handleRequest :: ButlerSyncEvent -> ProcessIO ()
+    , handleEvent :: ButlerInstance -> ButlerEvent -> ProcessIO ()
     , render :: AppID -> HtmlT STM ()
     }
 
@@ -119,6 +132,7 @@ startButlerApp :: ButlerDB -> ButlerState -> ButlerApp -> ProcessIO (Maybe Butle
 startButlerApp db state app = do
     mApp <- case app.program of
         "welcome" -> Just <$> welcomeButler db app
+        "authorizer" -> Just <$> authorizerButler state app
         _ -> pure Nothing
     case mApp of
         Nothing -> logError "Invalid app" ["app" .= app.program]
@@ -148,6 +162,9 @@ runButler db session pipe state = do
             -- This is a new user, start the welcome app.
             void . startButlerApp db state =<< newButlerApp session.sessionID "welcome" Null
         xs -> traverse_ (startButlerApp db state) xs
+
+    let getApp :: ProgramName -> STM (Maybe ButlerAppInstance)
+        getApp name = find (\appInstance -> appInstance.app.program == name) <$> readTVar state.apps
 
     -- The UI
     let uiClass = "absolute bottom-11 right-2 border p-3 bg-orange-100 max-w-lg text-stone-700"
@@ -189,7 +206,12 @@ runButler db session pipe state = do
                 Alerting -> with div_ [wid_ wid "assistant"] mempty
                 Interacting -> renderChatUI i
 
-        handlePrompt _butlerInstance _prompt = pure "Sorry, I don't understand"
+        handlePrompt :: ButlerInstance -> Text -> ProcessIO (HtmlT STM ())
+        handlePrompt _butlerInstance = \case
+            "disconnect me" -> pure do
+                span_ "Bye!"
+                script_ "window.location.pathname = \"/_\""
+            _ -> pure "Sorry, I don't understand"
 
         handleEvent ev butlerInstance = do
             apps <- atomically (readTVar state.apps)
@@ -217,7 +239,7 @@ runButler db session pipe state = do
                             atomically $ writeTVar butlerInstance.chat $ Just (prompt, resp)
                         Nothing -> atomically $ writeTVar butlerInstance.chat Nothing
                     atomically $ sendHtml butlerInstance.client $ renderChatUI butlerInstance
-                _ -> logError "Unknown ev" ["ev" .= ev]
+                _ -> pure ()
 
     -- The event loop
     forever do
@@ -239,6 +261,57 @@ runButler db session pipe state = do
                 atomically (Map.lookup ev.client.endpoint <$> readTVar state.clients) >>= \case
                     Just butlerInstance -> handleEvent ev butlerInstance
                     Nothing -> logError "Unknown client" ["ev" .= ev]
+            ButlerSync ev -> case ev.trigger of
+                "desktop-access-request" -> do
+                    -- Check if authorizer is running
+                    mAuthorizer <-
+                        atomically (getApp "authorizer") >>= \case
+                            Nothing -> startButlerApp db state =<< newButlerApp session.sessionID "authorizer" Null
+                            x -> pure x
+                    case mAuthorizer of
+                        Just authorizer -> authorizer.handleRequest ev
+                        Nothing -> logError "Couldn't start authorizer" []
+                _ -> logError "Unknown sync" ["ev" .= ev]
+
+-- | The authorizer assistant handle authorization requests.
+authorizerButler :: ButlerState -> ButlerApp -> ProcessIO ButlerAppInstance
+authorizerButler _state app = do
+    pendingRequests <- newTVarIO []
+    let popRequest sessionID = stateTVar pendingRequests \xs ->
+            case find (\ev -> ev.client.session.sessionID == sessionID) xs of
+                Nothing -> (Nothing, xs)
+                Just ev -> (Just ev, filter (\ev' -> ev'.client.session.sessionID /= sessionID) xs)
+
+    let render wid =
+            lift (readTVar pendingRequests) >>= \case
+                [] -> mempty
+                xs -> with div_ [class_ "block flex flex-wrap pb-2"] do
+                    div_ "User would like to enter your desktop."
+                    forM_ xs \pendingRequest -> do
+                        withTrigger "click" wid "desktop-accept-request" ["req" .= pendingRequest.client.session.sessionID] div_ [examplePromptClass] do
+                            "authorize "
+                            userIcon =<< lift (readTVar pendingRequest.client.session.username)
+                        withTrigger "click" wid "desktop-refuse-request" ["req" .= pendingRequest.client.session.sessionID] div_ [examplePromptClass] do
+                            "deny "
+                            userIcon =<< lift (readTVar pendingRequest.client.session.username)
+
+        handleEvent _ = \case
+            ButlerEvent ev ->
+                case ev.trigger of
+                    "desktop-accept-request" -> case ev.body ^? key "req" . _JSON of
+                        Just sessionID ->
+                            atomically (popRequest sessionID) >>= \case
+                                Nothing -> pure ()
+                                Just req -> do
+                                    logInfo "Accepting" ["ev" .= ev]
+                                    atomically $ putTMVar req.sync.reply (toDyn True)
+                        Nothing -> logError "Missing req" ["ev" .= ev]
+                    _ -> pure ()
+            _ -> pure ()
+
+        handleRequest ev = do
+            atomically $ modifyTVar' pendingRequests (ev :)
+    pure $ ButlerAppInstance{app, render, handleEvent, handleRequest}
 
 -- | The welcome assistant introduce butler to the user.
 data WelcomeState = WNew | WToggled | WDone
@@ -257,7 +330,7 @@ welcomeButler db app = do
             atomically $ writeTVar welcomeState newState
             updateButlerApp db app (toJSON @Int 0)
 
-    let render _wid =
+    let render wid =
             lift (readTVar welcomeState) >>= \case
                 WNew ->
                     div_ do
@@ -273,11 +346,11 @@ welcomeButler db app = do
                             "I'm currently operating the "
                             b_ "welcome"
                             " app. I'll stop it after you close this window."
-                        -- br_ []
-                        -- renderAppList wid
                         br_ []
                         p_ "You can use the text input below, but I'm not very good at it yet :)"
-                WDone -> "What can I do for you?"
+                WDone -> do
+                    "What can I do for you?"
+                    renderPromptList wid
         handleEvent butlerInstance = \case
             ButlerJoined{} -> do
                 readTVarIO welcomeState >>= \case
@@ -300,21 +373,19 @@ welcomeButler db app = do
                             _ -> pure ()
                     _ -> pure ()
             _ -> pure ()
+        handleRequest _ = pure ()
 
-    pure $ ButlerAppInstance{handleEvent, render}
+    pure $ ButlerAppInstance{app, handleEvent, handleRequest, render}
 
-{-
-renderAppList :: AppID -> HtmlT STM ()
-renderAppList wid = do
-    p_ "What can I do for you?"
-    with ul_ [class_ "list-disc"] do
-        li_ do
-            withTrigger "click" wid "start-app" ["app" .= ("welcome" :: Text)] b_ [class_ "cursor-pointer"] "restart welcome program"
-        li_ do
-            withTrigger "click" wid "start-app" ["app" .= ("tips" :: Text)] b_ [class_ "cursor-pointer"] "tips of the day"
-        li_ do
-            withTrigger "click" wid "start-app" ["app" .= ("recover" :: Text)] b_ [class_ "cursor-pointer"] "show recovery link"
--}
+renderPromptList :: AppID -> HtmlT STM ()
+renderPromptList wid = with div_ [class_ "block w-[128] flex flex-wrap"] do
+    traverse_ demoPrompt ["disconnect me", "run welcome", "show tips", "show recovery link", "help?"]
+  where
+    demoPrompt (prompt :: Text) =
+        withTrigger "click" wid "prompt" ["value" .= prompt] div_ [examplePromptClass] (toHtml prompt)
+
+examplePromptClass :: Attribute
+examplePromptClass = class_ "cursor-pointer bg-orange-50 border px-1 rounded-xl ml-1 mb-1"
 
 -- | The database stores the assistant memory.
 newtype ButlerDB = ButlerDB Database

@@ -58,7 +58,7 @@ renderSM display wid client = do
                     td_ do
                         isAdminSession <- lift (readTVar session.admin)
                         let confirm
-                                | isAdminSession && client.session == session = Just "Are you sure?"
+                                | isAdminSession && client.session.sessionID == session.sessionID = Just "Are you sure?"
                                 | otherwise = Nothing
                         input_ (butlerCheckbox wid "toggle-admin" ["uuid" .= session.sessionID] isAdminSession confirm)
 

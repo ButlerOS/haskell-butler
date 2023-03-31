@@ -147,6 +147,8 @@ startDesktopApp services ctx = do
             when doBroadcast do
                 sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from shellAppID) buf)
 
+    acls <- newTVarIO mempty
+    let
         desktop =
             Desktop
                 { mountUI = desktopHtml ctx.shared.apps dir wm.windows
@@ -165,6 +167,7 @@ startDesktopApp services ctx = do
                             traverse_ (\c -> userIcon =<< lift (readTVar c.session.username)) clients
                     wins <- Map.size . (.windows) <$> lift (readMemoryVar wm.windows)
                     attr "wins" (toHtml (show wins))
+                , acls
                 }
 
     forever $ do
@@ -196,6 +199,7 @@ startDesktopApp services ctx = do
 data Desktop = Desktop
     { mountUI :: HtmlT STM ()
     , thumbnail :: HtmlT STM ()
+    , acls :: TVar [Session]
     }
 
 -- | Remove a registered gui app
@@ -223,7 +227,7 @@ desktopHtml apps dir windows = do
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
         script_ butlerHelpersScript
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
-        with div_ [id_ "win-root", class_ "flex grow"] do
+        with div_ [id_ "win-root", class_ "grow"] do
             with div_ [class_ "flex flex-col"] do
                 let deskDiv = "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer"
                 withTrigger "click" shellAppID "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
@@ -234,7 +238,7 @@ desktopHtml apps dir windows = do
         -- bottom bar
         with nav_ [id_ "display-menu", class_ "h-9 flex-none bg-slate-700 p-1 shadow w-full flex text-white z-50"] do
             with' div_ "grow" do
-                with span_ [class_ "font-semibold mr-5", hxTrigger_ "click", wid_ shellAppID "wm-start", wsSend] ">>= start"
+                with span_ [class_ "font-semibold mr-5 cursor-pointer", hxTrigger_ "click", wid_ shellAppID "wm-start", wsSend] ">>= start"
                 with span_ [id_ "display-bar"] do
                     forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
             with' div_ "display-bar-right" do

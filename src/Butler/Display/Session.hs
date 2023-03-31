@@ -53,7 +53,7 @@ data Session = Session
     , username :: TVar UserName
     , admin :: TVar Bool
     }
-    deriving (Eq, Generic)
+    deriving (Generic)
 
 instance ToJSON Session where
     toJSON s = toJSON s.sessionID
