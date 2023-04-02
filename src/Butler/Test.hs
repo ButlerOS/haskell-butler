@@ -29,12 +29,12 @@ butlerTestCase name action = testCase name do
 newTestClient :: AppSharedContext -> ProcessIO DisplayClient
 newTestClient appSharedContext = do
     sessionID <- SessionID <$> liftIO UUID.nextRandom
-    session <- atomically (Session sessionID <$> newTVar "tester" <*> newTVar False)
+    session <- atomically (Session sessionID <$> newTVar "tester" <*> newTVar False <*> newTVar Nothing)
     process <- spawnProcess "test-client" (forever $ sleep 60_000)
     closeRef <- newIORef False
     let
         testConn = WS.Connection WS.defaultConnectionOptions undefined WS.Hybi13 (pure Nothing) (const (pure ())) closeRef
-    client <- atomically (newClient testConn "localhost:4242" process session)
+    client <- atomically (newClient testConn "localhost:4242" "localhost:8443" process session)
     atomically (modifyTVar' appSharedContext.display.clients $ Map.insert sessionID [client])
     pure client
 

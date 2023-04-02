@@ -117,7 +117,7 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
                 whenM (isDenied <$> readTVarIO desktop.acls) do
                     atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "One moment please..."))
                     -- Request permission
-                    ownerButler <- getSessionButler butlerSupervisor owner
+                    ownerButler <- getSessionButler shared.display butlerSupervisor owner
                     tmReply <- newEmptyTMVarIO
                     writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client "desktop-access-request" (SyncEvent tmReply)))
                     -- Wait for result...

@@ -58,7 +58,7 @@ unixService fp cb = withSocket \socket ->
 
 -- | The fqdn:port the client connected to. Use this to render absolute url.
 newtype ServerName = ServerName Text
-  deriving newtype (IsString)
+    deriving newtype (IsString)
 
 instance From ServerName Text where from (ServerName n) = n
 
@@ -87,15 +87,18 @@ webService xs app port = \case
         secureLocation = "https://" <> secureHost <> req.rawPathInfo <> req.rawQueryString
         secureHost :: ByteString
         secureHost = fromMaybe defaultHost req.requestHeaderHost
-        defaultHost = "localhost" <> case port of
-          443 -> ""
-          _ -> ":" <> encodeUtf8 (showT port)
+        defaultHost =
+            "localhost" <> case port of
+                443 -> ""
+                _ -> ":" <> encodeUtf8 (showT port)
 
     handlerInsecure req resp = handler serverName req resp
       where
-        serverName = ServerName $ maybe "localhost" decodeUtf8 req.requestHeaderHost <> case port of
-            80 -> ""
-            _ -> ":" <> showT port
+        serverName =
+            ServerName $
+                maybe "localhost" decodeUtf8 req.requestHeaderHost <> case port of
+                    80 -> ""
+                    _ -> ":" <> showT port
 
     handler serverName req resp =
         app

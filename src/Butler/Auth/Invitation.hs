@@ -22,7 +22,10 @@ type LoginAPI =
     QueryParam "invite" InviteID :> Get '[HTML] (Html ())
         :<|> "login" :> ReqBody '[FormUrlEncoded] LoginForm :> Post '[HTML] AuthResp
 
-type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> (LoginAPI :<|> Capture "workspace" Workspace :> LoginAPI)
+type RecoveryAPI =
+    "_recovery" :> QueryParam "recover" RecoveryID :> Get '[HTML] AuthResp
+
+type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> (RecoveryAPI :<|> LoginAPI :<|> Capture "workspace" Workspace :> LoginAPI)
 
 data LoginForm = LoginForm
     { invite :: Maybe InviteID
@@ -41,7 +44,22 @@ welcomeForm pathPrefix mInvite = do
 authServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> ServerT AuthAPI ProcessIO
 authServer sessions mkIndexHtml jwtSettings auth =
     let loginSrv = loginServer sessions mkIndexHtml jwtSettings auth
-     in loginSrv Nothing :<|> (loginSrv . Just)
+     in recoveryServer sessions jwtSettings :<|> loginSrv Nothing :<|> (loginSrv . Just)
+
+recoveryServer :: Sessions -> JWTSettings -> ServerT RecoveryAPI ProcessIO
+recoveryServer sessions jwtSettings mRecover = case mRecover of
+    Nothing -> denyResp
+    Just recoveryID -> do
+        atomically (getSessionFromRecover sessions recoveryID) >>= \case
+            Nothing -> denyResp
+            Just session -> do
+                resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings session.sessionID
+                case resp of
+                    Just r -> pure $ r (script_ "window.location.href = '/'")
+                    Nothing -> error "oops!"
+  where
+    denyResp :: ProcessIO AuthResp
+    denyResp = pure $ clearSession cookieSettings "Invalid recovery link :/"
 
 loginServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> Maybe Workspace -> ServerT LoginAPI ProcessIO
 loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :<|> getSessionRoute

@@ -15,6 +15,12 @@ module Butler.Display.Session (
     SessionID (..),
     InviteID (..),
 
+    -- * Recovery API
+    getSessionFromRecover,
+    getOrCreateRecover,
+    deleteRecover,
+    RecoveryID (..),
+
     -- * Permission API
     AdminSession,
     getAdminSession,
@@ -52,6 +58,7 @@ data Session = Session
     { sessionID :: SessionID
     , username :: TVar UserName
     , admin :: TVar Bool
+    , recover :: TVar (Maybe RecoveryID)
     }
     deriving (Generic)
 
@@ -85,6 +92,12 @@ newtype SessionID = SessionID UUID
     deriving (Ord, Eq, Generic, Show)
     deriving (ToJSON, FromJSON, ToHtml, FromHttpApiData, Serialise, Hashable) via JsonUID
 
+newtype RecoveryID = RecoveryID UUID
+    deriving (Ord, Eq, Generic, Show)
+    deriving (ToJSON, FromJSON, ToHtml, FromHttpApiData, Serialise, Hashable) via JsonUID
+instance ToField RecoveryID where toField = SQLText . from
+instance From RecoveryID Text where from (RecoveryID uuid) = UUID.toText uuid
+
 instance ToField SessionID where
     toField = SQLText . from
 
@@ -98,7 +111,7 @@ instance FromJWT SessionID
 instance ToJWT SessionID
 
 sessionsDB :: DatabaseMigration
-sessionsDB = DatabaseMigration ["sessions-create", "admin"] doUp doDown
+sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover"] doUp doDown
   where
     doUp name db = case name of
         "sessions-create" -> dbExecute db "CREATE TABLE sessions (uuid TEXT, username TEXT)" []
@@ -106,16 +119,18 @@ sessionsDB = DatabaseMigration ["sessions-create", "admin"] doUp doDown
             dbExecute db "ALTER TABLE sessions ADD COLUMN admin BOOLEAN" []
             dbExecute db "UPDATE sessions SET admin = FALSE" []
             dbExecute db "UPDATE sessions SET admin = TRUE WHERE rowid = 1" []
+        "recover" -> dbExecute db "ALTER TABLE sessions ADD COLUMN recover TEXT" []
         _ -> logError "Unknown migration" ["name" .= show name]
     doDown _ _ = pure ()
 
 -- | TODO: only load active sessions when needed.
 sessionsFromDB :: Database -> ProcessIO [(SessionID, Session)]
-sessionsFromDB db = traverse mkSession =<< dbQuery db "select * from sessions" []
+sessionsFromDB db = traverse mkSession =<< dbQuery db "select uuid,username,admin,recover from sessions" []
   where
-    mkSession (uuid, username, admin) = do
+    mkSession (uuid, username, admin, recoverTxt) = do
         let sessionID = SessionID (fromMaybe (error "bad uuid?!") (UUID.fromText uuid))
-        session <- Session sessionID <$> newTVarIO (UserName username) <*> newTVarIO admin
+            recover = RecoveryID . fromMaybe (error "bad uuid!") . UUID.fromText <$> recoverTxt
+        session <- Session sessionID <$> newTVarIO (UserName username) <*> newTVarIO admin <*> newTVarIO recover
         pure (sessionID, session)
 
 withSessions :: StorageAddress -> (Sessions -> ProcessIO a) -> ProcessIO a
@@ -134,8 +149,32 @@ checkInvite sessions inviteID = Map.member inviteID <$> readMemoryVar sessions.i
 lookupSession :: Sessions -> SessionID -> STM (Maybe Session)
 lookupSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
 
+getSessionFromRecover :: Sessions -> RecoveryID -> STM (Maybe Session)
+getSessionFromRecover sessions uuid = do
+    findSession =<< (Map.elems <$> readTVar sessions.sessions)
+  where
+    findSession = \case
+        [] -> pure Nothing
+        (session : rest) -> do
+            mRecover <- readTVar session.recover
+            case mRecover of
+                Just recover | recover == uuid -> pure (Just session)
+                _ -> findSession rest
+
+getOrCreateRecover :: Sessions -> Session -> ProcessIO RecoveryID
+getOrCreateRecover sessions session = do
+    recoverID <- RecoveryID <$> liftIO UUID.nextRandom
+    dbExecute sessions.db "UPDATE sessions SET recover = :recover WHERE uuid = :uuid" [":recover" := recoverID, ":uuid" := session.sessionID]
+    atomically $ writeTVar session.recover (Just recoverID)
+    pure recoverID
+
+deleteRecover :: Sessions -> Session -> ProcessIO ()
+deleteRecover sessions session = do
+    atomically $ writeTVar session.recover Nothing
+    dbExecute sessions.db "UPDATE sessions SET recover = NULL WHERE uuid = :uuid" [":uuid" := session.sessionID]
+
 addSessionDB :: Sessions -> Session -> ProcessIO ()
-addSessionDB sessions (Session sessionID tUsername tAdmin) = do
+addSessionDB sessions (Session sessionID tUsername tAdmin _) = do
     username <- readTVarIO tUsername
     admin <- readTVarIO tAdmin
     dbExecute
@@ -189,7 +228,7 @@ createSession sessions username mInvite = withMVar sessions.lock \() -> do
                 modifyMemoryVar sessions.invitations (Map.alter alter invite)
             if firstSession || validInvite || username == "guest"
                 then do
-                    session <- Session sessionID <$> newTVar username <*> newTVar firstSession
+                    session <- Session sessionID <$> newTVar username <*> newTVar firstSession <*> newTVar Nothing
                     modifyTVar' sessions.sessions (Map.insert session.sessionID session)
                     pure (Just session)
                 else pure Nothing

@@ -13,8 +13,10 @@ import Data.List (find)
 import Data.Map.Strict qualified as Map
 
 import Butler.App
+import Butler.App.QRTest (qrEncode)
 import Butler.AppID
 import Butler.Core
+import Butler.Core.Network (ServerName)
 import Butler.Core.Pipe
 import Butler.Database
 import Butler.Display.Client
@@ -65,7 +67,7 @@ startButlerService :: ButlerSupervisor -> AppContext -> ProcessIO ()
 startButlerService supervisor ctx = do
     let
         sendButler session ev = do
-            assistant <- getSessionButler supervisor session
+            assistant <- getSessionButler ctx.shared.display supervisor session
             writePipe assistant.pipe ev
 
     forever do
@@ -76,33 +78,34 @@ startButlerService supervisor ctx = do
             ev -> logError "Unknown event" ["ev" .= ev]
 
 -- | Find or create the session's butler.
-getSessionButler :: ButlerSupervisor -> Session -> ProcessIO Butler
-getSessionButler supervisor session = modifyMVar supervisor.running \running ->
+getSessionButler :: Display -> ButlerSupervisor -> Session -> ProcessIO Butler
+getSessionButler display supervisor session = modifyMVar supervisor.running \running ->
     case Map.lookup session.sessionID running of
         Just x -> pure (running, x)
         Nothing -> do
-            assistant <- newButler supervisor session
+            assistant <- newButler display supervisor session
             pure (Map.insert session.sessionID assistant running, assistant)
 
 -- | The butler manages 'ButlerApp' and a 'ButlerInstance' per session's client.
 data ButlerState = ButlerState
-    { apps :: TVar [ButlerAppInstance]
+    { session :: Session
+    , apps :: TVar [ButlerAppInstance]
     , clients :: TVar (Map Endpoint ButlerInstance)
     }
 
-newButlerState :: STM ButlerState
-newButlerState = ButlerState <$> newTVar mempty <*> newTVar mempty
+newButlerState :: Session -> STM ButlerState
+newButlerState session = ButlerState session <$> newTVar mempty <*> newTVar mempty
 
 -- | Spawn a new butler.
-newButler :: ButlerSupervisor -> Session -> ProcessIO Butler
-newButler supervisor session = do
+newButler :: Display -> ButlerSupervisor -> Session -> ProcessIO Butler
+newButler display supervisor session = do
     pipe <- atomically newPipe
     username <- readTVarIO session.username
     process <-
         asProcess supervisor.processEnv do
             spawnProcess (from $ "butler-" <> into @Text username) do
-                butlerState <- atomically newButlerState
-                runButler supervisor.db session pipe butlerState
+                butlerState <- atomically (newButlerState session)
+                runButler display supervisor.db session pipe butlerState
     pure Butler{process, pipe}
 
 -- | A butler app / feature definition.
@@ -131,7 +134,7 @@ data ButlerAppInstance = ButlerAppInstance
 startButlerApp :: ButlerDB -> ButlerState -> ButlerApp -> ProcessIO (Maybe ButlerAppInstance)
 startButlerApp db state app = do
     mApp <- case app.program of
-        "welcome" -> Just <$> welcomeButler db app
+        "welcome" -> Just <$> welcomeButler db state app
         "authorizer" -> Just <$> authorizerButler state app
         _ -> pure Nothing
     case mApp of
@@ -153,8 +156,8 @@ data ButlerStatus = Hidden | Alerting | Interacting
 newButlerInstance :: AppID -> DisplayClient -> STM ButlerInstance
 newButlerInstance wid client = ButlerInstance wid client <$> newTVar Hidden <*> newTVar Nothing
 
-runButler :: ButlerDB -> Session -> Pipe ButlerEvent -> ButlerState -> ProcessIO ()
-runButler db session pipe state = do
+runButler :: Display -> ButlerDB -> Session -> Pipe ButlerEvent -> ButlerState -> ProcessIO ()
+runButler display db session pipe state = do
     -- Refresh the butler memory
     savedApps <- loadButlerApps db session.sessionID
     case savedApps of
@@ -196,7 +199,8 @@ runButler db session pipe state = do
         hideChatUI ButlerInstance{wid} = with div_ [wid_ wid "assistant"] mempty
 
         trayUI ButlerInstance{wid} = with div_ [wid_ wid "tray"] do
-            withTrigger_ "click" wid "toggle-assistant" span_ [class_ "inline-block m-auto ml-1 h-3 w-3 center rounded-full opacity-75 cursor-pointer bg-sky-300"] mempty
+            withTrigger_ "click" wid "toggle-assistant" span_ [class_ "px-1 ml-1 cursor-pointer"] do
+                with span_ [class_ "inline-block m-auto h-3 w-3 rounded-full opacity-75 bg-sky-300"] mempty
 
         mountUI :: ButlerInstance -> ProcessIO ()
         mountUI i@ButlerInstance{wid, client, status} = atomically $ sendHtml client $ with div_ [wid_ wid "tray"] do
@@ -206,11 +210,31 @@ runButler db session pipe state = do
                 Alerting -> with div_ [wid_ wid "assistant"] mempty
                 Interacting -> renderChatUI i
 
+        recoveryLink :: ServerName -> RecoveryID -> HtmlT STM ()
+        recoveryLink srv recoveryID = do
+            "Use this link to recover your session: "
+            with a_ [href_ recoveryURL] (qrEncode recoveryURL)
+          where
+            recoveryURL = "https://" <> from srv <> "/_recovery?recover=" <> from recoveryID
+
         handlePrompt :: ButlerInstance -> Text -> ProcessIO (HtmlT STM ())
-        handlePrompt _butlerInstance = \case
+        handlePrompt butlerInstance = \case
             "disconnect me" -> pure do
                 span_ "Bye!"
                 script_ "window.location.pathname = \"/_\""
+            "make recovery link" ->
+                readTVarIO session.recover >>= \case
+                    Nothing -> do
+                        recoveryID <- getOrCreateRecover display.sessions session
+                        pure $ recoveryLink butlerInstance.client.server recoveryID
+                    Just _ -> pure "Recovery link already exist!"
+            "show recovery link" ->
+                readTVarIO session.recover >>= \case
+                    Nothing -> pure "Recovery link is missing!"
+                    Just recoveryID -> pure $ recoveryLink butlerInstance.client.server recoveryID
+            "delete recovery link" -> do
+                deleteRecover display.sessions session
+                pure "Done!"
             _ -> pure "Sorry, I don't understand"
 
         handleEvent ev butlerInstance = do
@@ -317,8 +341,8 @@ authorizerButler _state app = do
 data WelcomeState = WNew | WToggled | WDone
     deriving (Generic, FromJSON, ToJSON)
 
-welcomeButler :: ButlerDB -> ButlerApp -> ProcessIO ButlerAppInstance
-welcomeButler db app = do
+welcomeButler :: ButlerDB -> ButlerState -> ButlerApp -> ProcessIO ButlerAppInstance
+welcomeButler db state app = do
     -- load state var
     welcomeState <- atomically do
         attrs <- readTVar app.attrs
@@ -350,7 +374,7 @@ welcomeButler db app = do
                         p_ "You can use the text input below, but I'm not very good at it yet :)"
                 WDone -> do
                     "What can I do for you?"
-                    renderPromptList wid
+                    renderPromptList state.session wid
         handleEvent butlerInstance = \case
             ButlerJoined{} -> do
                 readTVarIO welcomeState >>= \case
@@ -377,9 +401,14 @@ welcomeButler db app = do
 
     pure $ ButlerAppInstance{app, handleEvent, handleRequest, render}
 
-renderPromptList :: AppID -> HtmlT STM ()
-renderPromptList wid = with div_ [class_ "block w-[128] flex flex-wrap"] do
-    traverse_ demoPrompt ["disconnect me", "run welcome", "show tips", "show recovery link", "help?"]
+renderPromptList :: Session -> AppID -> HtmlT STM ()
+renderPromptList session wid = do
+    recoverPrompt <-
+        lift (readTVar session.recover) >>= \case
+            Nothing -> pure "make recovery link"
+            Just _ -> pure "show recovery link"
+    with div_ [class_ "block w-[128] flex flex-wrap"] do
+        traverse_ demoPrompt ["disconnect me", "run welcome", "show tips", recoverPrompt, "help?"]
   where
     demoPrompt (prompt :: Text) =
         withTrigger "click" wid "prompt" ["value" .= prompt] div_ [examplePromptClass] (toHtml prompt)

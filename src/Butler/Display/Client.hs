@@ -43,8 +43,8 @@ import Network.WebSockets qualified as WS
 
 import Butler.Core
 import Butler.Core.Clock
-import Butler.Core.Network
 import Butler.Core.NatMap qualified as NM
+import Butler.Core.Network
 import Butler.Display.Session
 import Butler.Prelude
 
