@@ -3,6 +3,7 @@ module Butler.Core.Network (
     webService,
     WebProtocol (..),
     unixService,
+    ServerName,
 ) where
 
 import Data.ByteString qualified as BS
@@ -55,11 +56,17 @@ unixService fp cb = withSocket \socket ->
             (client, _) <- liftIO $ Socket.accept socket
             cb client
 
-webService :: [XStaticFile] -> WaiApplication -> Port -> WebProtocol -> ProcessIO Void
+-- | The fqdn:port the client connected to. Use this to render absolute url.
+newtype ServerName = ServerName Text
+  deriving newtype (IsString)
+
+instance From ServerName Text where from (ServerName n) = n
+
+webService :: [XStaticFile] -> (ServerName -> WaiApplication) -> Port -> WebProtocol -> ProcessIO Void
 webService xs app port = \case
     Http -> do
         logInfo "Running WARP" ["port" .= port, "tls" .= False]
-        liftIO $ Warp.runSettings settings handler
+        liftIO $ Warp.runSettings settings handlerInsecure
         error "warp exited?!!"
     Https mKeys -> do
         keys <- maybe getKeys pure mKeys
@@ -70,15 +77,29 @@ webService xs app port = \case
     allowInsecure tlsSettings = tlsSettings{Warp.onInsecure = Warp.AllowInsecure}
     settings = Warp.setPort port Warp.defaultSettings
     staticApp = xstaticApp xs
+
+    handlerTLS, handlerInsecure :: WaiApplication
     handlerTLS req resp
-        | Wai.isSecure req = handler req resp
+        | Wai.isSecure req = handler serverName req resp
         | otherwise = resp $ Wai.responseLBS HTTP.status301 [("Location", secureLocation)] mempty
       where
+        serverName = ServerName $ decodeUtf8 secureHost
         secureLocation = "https://" <> secureHost <> req.rawPathInfo <> req.rawQueryString
+        secureHost :: ByteString
         secureHost = fromMaybe defaultHost req.requestHeaderHost
-        defaultHost = "localhost:" <> encodeUtf8 (from $ show port)
-    handler req resp =
+        defaultHost = "localhost" <> case port of
+          443 -> ""
+          _ -> ":" <> encodeUtf8 (showT port)
+
+    handlerInsecure req resp = handler serverName req resp
+      where
+        serverName = ServerName $ maybe "localhost" decodeUtf8 req.requestHeaderHost <> case port of
+            80 -> ""
+            _ -> ":" <> showT port
+
+    handler serverName req resp =
         app
+            serverName
             req
             ( \appResp -> case HTTP.statusCode (Wai.responseStatus appResp) of
                 404 -> staticApp req resp

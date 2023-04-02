@@ -43,6 +43,7 @@ import Network.WebSockets qualified as WS
 
 import Butler.Core
 import Butler.Core.Clock
+import Butler.Core.Network
 import Butler.Core.NatMap qualified as NM
 import Butler.Display.Session
 import Butler.Prelude
@@ -51,6 +52,7 @@ import Butler.Prelude
 data DisplayClient = DisplayClient
     { conn :: WS.Connection
     , endpoint :: Endpoint
+    , server :: ServerName
     , process :: Process
     , session :: Session
     , recv :: TVar Word64
@@ -58,8 +60,8 @@ data DisplayClient = DisplayClient
     , sendChannel :: TChan WS.DataMessage
     }
 
-newClient :: WS.Connection -> Endpoint -> Process -> Session -> STM DisplayClient
-newClient c endpoint p s = DisplayClient c endpoint p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
+newClient :: WS.Connection -> Endpoint -> ServerName -> Process -> Session -> STM DisplayClient
+newClient c endpoint server p s = DisplayClient c endpoint server p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
 {- | An action to keep a client alive.
 TODO: implement ping keep alive using a wait timeout on the send thread.

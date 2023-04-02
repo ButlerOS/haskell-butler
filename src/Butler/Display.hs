@@ -90,8 +90,8 @@ instance Serialise JwkStorage where
         decodeJWK :: ByteString -> JwkStorage
         decodeJWK bs = JwkStorage (fromMaybe (error "bad encoding?!") $ decodeStrict' bs)
 
-connectRoute :: Display -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
-connectRoute display onClient sockAddr workspaceM channel session connection = do
+connectRoute :: Display -> ServerName -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
+connectRoute display server onClient sockAddr workspaceM channel session connection = do
     let clientAddr = from $ show sockAddr
         ChannelName cn = channel
         progName = "client-" <> cn
@@ -101,7 +101,7 @@ connectRoute display onClient sockAddr workspaceM channel session connection = d
     clientM <- newEmptyMVar
     clientProcess <- asProcess processEnv $ spawnProcess name do
         clientProcess <- getSelfProcess
-        client <- atomically (newClient connection endpoint clientProcess session)
+        client <- atomically (newClient connection endpoint server clientProcess session)
         putMVar clientM client
         -- Add the client to server state
         let ev = UserConnected channel client
@@ -165,16 +165,16 @@ startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessi
     authApp <- mkAuthApp sessions
     onClient <- withDisplay display
     env <- ask
-    let wsSrv :: ServerT WebSocketAPI ProcessIO
-        wsSrv = websocketServer authApp.getSession (connectRoute display onClient)
-        wsApp :: WaiApplication
-        wsApp = Servant.serveWithContextT (Proxy @WebSocketAPI) EmptyContext (liftIO . runProcessIO env.os env.process) wsSrv
+    let wsSrv :: ServerName -> ServerT WebSocketAPI ProcessIO
+        wsSrv server = websocketServer authApp.getSession (connectRoute display server onClient)
+        wsApp :: ServerName -> WaiApplication
+        wsApp server = Servant.serveWithContextT (Proxy @WebSocketAPI) EmptyContext (liftIO . runProcessIO env.os env.process) (wsSrv server)
 
-        glApp req resp =
+        glApp server req resp =
             let wsRespHandler wsResp = case HTTP.statusCode (Network.Wai.responseStatus wsResp) of
                     404 -> authApp.app req resp
                     _ -> resp wsResp
-             in wsApp req wsRespHandler
+             in wsApp server req wsRespHandler
 
     webService xfiles glApp port proto
 
