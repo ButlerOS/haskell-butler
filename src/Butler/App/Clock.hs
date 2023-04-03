@@ -1,4 +1,4 @@
-module Butler.App.Clock (clockApp) where
+module Butler.App.Clock (clockApp, timeFormat) where
 
 import Butler
 
@@ -13,6 +13,9 @@ data ClockState = ClockUTC | ClockGMT | ClockEDT deriving (Show)
 -- | drop millisecond from UTCTime
 dropMilliSec :: UTCTime -> UTCTime
 dropMilliSec (UTCTime day sec) = UTCTime day (fromInteger $ truncate sec)
+
+timeFormat :: UTCTime -> Text
+timeFormat = into @Text . formatTime defaultTimeLocale "%F %X"
 
 clockValueHtml :: Monad m => AppID -> TimeZone -> LocalTime -> HtmlT m ()
 clockValueHtml wid tz now =

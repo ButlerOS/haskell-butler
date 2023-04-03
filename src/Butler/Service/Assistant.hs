@@ -11,6 +11,7 @@ module Butler.Service.Assistant (
 
 import Data.List (find)
 import Data.Map.Strict qualified as Map
+import Data.Time.Clock (diffUTCTime)
 
 import Butler.App
 import Butler.App.QRTest (qrEncode)
@@ -24,6 +25,8 @@ import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Display.User
 import Butler.Prelude
+
+-- import Butler.App.Clock (timeFormat)
 
 -- | The supervisor control the butler by assigning a process per session.
 data ButlerSupervisor = ButlerSupervisor
@@ -338,7 +341,7 @@ authorizerButler _state app = do
     pure $ ButlerAppInstance{app, render, handleEvent, handleRequest}
 
 -- | The welcome assistant introduce butler to the user.
-data WelcomeState = WNew | WToggled | WDone
+data WelcomeState = WNew | WToggled | WDone | WWelcomeBack UTCTime
     deriving (Generic, FromJSON, ToJSON)
 
 welcomeButler :: ButlerDB -> ButlerState -> ButlerApp -> ProcessIO ButlerAppInstance
@@ -375,10 +378,34 @@ welcomeButler db state app = do
                 WDone -> do
                     "What can I do for you?"
                     renderPromptList state.session wid
+                WWelcomeBack _ts -> do
+                    mMessage <- lift (welcomeMessage wid)
+                    forM_ mMessage \message -> do
+                        p_ "Welcome back!"
+                        br_ []
+                        -- "Here is what happened since " <> toHtml (timeFormat ts)
+                        p_ message
+                    lift (writeTVar welcomeState WDone)
+
+        welcomeMessage wid = do
+            readTVar state.session.recover >>= \case
+                Just{} -> pure Nothing
+                Nothing -> pure $ Just do
+                    "To save your session "
+                    demoPrompt wid "make recovery link"
+
         handleEvent butlerInstance = \case
             ButlerJoined{} -> do
                 readTVarIO welcomeState >>= \case
                     WNew -> atomically $ writeTVar butlerInstance.status Interacting
+                    WDone -> do
+                        now <- liftIO getCurrentTime
+                        prev <- readTVarIO app.updatedAt
+                        when (diffUTCTime now prev > 3600 * 0) do
+                            whenM (isJust <$> atomically (welcomeMessage butlerInstance.wid)) do
+                                atomically $ writeTVar butlerInstance.status Interacting
+                            updateState WDone -- update updatedAt
+                            atomically $ writeTVar welcomeState (WWelcomeBack prev)
                     _ -> pure ()
             ButlerEvent ev ->
                 case ev.trigger of
@@ -391,6 +418,7 @@ welcomeButler db state app = do
                                     Interacting -> WDone
                                     _ -> WToggled
                                 WDone -> WDone
+                                WWelcomeBack{} -> WDone
                             readTVar welcomeState
                         case newState of
                             WDone -> updateState WDone
@@ -408,10 +436,11 @@ renderPromptList session wid = do
             Nothing -> pure "make recovery link"
             Just _ -> pure "show recovery link"
     with div_ [class_ "block w-[128] flex flex-wrap"] do
-        traverse_ demoPrompt ["disconnect me", "run welcome", "show tips", recoverPrompt, "help?"]
-  where
-    demoPrompt (prompt :: Text) =
-        withTrigger "click" wid "prompt" ["value" .= prompt] div_ [examplePromptClass] (toHtml prompt)
+        traverse_ (demoPrompt wid) ["disconnect me", "run welcome", "show tips", recoverPrompt, "help?"]
+
+demoPrompt :: AppID -> Text -> HtmlT STM ()
+demoPrompt wid prompt =
+    withTrigger "click" wid "prompt" ["value" .= prompt] div_ [examplePromptClass] (toHtml prompt)
 
 examplePromptClass :: Attribute
 examplePromptClass = class_ "cursor-pointer bg-orange-50 border px-1 rounded-xl ml-1 mb-1"
