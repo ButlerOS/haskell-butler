@@ -152,7 +152,7 @@ splashHtml content = do
 
 loginForm :: Text -> Text -> [Pair] -> Html ()
 loginForm pathPrefix title attr = do
-    with form_ [id_ "login-form", hxPost_ (pathPrefix <> "/login"), encodeVal attr] do
+    with form_ [id_ "login-form", hxPost_ (pathPrefix <> "/login"), encodeVal attr, hxTarget_ "#display-ws"] do
         with div_ [class_ "font-semibold pb-2 flex flex-row justify-center"] do
             toHtml title
         with (input_ mempty) [name_ "username", type_ "text", placeholder_ "What is your name?"]

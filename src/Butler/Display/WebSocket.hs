@@ -2,7 +2,6 @@ module Butler.Display.WebSocket (
     WebSocketAPI,
     OnWSConnect,
     websocketServer,
-    splashHtml,
     ChannelName (..),
     Workspace (..),
 ) where
@@ -15,7 +14,6 @@ import Servant.API.WebSocket
 
 import Butler.Core
 import Butler.Core.Storage
-import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Prelude
 

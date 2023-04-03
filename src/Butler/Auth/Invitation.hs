@@ -2,7 +2,6 @@ module Butler.Auth.Invitation (invitationAuthApp) where
 
 import Data.Time (UTCTime (..), fromGregorian)
 import Lucid
-import Lucid.Htmx
 import Servant
 import Servant.Auth as SA
 import Servant.Auth.Server as SAS
@@ -80,17 +79,13 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
       where
         loginPage = do
             isValid <- atomically (validClient mInvite)
-            pure $
-                mkIndexHtml $
-                    splashHtml $
-                        if isValid
-                            then welcomeForm pathPrefix mInvite
-                            else div_ "access denied"
-
-    swapSplash = with div_ [id_ "display-lock", hxSwapOob_ "outerHTML"]
+            pure . mkIndexHtml . with div_ [id_ "display-ws"] . splashHtml $
+                if isValid
+                    then welcomeForm pathPrefix mInvite
+                    else div_ "access denied"
 
     denyResp :: ProcessIO AuthResp
-    denyResp = clearSession cookieSettings . swapSplash <$> indexRoute SAS.NoSuchUser Nothing
+    denyResp = clearSession cookieSettings <$> indexRoute SAS.NoSuchUser Nothing
 
     validClient :: Maybe InviteID -> STM Bool
     validClient = \case
@@ -101,8 +96,7 @@ loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :
     welcomeResp sessionID = do
         resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings sessionID
         case resp of
-            Just r -> do
-                pure $ r (swapSplash $ websocketHtml pathPrefix sessionID)
+            Just r -> pure $ r (script_ "window.location.href = '/'")
             Nothing -> error "oops?!"
 
     getSessionRoute :: LoginForm -> ProcessIO AuthResp
