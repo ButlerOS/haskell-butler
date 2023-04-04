@@ -86,6 +86,7 @@ library
       Butler.Service.SoundBlaster
       Butler.Service.SshAgent
       Butler.Test
+      Butler.UnixShell
       Butler.Window
       ButlerDemos
       XStatic.Butler

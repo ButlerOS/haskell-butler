@@ -42,7 +42,6 @@ import Butler.Display.Client
 import Butler.Display.Session
 import Butler.Display.WebSocket
 import Butler.Prelude
-import System.Posix.Env.ByteString (getEnv)
 import XStatic.Butler
 
 type OnClient = (Session -> Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
@@ -138,7 +137,7 @@ data DisplayAddr = DisplayAddr WebProtocol Port
     deriving (Eq)
 
 defaultAddr :: DisplayAddr
-defaultAddr = DisplayAddr (Https Nothing) 8085
+defaultAddr = DisplayAddr (Https Nothing) 8080
 
 {- | Parse listening addr
 -- >>> displayAddrFromEnv "http:8080" @?= DisplayAddr Http 8080

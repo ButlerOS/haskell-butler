@@ -13,7 +13,6 @@ module Butler.Core.Storage (
 
 import Data.ByteString qualified as BS
 import Data.Map qualified as Map
-import System.Directory (createDirectoryIfMissing)
 import System.Posix.Files.ByteString (fileExist)
 import Prelude hiding (readFile, writeFile)
 

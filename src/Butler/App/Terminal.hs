@@ -1,9 +1,11 @@
 module Butler.App.Terminal (termApp) where
 
+import System.Directory (getCurrentDirectory)
 import System.Posix.Pty qualified as Pty
 
 import Butler
 import Butler.Frame
+import Butler.UnixShell
 import XStatic.Xterm qualified as XStatic
 
 import System.Process (cleanupProcess)
@@ -41,16 +43,16 @@ renderTray wid server = do
   where
     termCmd cmd = "butlerTerminals[" <> showT wid <> "]." <> cmd
 
-termApp :: Text -> App
-termApp name =
-    (defaultApp "term" (startTermApp name))
+termApp :: Isolation -> App
+termApp isolation =
+    (defaultApp "term" (startTermApp isolation))
         { tags = fromList ["Development"]
         , description = "XTerm"
         , xfiles = [XStatic.xtermFitAddonJs, XStatic.xtermFitAddonJsMap] <> XStatic.xterm
         }
 
-startTermApp :: Text -> AppContext -> ProcessIO ()
-startTermApp name ctx = do
+startTermApp :: Isolation -> AppContext -> ProcessIO ()
+startTermApp isolation ctx = do
     let clients = ctx.shared.clients
         wid = ctx.wid
     server <- atomically newXtermServer
@@ -76,22 +78,74 @@ startTermApp name ctx = do
                     _ -> logError "invalid dim" ["ev" .= de]
             _ -> logError "Unexpected event" ["ev" .= ev]
 
-    let sess = from ("butler-" <> name <> "-" <> showT wid)
-        (prog, args) = ("tmux", ["attach", "-t", sess])
-        env = ["TERM=xterm", "SSH_AUTH_SOCK=/tmp/butler.sock"]
-        cmd = "env" : "-" : env <> ["bash"]
-        tmuxCmd = ["new-session", "-d", "-s", sess] <> cmd
+    -- prep directory tree
+    baseDir <- from . decodeUtf8 <$> getPath "rootfs"
+    let sktPath = baseDir </> "skt"
+        homePath = baseDir </> "home"
+    case isolation.runtime of
+        None -> pure ()
+        _ -> do
+            liftIO $ createDirectoryIfMissing True sktPath
+            liftIO $ createDirectoryIfMissing True homePath
+
+    -- Setup env
+    let pathEnv = do
+            path <- isolation.toolbox
+            pure $ "PATH=" <> path </> "bin:/bin:/sbin"
+        agentEnv =
+            "SSH_AUTH_SOCK=" <> case isolation.runtime of
+                None -> "/tmp/butler-agent.sock"
+                _ -> "/butler/skt/agent.sock"
+    homeEnv <-
+        ("HOME=" <>) <$> case isolation.runtime of
+            None -> maybe "/tmp" (into @String . decodeUtf8) <$> liftIO (getEnv "HOME")
+            _ -> pure "/butler/home"
+
+    let tmuxPath = case isolation.toolbox of
+            Just path -> path </> "bin/tmux"
+            Nothing -> "tmux"
+
+    let sess = "butler-term-" <> show wid
+        tmuxAttach = ["attach", "-t", sess] :: [String]
+        env = maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm"]
+        cmd = "env" : "-" : env <> ["bash", "-l"]
+        tmuxSession = ["new-session", "-d", "-s", sess] <> cmd
+        prog = case isolation.runtime of
+            None -> into @Text tmuxPath
+            Bubblewrap{} -> "bwrap"
+            Podman{} -> "podman"
+        mkArgs dieWithParent baseArgs = case isolation.runtime of
+            None -> baseArgs
+            Podman image -> ["run", via @Text image, "--", "tmux"] <> baseArgs
+            Bubblewrap ->
+                let addNix = case isolation.toolbox of
+                        Nothing -> id
+                        Just{} -> \xs -> "--bind" : "/nix" : "/nix" : xs
+                    addEnv = case isolation.toolbox of
+                        Nothing -> id
+                        Just path -> \xs -> "--setenv" : "PATH" : (path </> "bin:/bin:/sbin") : xs
+                    addDieWithParent
+                        | dieWithParent = ("--die-with-parent" :)
+                        | otherwise = id
+                 in addNix . addEnv . addDieWithParent $
+                        ["--unshare-pid", "--unshare-ipc", "--unshare-uts"]
+                            <> ["--bind", baseDir, "/butler", "--chdir", "/butler"]
+                            <> concatMap (\p -> ["--ro-bind", p, p]) ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"]
+                            <> ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
+                            <> (tmuxPath : "-S" : "/butler/skt/default" : baseArgs)
 
         mkProc =
             spawnProcess (ProgramName prog <> "-pty") do
-                void $ System.Process.Typed.runProcess $ System.Process.Typed.proc "tmux" tmuxCmd
-                logInfo "spawning" ["prog" .= prog]
+                let procSpec = System.Process.Typed.proc (from prog) (mkArgs False tmuxSession)
+                logDebug "spawning" ["prog" .= show procSpec]
+                void $ System.Process.Typed.runProcess procSpec
                 dim <- fromMaybe (80, 25) <$> readTVarIO server.dimension
-                (pty, phandle) <- liftIO (Pty.spawnWithPty Nothing True (from prog) args dim)
+                (pty, phandle) <- liftIO (Pty.spawnWithPty Nothing True (from prog) (mkArgs True tmuxAttach) dim)
                 handleProc dim pty `finally` do
                     liftIO do
                         Pty.closePty pty
                         cleanupProcess (Nothing, Nothing, Nothing, phandle)
+
         handleProc startDim pty = do
             -- control handler
             spawnThread_ do

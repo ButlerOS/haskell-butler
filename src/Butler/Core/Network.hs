@@ -17,7 +17,6 @@ import System.Process.Typed
 import Butler.Core
 import Butler.Prelude
 import System.Directory (removeFile)
-import System.FilePath ((</>))
 import UnliftIO.Directory (withCurrentDirectory)
 
 type WaiApplication = Wai.Application

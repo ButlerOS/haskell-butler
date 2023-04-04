@@ -62,6 +62,11 @@
         autocutsel
       ];
 
+      butlerTools = pkgs.symlinkJoin {
+        name = "butler-tools";
+        paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap ];
+      };
+
       mkContainer = name: extra-pkgs:
         let
           # Container user info
@@ -80,6 +85,8 @@
           # Ensure the home directory is r/w for any uid
           rwHome = "mkdir -p -m 1777 ${home} tmp";
 
+          linuxFHS = "mkdir usr lib64 sbin";
+
           extra-config = if extra-pkgs == [ ] then {
             extraCommands = rwHome;
           } else {
@@ -88,13 +95,17 @@
               "HOME=/${home}"
               # Use fakeroot to avoid `No user exists for uid` error
               "LD_PRELOAD=${pkgs.fakeroot}/lib/libfakeroot.so"
+              "NIX_SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt"
+              "BUTLER_ISOLATION=none"
+              "BUTLER_TOOLS=${butlerTools}"
               "TERM=xterm"
             ];
-            extraCommands = "${createPasswd} && ${fixCABundle} && ${rwHome}";
+            extraCommands =
+              "${createPasswd} && ${fixCABundle} && ${rwHome} && ${linuxFHS}";
           };
         in pkgs.dockerTools.buildLayeredImage (pkgs.lib.recursiveUpdate {
           name = "ghcr.io/butleros/haskell-butler";
-          contents = [ pkg-exe pkgs.openssl ] ++ extra-pkgs;
+          contents = [ pkg-exe pkgs.openssl butlerTools ] ++ extra-pkgs;
           tag = "${name}-latest";
           created = "now";
           config.Entrypoint = [ "butler" ];
@@ -144,8 +155,14 @@
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
         buildInputs = with pkgs;
-          [ sqlite ghcid haskell-language-server pkgs.gst_all_1.gstreamer ]
-          ++ desktop ++ baseTools;
+          [
+            sqlite
+            ghcid
+            haskell-language-server
+            pkgs.gst_all_1.gstreamer
+            butlerTools
+          ] ++ desktop ++ baseTools;
+        BUTLER_TOOLS = toString butlerTools;
         GST_PLUGIN_PATH =
           "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
       };

@@ -88,7 +88,7 @@ startFileService ctx = do
     let mountUI = with div_ [wid_ ctx.wid "tray"] do
             script_ (fileSystemClient ctx.wid)
     rootDir <- do
-        dpath <- getPath "rootfs/"
+        dpath <- getPath "rootfs/drive_c/"
         fromMaybe (error "bad rootfs?") <$> readRootDirectory dpath
 
     uploads <- atomically (NM.newNatMap @PendingUpload)

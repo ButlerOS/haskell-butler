@@ -9,6 +9,7 @@ import Butler.App
 import Butler.Core
 import Butler.Display
 import Butler.Lobby
+import Butler.UnixShell
 
 import Butler.Auth.Invitation
 
@@ -91,9 +92,10 @@ multiDesktop = run (demoDesktop [])
 demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     let authApp = invitationAuthApp indexHtml
+    isolation <- getIsolation
     desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram butlerSupervisor (mkAppSet chat) (services butlerSupervisor) chat display
+        lobbyProgram butlerSupervisor (mkAppSet chat isolation) (services butlerSupervisor isolation) chat display
     void $ waitProcess desktop
     error "oops"
   where
@@ -130,20 +132,20 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     });
     |]
 
-    services butlerSupervisor =
+    services butlerSupervisor isolation =
         [ soundBlasterService
         , cursorService
-        , sshAgentService
+        , sshAgentService isolation
         , fileService
         , butlerService butlerSupervisor
         ]
 
-    mkAppSet chat =
+    mkAppSet chat isolation =
         newAppSet $
             [ chatApp chat
             , clockApp
             , logViewerApp
-            , termApp "xterm"
+            , termApp isolation
             , soundTestApp
             , mumblerApp
             , peApp

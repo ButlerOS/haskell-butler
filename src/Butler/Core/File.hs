@@ -44,7 +44,7 @@ import Butler.Prelude
 
 import Data.ByteString qualified as BS
 import Data.Text qualified as Text
-import System.Directory (createDirectoryIfMissing, doesPathExist, removeDirectoryRecursive)
+import System.Directory (doesPathExist, removeDirectoryRecursive)
 import System.Posix (COff (..), fileSize, isRegularFile)
 import System.Posix.ByteString (isDirectory, openDirStream)
 import System.Posix.Directory.ByteString (readDirStream)

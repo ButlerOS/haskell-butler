@@ -3,11 +3,12 @@ module Butler.Service.SshAgent (sshAgentService) where
 import Butler
 import Butler.Core.NatMap qualified as NM
 import Butler.Frame
+import Butler.UnixShell
 
-sshAgentService :: Service
-sshAgentService =
+sshAgentService :: Isolation -> Service
+sshAgentService isolation =
     Service $
-        (defaultApp "ssh-agent" startApp)
+        (defaultApp "ssh-agent" (startApp isolation))
             { tags = fromList ["Utility"]
             , description = "Share ssh secrets"
             }
@@ -17,8 +18,8 @@ data Request = Request
     , provider :: TMVar DisplayClient
     }
 
-startApp :: AppContext -> ProcessIO ()
-startApp ctx = do
+startApp :: Isolation -> AppContext -> ProcessIO ()
+startApp isolation ctx = do
     providers <- atomically newDisplayClients
     requests <- atomically (NM.newNatMap @Request)
 
@@ -63,7 +64,16 @@ startApp ctx = do
             with div_ [wid_ ctx.wid "tray"] do
                 script_ (sshAgentProvider ctx.wid)
 
-    spawnThread_ (unixService "/tmp/butler.sock" handler)
+    baseDir <- from . decodeUtf8 <$> getPath "rootfs"
+    sktPath <- case isolation.runtime of
+      None -> pure $ "/tmp/butler-agent.sock" -- TODO: make the path unique per desktop
+      _ -> do
+        let sktDir = baseDir </> "skt"
+            sktPath = sktDir </> "agent.sock"
+        liftIO $ createDirectoryIfMissing True sktDir
+        pure sktPath
+
+    spawnThread_ (unixService sktPath handler)
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> atomically (sendHtml client mountUI)

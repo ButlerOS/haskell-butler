@@ -117,6 +117,11 @@ module Butler.Prelude (
     module Data.Text.Encoding,
     module Data.Text.Encoding.Error,
 
+    -- * unix/filepath/directory
+    (</>),
+    getEnv,
+    createDirectoryIfMissing,
+
     -- * base extra
     System.Posix.ByteString.RawFilePath,
     GHC.Exts.fromList,
@@ -215,8 +220,11 @@ import Numeric.Natural qualified
 import Options.Applicative.Types qualified
 import PyF
 import Servant.API
-import System.Posix
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import System.Posix hiding (getEnv)
 import System.Posix.ByteString (RawFilePath)
+import System.Posix.Env.ByteString (getEnv)
 import System.Process.Typed qualified as ProcessTyped
 import Text.Read (readMaybe)
 import UnliftIO
