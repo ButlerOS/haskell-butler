@@ -66,12 +66,12 @@ startApp isolation ctx = do
 
     baseDir <- from . decodeUtf8 <$> getPath "rootfs"
     sktPath <- case isolation.runtime of
-      None -> pure $ "/tmp/butler-agent.sock" -- TODO: make the path unique per desktop
-      _ -> do
-        let sktDir = baseDir </> "skt"
-            sktPath = sktDir </> "agent.sock"
-        liftIO $ createDirectoryIfMissing True sktDir
-        pure sktPath
+        None -> pure "/tmp/butler-agent.sock" -- TODO: make the path unique per desktop
+        _ -> do
+            let sktDir = baseDir </> "skt"
+                sktPath = sktDir </> "agent.sock"
+            liftIO $ createDirectoryIfMissing True sktDir
+            pure sktPath
 
     spawnThread_ (unixService sktPath handler)
     forever do

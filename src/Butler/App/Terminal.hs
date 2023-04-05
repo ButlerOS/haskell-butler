@@ -1,6 +1,7 @@
 module Butler.App.Terminal (termApp) where
 
-import System.Directory (getCurrentDirectory)
+import Data.List qualified
+import System.Posix.Files qualified
 import System.Posix.Pty qualified as Pty
 
 import Butler
@@ -101,15 +102,30 @@ startTermApp isolation ctx = do
             None -> maybe "/tmp" (into @String . decodeUtf8) <$> liftIO (getEnv "HOME")
             _ -> pure "/butler/home"
 
+    addResolv <- case isolation.runtime of
+        Bubblewrap -> liftIO do
+            isSymlink <- System.Posix.Files.isSymbolicLink <$> System.Posix.Files.getSymbolicLinkStatus "/etc/resolv.conf"
+            if isSymlink
+                then do
+                    realResolvConf <- do
+                        realResolvConf <- System.Posix.Files.readSymbolicLink "/etc/resolv.conf"
+                        pure $
+                            if "../" `Data.List.isPrefixOf` realResolvConf
+                                then drop 2 realResolvConf
+                                else realResolvConf
+                    pure (realResolvConf :)
+                else pure id
+        _ -> pure id
+
     let tmuxPath = case isolation.toolbox of
             Just path -> path </> "bin/tmux"
             Nothing -> "tmux"
 
     let sess = "butler-term-" <> show wid
-        tmuxAttach = ["attach", "-t", sess] :: [String]
-        env = maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm"]
+        tmuxAttach = ["-2", "attach", "-t", sess] :: [String]
+        env = maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color"]
         cmd = "env" : "-" : env <> ["bash", "-l"]
-        tmuxSession = ["new-session", "-d", "-s", sess] <> cmd
+        tmuxSession = ["-2", "new-session", "-d", "-s", sess] <> cmd
         prog = case isolation.runtime of
             None -> into @Text tmuxPath
             Bubblewrap{} -> "bwrap"
@@ -130,8 +146,9 @@ startTermApp isolation ctx = do
                  in addNix . addEnv . addDieWithParent $
                         ["--unshare-pid", "--unshare-ipc", "--unshare-uts"]
                             <> ["--bind", baseDir, "/butler", "--chdir", "/butler"]
-                            <> concatMap (\p -> ["--ro-bind", p, p]) ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"]
+                            <> concatMap (\p -> ["--ro-bind", p, p]) (addResolv ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"])
                             <> ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
+                            <> ["--tmpfs", "/etc/ssh/ssh_config.d"] -- remove host default because ssh fails with `Bad owner or permissions`
                             <> (tmuxPath : "-S" : "/butler/skt/default" : baseArgs)
 
         mkProc =
