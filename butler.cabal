@@ -45,6 +45,7 @@ library
       Butler.App.PokerPlanner
       Butler.App.ProcessExplorer
       Butler.App.QRTest
+      Butler.App.RandomCat
       Butler.App.SessionManager
       Butler.App.SoundTest
       Butler.App.Tabletop
@@ -125,6 +126,7 @@ library
     , aeson
     , attoparsec
     , base <5
+    , base64-bytestring
     , binary
     , bytestring
     , cgroup-rts-threads
@@ -136,6 +138,8 @@ library
     , hashable
     , hspec-expectations
     , http-api-data
+    , http-client-tls
+    , http-client
     , http-types
     , jose
     , ki

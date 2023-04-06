@@ -27,6 +27,7 @@ import Butler.App.Painter
 import Butler.App.PokerPlanner
 import Butler.App.ProcessExplorer
 import Butler.App.QRTest
+import Butler.App.RandomCat
 import Butler.App.SessionManager
 import Butler.App.SoundTest
 import Butler.App.Tabletop
@@ -160,6 +161,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , noterApp
             , painterApp
             , pokerPlannerApp
+            , randomCatApp
             , templateApp
             ]
                 <> extraApps
