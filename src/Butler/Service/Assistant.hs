@@ -401,7 +401,7 @@ welcomeButler db state app = do
                     WDone -> do
                         now <- liftIO getCurrentTime
                         prev <- readTVarIO app.updatedAt
-                        when (diffUTCTime now prev > 3600 * 0) do
+                        when (diffUTCTime now prev > 3600 * 8) do
                             whenM (isJust <$> atomically (welcomeMessage butlerInstance.wid)) do
                                 atomically $ writeTVar butlerInstance.status Interacting
                             updateState WDone -- update updatedAt
