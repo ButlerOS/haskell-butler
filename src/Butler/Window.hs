@@ -4,6 +4,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 
+import Butler.App (wid_)
 import Butler.AppID
 import Butler.Core
 import Butler.Core.Memory
@@ -92,18 +93,16 @@ renderWindows controlWID ws = do
         createWindows = map renderWindow windows
         script = windowScript controlWID : createWindows
     forM_ (fst <$> windows) \wid ->
-        with div_ [id_ ("w-" <> showT wid)] mempty
-    with (script_ $ Text.intercalate ";" script) [type_ "module"]
+        with div_ [wid_ wid "w"] mempty
+    with (script_ $ Text.intercalate ";\n" script) [type_ "module"]
 
 windowScript :: AppID -> Text
 windowScript wid =
     [raw|
 import WinBox from '/xstatic/winbox.js'
 function setupWindowManager(chan) {
-  globalThis.WinBox = WinBox
-
   // WinBox event handler, called by the js client, forwarded to the server.
-  globalThis.onWinEvent = (ev, w) => debounceData(500, (x, y) => {
+  const onWinEvent = (ev, w) => debounceData(500, (x, y) => {
     if (ev == "resize" && onWindowResize[w] !== undefined) {
       onWindowResize[w]()
     }
@@ -111,11 +110,12 @@ function setupWindowManager(chan) {
   })
 
   // Special handler for close event by the js client.
-  globalThis.onWinClose = (w) => (force) => {
+  const onWinClose = (w) => (force) => {
     let doDelete = force
     if (!force && confirm("Close window?")) {
       butlerDataSocket.send(encodeDataMessage(chan, {ev: "close", w: w}))
-      doDelete = true
+      // Don't delete the window right away, let's wait for ack from server
+      doDelete = false
     }
     if (doDelete) {
       let div = document.getElementById("w-" + w);
@@ -123,6 +123,21 @@ function setupWindowManager(chan) {
       return false;
     }
     return true
+  }
+
+  // Handle win creation
+  globalThis.renderWindow = (wid, title, x, y, width, height) => {
+    windows[wid] = new WinBox(title, {x,y,width,height,
+      id: withWID(wid, "win"),
+      bottom: 36,
+      class: ["no-full"],
+      root: document.getElementById("win-root"),
+      onclose: onWinClose(wid),
+      mount: document.getElementById(withWID(wid, "w"))});
+    if (onWindowResize[wid]) {onWindowResize[wid](width,height)};
+    windows[wid]["onresize"] = onWinEvent("resize", wid);
+    windows[wid]["onmove"] = onWinEvent("move", wid);
+    windows[wid]["onfocus"] = onWinEvent("focus", wid);
   }
 
   // Servent event handler.
@@ -166,26 +181,5 @@ function setupWindowManager(chan) {
         <> ");"
 
 renderWindow :: (AppID, Window) -> Text
-renderWindow (idx, Window (x, y) (w, h) title) = do
-    let attr k v = k <> ": " <> showT v
-        attrs =
-            [ attr "x" x
-            , attr "y" y
-            , attr "width" w
-            , attr "height" h
-            , "id: \"win-" <> showT idx <> "\""
-            , "bottom: 36"
-            , "class: [\"no-full\"]"
-            , "root: document.getElementById(\"win-root\")"
-            , "onclose: onWinClose(" <> showT idx <> ")"
-            , "mount: document.getElementById(\"w-" <> showT idx <> "\")"
-            ]
-        obj = "{" <> Text.intercalate ",\n" attrs <> "}"
-        win = "windows[" <> showT idx <> "]"
-        mkObj = win <> " = (new WinBox(" <> from (show title) <> ", " <> obj <> "))"
-
-        rs = "if (onWindowResize[" <> showT idx <> "]) {onWindowResize[" <> showT idx <> "]" <> showT (w, h) <> "}"
-
-        handler n = win <> "[\"on" <> n <> "\"] = onWinEvent(" <> showT n <> ", " <> showT idx <> ")"
-        handlers = map handler ["resize", "move", "focus"]
-     in Text.intercalate ";\n" ([mkObj, rs] <> handlers) <> ";\n"
+renderWindow (wid, Window (x, y) (w, h) title) =
+    "renderWindow" <> showT (wid, title, x, y, w, h)

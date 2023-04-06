@@ -94,38 +94,38 @@ startDesktopApp services ctx = do
                     Just wid -> handleWinSwap wm ctx wid name mEvent
                     Nothing -> createNewWindow name mEvent
             Nothing -> logError "missing name" ["ev" .= value]
+
         createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
         createNewWindow name mEvent = do
-            (wid, script) <- atomically do
-                winId <- nextAppID ctx.shared.appIDCounter
-                win <- newWindow wm.windows winId (from name)
-                let script = renderWindow (winId, win)
-                pure (winId, script)
+            (wid, win) <- atomically do
+                wid <- nextAppID ctx.shared.appIDCounter
+                win <- newWindow wm.windows wid (from name)
+                pure (wid, win)
 
             mGuiApp <- launchApp ctx.shared.appSet name ctx.shared wid
             forM_ mGuiApp \guiApp -> do
                 atomically $ addApp wm ctx.shared guiApp
-                renderNewWindow wid script
+                renderNewWindow wid win
                 forM_ mEvent $ writePipe guiApp.pipe
                 clients <- atomically (getClients ctx.shared.clients)
                 forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
 
-        renderNewWindow wid script = do
+        renderNewWindow wid win = do
             sendsHtml ctx.shared.clients do
                 with div_ [id_ "backstore", hxSwapOob_ "beforeend"] do
-                    with div_ [id_ (withWID wid "w")] mempty
-                    with (script_ script) [type_ "module"]
+                    with div_ [wid_ wid "w"] mempty
+                    with (script_ $ renderWindow (wid, win)) [type_ "module"]
                 with div_ [id_ "display-bar", hxSwapOob_ "afterbegin"] do
-                    with span_ [id_ (withWID wid "bar")] mempty
+                    with span_ [wid_ wid "bar"] mempty
                 with div_ [id_ "display-tray", hxSwapOob_ "afterbegin"] do
-                    with span_ [id_ (withWID wid "tray")] mempty
+                    with span_ [wid_ wid "tray"] mempty
 
-        handleWinEvent :: DisplayClient -> LByteString -> Text -> AppID -> Value -> ProcessIO ()
-        handleWinEvent client buf ev wid v = do
+        handleWinEvent :: DisplayClient -> DataEvent -> Text -> AppID -> Value -> ProcessIO ()
+        handleWinEvent client ev name wid obj = do
             doBroadcast <-
-                case ( ev
-                     , unsafeFrom <$> (v ^? key "x" . _Integer)
-                     , unsafeFrom <$> (v ^? key "y" . _Integer)
+                case ( name
+                     , unsafeFrom <$> (obj ^? key "x" . _Integer)
+                     , unsafeFrom <$> (obj ^? key "y" . _Integer)
                      ) of
                     ("move", Just x, Just y) -> do
                         atomically $ updateWindow wm.windows wid (#position .~ (x, y))
@@ -134,6 +134,8 @@ startDesktopApp services ctx = do
                     ("close", Nothing, Nothing) -> do
                         atomically do
                             delWin wm ctx wid
+                            -- Close event are not performed client side and we to trigger the handler manually
+                            sendBinary client (from ev.rawBuffer)
                         sendsHtml (ctx.shared.clients) do
                             with span_ [wid_ wid "bar", hxSwapOob_ "delete"] mempty
                             with span_ [wid_ wid "tray", hxSwapOob_ "delete"] mempty
@@ -142,10 +144,10 @@ startDesktopApp services ctx = do
                     ("focus", Nothing, Nothing) -> do
                         pure True
                     _ -> do
-                        logError "invalid win-event" ["v" .= v]
+                        logError "invalid win-event" ["ev" .= ev]
                         pure False
             when doBroadcast do
-                sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from shellAppID) buf)
+                sendsBinaryButSelf client ctx.shared.clients (from ev.rawBuffer)
 
     acls <- newTVarIO mempty
     let
@@ -185,7 +187,7 @@ startDesktopApp services ctx = do
             AppData de -> case decode' (from de.buffer) of
                 Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _JSON) of
                     (Just winEvent, Just winId) -> do
-                        handleWinEvent de.client (from de.buffer) winEvent winId obj
+                        handleWinEvent de.client de winEvent winId obj
                     _ -> logError "invalid win event" ["buf" .= BSLog de.buffer]
                 Nothing -> logError "unknown win event" ["buf" .= BSLog de.buffer]
             AppTrigger ev -> case ev.trigger of
