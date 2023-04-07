@@ -33,6 +33,7 @@ import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Template
 import Butler.App.Terminal
+import Butler.App.TodoManager
 
 import Butler.Service.Assistant
 import Butler.Service.Cursor
@@ -162,6 +163,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , painterApp
             , pokerPlannerApp
             , randomCatApp
+            , todoManagerApp
             , templateApp
             ]
                 <> extraApps

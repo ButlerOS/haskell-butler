@@ -51,6 +51,7 @@ library
       Butler.App.Tabletop
       Butler.App.Template
       Butler.App.Terminal
+      Butler.App.TodoManager
       Butler.AppID
       Butler.Auth
       Butler.Auth.Guest
