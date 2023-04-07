@@ -8,6 +8,7 @@ import Lucid
 import Network.WebSockets qualified as WS
 
 import Butler.AppID
+import Butler.AppSettings
 import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Dynamic
@@ -55,6 +56,8 @@ data AppEvent
       AppFile Directory (Maybe File)
     | -- | A sync event (e.g. a query that needs a reply)
       AppSync SyncEvent
+    | -- | A changed setting event
+      AppSettingChanged SettingKey SettingValue SettingValue
     deriving (Generic, ToJSON)
 
 newtype SyncEvent = SyncEvent
@@ -93,6 +96,8 @@ data App = App
     -- ^ Its title.
     , description :: Text
     -- ^ A description.
+    , settings :: [AppSetting]
+    -- ^ The default settings.
     , size :: Maybe (Int, Int)
     -- ^ An optional size.
     , xfiles :: [XStaticFile]
@@ -112,6 +117,7 @@ defaultApp name start =
         , tags = mempty
         , title = mempty
         , description = mempty
+        , settings = mempty
         , size = Nothing
         , xfiles = []
         , acceptFiles = Nothing
@@ -170,10 +176,29 @@ data AppInstance = AppInstance
     }
     deriving (Generic)
 
-newtype AppSet = AppSet (Map ProgramName App)
+newtype AppSet = AppSet {appSetMap :: Map ProgramName App}
+
+lookupAppSet :: ProgramName -> AppSet -> Maybe App
+lookupAppSet program (AppSet m) = Map.lookup program m
 
 appSetApps :: AppSet -> [App]
 appSetApps (AppSet m) = Map.elems m
+
+getAppSettings :: AppSharedContext -> ProgramName -> ProcessIO (Map SettingKey SettingValue)
+getAppSettings shared program = do
+    -- read saved settings
+    mvSettings <- getSettings shared.dynamics
+    setting <- atomically (lookupSetting mvSettings program)
+    -- add default settings
+    let setDefault :: AppSetting -> (Map SettingKey SettingValue -> Map SettingKey SettingValue)
+        setDefault appSetting = case Map.lookup appSetting.name setting of
+            Nothing -> Map.insert appSetting.name appSetting.value
+            Just _ -> id
+    pure $ composeFunctions (setDefault <$> appSettings) setting
+  where
+    appSettings = case Map.lookup program shared.appSet.appSetMap of
+        Just app -> app.settings
+        Nothing -> []
 
 -- | A convenient helper to mount the UI when a new user connect.
 sendHtmlOnConnect :: HtmlT STM () -> AppEvent -> ProcessIO ()
@@ -212,7 +237,8 @@ startShellApp appSet prefix app display = do
         processEnv <- ask
         shared <- atomically (newAppSharedContext display processEnv appSet)
         putMVar mvShared shared
-        app.start (AppContext wid pipe shared)
+        withSettings shared.dynamics do
+            app.start (AppContext wid pipe shared)
     shared <- takeMVar mvShared
     let appInstance = AppInstance{app, process, wid, pipe}
     atomically (registerApp shared.apps appInstance)

@@ -15,6 +15,7 @@ import Lucid.Htmx
 import Butler
 import Butler.App
 import Butler.AppID
+import Butler.AppSettings
 import Butler.Core
 import Butler.Core.Logger
 import Butler.Core.Processor
@@ -26,7 +27,12 @@ import Butler.GUI.File
 import Butler.Service.FileService
 
 desktopApp :: [Service] -> App
-desktopApp services = defaultApp "desktop" (startDesktopApp services)
+desktopApp services =
+    (defaultApp "desktop" (startDesktopApp services))
+        { settings =
+            [ AppSetting "background" "bg-stone-100" (SettingChoice ["bg-stone-100", "bg-blue-100"])
+            ]
+        }
 
 deskApp :: AppSet -> App
 deskApp appSet = defaultApp "welcome" startWelcomeApp
@@ -39,6 +45,15 @@ deskApp appSet = defaultApp "welcome" startWelcomeApp
 startDesktopApp :: [Service] -> AppContext -> ProcessIO ()
 startDesktopApp services ctx = do
     wm <- newWindowManager
+
+    appSettings <- getAppSettings ctx.shared "desktop"
+    vBgColor <-
+        newTVarIO =<< case Map.lookup "background" appSettings of
+            Nothing -> do
+                logError "Missing background color" ["setting" .= appSettings]
+                pure ""
+            Just v -> pure v
+    logDebug "current setting" ["setting" .= appSettings]
 
     let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
 
@@ -153,7 +168,7 @@ startDesktopApp services ctx = do
     let
         desktop =
             Desktop
-                { mountUI = desktopHtml ctx.shared.apps dir wm.windows
+                { mountUI = desktopHtml vBgColor ctx.shared.apps dir wm.windows
                 , thumbnail = do
                     let attr :: Text -> HtmlT STM () -> HtmlT STM ()
                         attr k v =
@@ -196,7 +211,24 @@ startDesktopApp services ctx = do
                 _otherwise -> logError "Unknown ev" ["ev" .= ev]
             AppSync ev ->
                 atomically . putTMVar ev.reply . toDyn $ desktop
+            AppSettingChanged setting prev new -> case setting of
+                "background" -> do
+                    sendsHtml ctx.shared.clients do
+                        with div_ [id_ "background_script"] do
+                            script_ $ "changeBackground" <> showT (prev, new)
+                    atomically $ writeTVar vBgColor new
+                _ -> logError "Unknown setting" ["setting" .= setting]
             ev -> logError "Unexpected event" ["ev" .= ev]
+
+desktopScript :: Text
+desktopScript =
+    [raw|
+globalThis.changeBackground = (prev, next) => {
+  const elt = htmx.find("#win-root")
+  htmx.removeClass(elt, prev)
+  htmx.addClass(elt, next)
+}
+|]
 
 data Desktop = Desktop
     { mountUI :: HtmlT STM ()
@@ -223,13 +255,14 @@ delWin wm ctx wid = do
         Just prevApp -> delApp ctx.shared prevApp
     delWindowApp wm wid
 
-desktopHtml :: Apps -> Directory -> Windows -> HtmlT STM ()
-desktopHtml apps dir windows = do
+desktopHtml :: TVar SettingValue -> Apps -> Directory -> Windows -> HtmlT STM ()
+desktopHtml vBgColor apps dir windows = do
     wids <- lift (getWindowIDs windows)
     div_ [id_ "display-wins", class_ "flex flex-col min-h-full"] do
-        script_ butlerHelpersScript
+        script_ (butlerHelpersScript <> "\n" <> desktopScript)
         -- [style_ " grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));", class_ "grid"]
-        with div_ [id_ "win-root", class_ "grow"] do
+        bgColor <- lift (readTVar vBgColor)
+        with div_ [id_ "win-root", class_ $ "grow " <> into @Text bgColor] do
             with div_ [class_ "flex flex-col"] do
                 let deskDiv = "border border-black rounded mx-2 my-3 w-6 grid align-center justify-center cursor-pointer"
                 withTrigger "click" shellAppID "start-app" ["name" .= ProgramName "file-manager"] div_ [class_ deskDiv] do
@@ -250,6 +283,7 @@ desktopHtml apps dir windows = do
                         with span_ [wid_ wid "tray"] mempty
 
         with div_ [id_ "reconnect_script"] mempty
+        with div_ [id_ "background_script"] mempty
 
         with div_ [id_ "backstore"] do
             renderWindows shellAppID windows

@@ -10,6 +10,7 @@ module Butler.Prelude (
     ignoringExceptions,
     sktRecv,
     sktSendAll,
+    composeFunctions,
 
     -- * ki
     module Ki.Unlifted,
@@ -159,6 +160,7 @@ module Butler.Prelude (
 
 import Codec.Serialise qualified
 import Control.Applicative
+import Control.Category ((>>>))
 import Control.Concurrent qualified
 import Control.Concurrent.MVar
 import Control.Concurrent.STM
@@ -289,3 +291,11 @@ sktSendAll skt = liftIO . Network.Socket.ByteString.sendAll skt
 
 instance ToJSON Rope where
     toJSON = toJSON . Data.Text.Rope.toText
+
+{- | Combine a list of function.
+
+>>> composeFunctions @Int [(+40), (+1)] 1
+42
+-}
+composeFunctions :: [a -> a] -> (a -> a)
+composeFunctions = foldr (>>>) id

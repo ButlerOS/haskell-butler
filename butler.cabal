@@ -47,12 +47,14 @@ library
       Butler.App.QRTest
       Butler.App.RandomCat
       Butler.App.SessionManager
+      Butler.App.Settings
       Butler.App.SoundTest
       Butler.App.Tabletop
       Butler.App.Template
       Butler.App.Terminal
       Butler.App.TodoManager
       Butler.AppID
+      Butler.AppSettings
       Butler.Auth
       Butler.Auth.Guest
       Butler.Auth.Invitation

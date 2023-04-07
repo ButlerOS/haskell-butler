@@ -15,6 +15,7 @@ import Butler.Auth.Invitation
 
 import Butler.App.Chat
 import Butler.App.Clock
+import Butler.App.Desktop
 import Butler.App.FileManager
 import Butler.App.FileViewer
 import Butler.App.Launcher
@@ -29,6 +30,7 @@ import Butler.App.ProcessExplorer
 import Butler.App.QRTest
 import Butler.App.RandomCat
 import Butler.App.SessionManager
+import Butler.App.Settings
 import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Template
@@ -97,7 +99,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     isolation <- getIsolation
     desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
-        lobbyProgram butlerSupervisor (mkAppSet chat isolation) (services butlerSupervisor isolation) chat display
+        lobbyProgram butlerSupervisor (mkAppSet chat butlerSupervisor isolation) chat display
     void $ waitProcess desktop
     error "oops"
   where
@@ -142,10 +144,11 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
         , butlerService butlerSupervisor
         ]
 
-    mkAppSet chat isolation =
+    mkAppSet chat butlerSupervisor isolation =
         newAppSet $
             [ chatApp chat
             , clockApp
+            , desktopApp (services butlerSupervisor isolation)
             , logViewerApp
             , termApp isolation
             , soundTestApp
@@ -164,6 +167,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , pokerPlannerApp
             , randomCatApp
             , todoManagerApp
+            , settingsApp
             , templateApp
             ]
                 <> extraApps

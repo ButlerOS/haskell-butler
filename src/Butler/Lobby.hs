@@ -48,14 +48,15 @@ newLobby = do
     let initialMap = Map.fromList $ map (\name -> (name, DesktopOffline)) savedList
     Lobby <$> newMVar initialMap <*> pure desktopsList <*> atomically newBroadcastChan
 
-lobbyProgram :: ButlerSupervisor -> AppSet -> [Service] -> ChatServer -> Display -> ProcessIO OnClient
-lobbyProgram bs appSet services chat display = do
+lobbyProgram :: ButlerSupervisor -> AppSet -> ChatServer -> Display -> ProcessIO OnClient
+lobbyProgram bs appSet chat display = do
     dm <- newLobby
     displayProcess <- getSelfProcess
     dmProcess <- spawnProcess "lobby" do
         void $ waitProcess displayProcess
     rootOS <- asks os
     let dmEnv = ProcessEnv rootOS dmProcess
+    let dApp = fromMaybe (error "Missing desktop app") $ lookupAppSet "desktop" appSet
 
     let waitingDesktop :: ProcessIO DesktopInstance
         waitingDesktop = do
@@ -83,7 +84,7 @@ lobbyProgram bs appSet services chat display = do
                 | otherwise -> do
                     let desktopID = "desktop-" <> into @StorageAddress name
                     (shared, shellInstance) <- chroot desktopID do
-                        startShellApp appSet "desktop-" (desktopApp services & #name .~ via @Text name) display
+                        startShellApp appSet (from name <> "-") dApp display
 
                     when (isNothing owner && isNothing mDesktopStatus) do
                         atomically $ modifyMemoryVar dm.desktopsList (name :)
