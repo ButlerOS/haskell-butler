@@ -121,6 +121,11 @@ dependencies:
   - retry
   - ebml
 
+  # network
+  - http-client-tls
+  - http-client
+  - base64-bytestring
+
   - qrcode-juicypixels
   - qrcode-core
   - JuicyPixels

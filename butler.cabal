@@ -139,8 +139,8 @@ library
     , hashable
     , hspec-expectations
     , http-api-data
-    , http-client-tls
     , http-client
+    , http-client-tls
     , http-types
     , jose
     , ki
@@ -242,6 +242,7 @@ executable butler
     , aeson
     , attoparsec
     , base <5
+    , base64-bytestring
     , binary
     , butler
     , bytestring
@@ -254,6 +255,8 @@ executable butler
     , hashable
     , hspec-expectations
     , http-api-data
+    , http-client
+    , http-client-tls
     , http-types
     , jose
     , ki
@@ -365,6 +368,7 @@ test-suite spec
     , aeson
     , attoparsec
     , base <5
+    , base64-bytestring
     , binary
     , butler
     , bytestring
@@ -377,6 +381,8 @@ test-suite spec
     , hashable
     , hspec-expectations
     , http-api-data
+    , http-client
+    , http-client-tls
     , http-types
     , jose
     , ki
