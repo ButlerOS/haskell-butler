@@ -11,40 +11,43 @@ import Network.HTTP.Client (
 import Network.HTTP.Client.TLS (newTlsManager)
 import Network.HTTP.Types (statusIsSuccessful)
 
+import Butler.App (withEvent)
 import Data.ByteString.Base64 qualified as B64 (encode)
 import Data.ByteString.Char8 qualified as C8
 
 randomCatApp :: App
 randomCatApp =
     (defaultApp "RandomCat" startRandomCat)
-        { tags = fromList ["Utility"]
+        { tags = fromList ["Game"]
         , description = "Display a random cat using CATAAS"
         , size = Just (500, 500)
         }
 
-data RandomCatState = Loading | LoadingError | Loaded ByteString
+data RandomCatState = NoCat | LoadingCat | LoadingCatError | Cat ByteString
 
 startRandomCat :: AppContext -> ProcessIO ()
 startRandomCat ctx = do
     -- Setup state
     logInfo "RandomCat started!" []
-    state <- newTVarIO Nothing
-    let setState = atomically . writeTVar state . Just
+    state <- newTVarIO NoCat
+    let setState = atomically . writeTVar state
 
     manager <- newTlsManager
 
     -- UI
     let mountUI :: HtmlT STM ()
         mountUI = with div_ [wid_ ctx.wid "w", class_ "flex flex-col gap-2"] do
-            withTrigger_ "click" ctx.wid "get-a-cat" button_ [] "Give me a cat !"
-            div_ [wid_ ctx.wid "randomCat", class_ "flex justify-center"] $ do
+            let getACatButton = button_ [class_ "border-2 border-indigo-300 bg-indigo-100 p-1 m-1"] "Give me a 🐱 !"
+            div_ [class_ "flex justify-center"] $ do
+                withEvent ctx.wid "get-a-cat" [] getACatButton
+            div_ [class_ "flex justify-center"] $ do
                 lift (readTVar state) >>= \case
-                    Just Loading -> p_ "loading ..."
-                    Just (Loaded catBS) -> do
+                    LoadingCat -> p_ "Maouhhh ..."
+                    Cat catBS -> do
                         let imgSrc = "data:image/jpeg;base64," <> C8.unpack (B64.encode catBS)
                         img_ [src_ $ from imgSrc]
-                    Just LoadingError -> p_ "loading error !"
-                    Nothing -> pure ()
+                    LoadingCatError -> p_ "Oh no - unable to get a Cat !"
+                    NoCat -> pure ()
 
     -- Handle events
     forever do
@@ -53,12 +56,12 @@ startRandomCat ctx = do
             AppTrigger ev -> do
                 case ev.trigger of
                     "get-a-cat" -> do
-                        setState Loading
+                        setState LoadingCat
                         sendsHtml ctx.shared.clients mountUI
                         catM <- getACat manager
                         case catM of
-                            Just cat -> setState $ Loaded cat
-                            Nothing -> setState LoadingError
+                            Just cat -> setState $ Cat cat
+                            Nothing -> setState LoadingCatError
                     _ -> logError "Unknown trigger" ["ev" .= ev]
                 sendsHtml ctx.shared.clients mountUI
             ev -> logError "Unknown ev" ["ev" .= ev]
