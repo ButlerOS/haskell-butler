@@ -11,15 +11,21 @@ todoManagerApp =
         , description = "Manage your tasks"
         }
 
-newtype TaskDesc = TaskDesc Text deriving newtype (Serialise, ToHtml)
-newtype TaskId = TaskId Natural deriving newtype (Serialise, Enum, Eq, Ord, Num, Real, Integral)
+newtype TaskDesc = TaskDesc Text
+    deriving newtype (Serialise, ToHtml)
+
+newtype TaskId = TaskId Natural
+    deriving newtype (Serialise, Enum, Eq, Ord, Num, Real, Integral)
 data TaskSelected = TaskSelected | TaskNotSelected deriving (Generic, Serialise)
+
 newtype TaskIndex = TaskIndex Natural
     deriving newtype (Num, Serialise)
 
-data TodoTask = TodoTask TaskId TaskSelected TaskDesc deriving (Generic, Serialise)
+data TodoTask = TodoTask TaskId TaskSelected TaskDesc
+    deriving (Generic, Serialise)
 
-data TodoManager = TodoManager TaskIndex [TodoTask] deriving (Generic, Serialise)
+data TodoManager = TodoManager TaskIndex [TodoTask]
+    deriving (Generic, Serialise)
 
 appButtonClass :: Attribute
 appButtonClass = class_ "border m-2 p-1 cursor-pointer bg-indigo-100 border-black rounded"
