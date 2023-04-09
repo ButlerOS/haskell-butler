@@ -2,6 +2,7 @@ module Butler.App.TodoManager (todoManagerApp) where
 
 import Butler
 import Butler.App (withEvent)
+import Butler.Core.Dynamic
 import Data.Aeson (Value (Number))
 
 todoManagerApp :: App
@@ -235,8 +236,11 @@ startTodoManager ctx = do
     logInfo "TodoManager started!" []
     let appState = TodoManager 0 NoEditingTask []
         memAddr = "todo-manager-" <> showT ctx.wid <> ".bin"
-    (_, appStateM) <- newProcessMemory (from memAddr) (pure appState)
+    appStateM <- getSharedDynamic ctx.shared.dynamics "todo-manager" (snd <$> newProcessMemory (from memAddr) (pure appState))
     let mountUI = with div_ [wid_ ctx.wid "w"] $ appUI ctx appStateM
+
+    spawnThread_ $ renderOnChange mountUI \newHtml -> do
+        sendsHtml ctx.shared.clients newHtml
 
     -- Handle events
     forever do
@@ -278,5 +282,4 @@ startTodoManager ctx = do
                                     setSelectedTask tm $ TaskId $ fromInteger $ toInteger taskId
                             Nothing -> pure ()
                     _ -> logError "Unknown trigger" ["ev" .= ev]
-                sendsHtml ctx.shared.clients mountUI
             ev -> logError "Unknown ev" ["ev" .= ev]

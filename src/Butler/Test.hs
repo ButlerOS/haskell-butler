@@ -48,9 +48,8 @@ newAppClient shared appInstance = do
 withTestSharedContext :: AppSet -> (AppSharedContext -> ProcessIO ()) -> ProcessIO ()
 withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
     processEnv <- ask
-    appSharedContext <- atomically do
-        display <- Display sessions <$> newTVar mempty
-        newAppSharedContext display processEnv appSet
+    display <- atomically (Display sessions <$> newTVar mempty)
+    appSharedContext <- newAppSharedContext display processEnv appSet
     cb appSharedContext
 
 withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
