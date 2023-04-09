@@ -21,11 +21,20 @@ data TaskSelected = TaskSelected | TaskNotSelected deriving (Generic, Serialise)
 newtype TaskIndex = TaskIndex Natural
     deriving newtype (Num, Serialise)
 
-data TodoTask = TodoTask TaskId TaskSelected TaskDesc
+data TaskPrio = High | Medium | Low deriving (Generic, Serialise, Show)
+
+data TodoTask = TodoTask TaskId TaskSelected TaskDesc TaskPrio
     deriving (Generic, Serialise)
 
 data TodoManager = TodoManager TaskIndex [TodoTask]
     deriving (Generic, Serialise)
+
+textToPrio :: Text -> TaskPrio
+textToPrio = \case
+    "Low" -> Low
+    "Medium" -> Medium
+    "High" -> High
+    _ -> error "Unable to handle taskPrio value"
 
 appButtonClass :: Attribute
 appButtonClass = class_ "border m-2 p-1 cursor-pointer bg-indigo-100 border-black rounded"
@@ -46,21 +55,30 @@ appSumitButton displayText =
 appUI :: AppContext -> MemoryVar TodoManager -> HtmlT STM ()
 appUI ctx appStateM = do
     div_ [id_ "MainDiv", class_ "flex flex-col"] $ do
-        div_ [class_ "flex flex-row justify-around"] $ do
-            appButton ctx.wid "del-item" "Del Item(s)"
+        -- Form
+        div_ [class_ "flex flex-row justify-around m-2"] $ do
             withEvent ctx.wid "add-item" [] $ do
-                form_ [] $ do
-                    label_ [class_ "font-semibold"] "Task description"
-                    input_
-                        [ type_ "text"
-                        , placeholder_ "Enter task description"
-                        , name_ "taskDesc"
-                        , value_ ""
-                        , size_ "25"
-                        , maxlength_ "15"
-                        , class_ "h-8 ml-1 text-center border border-slate-300 rounded-md focus:border-slate-400"
-                        ]
-                    appSumitButton "Add Item"
+                form_ [class_ "w-full"] $ do
+                    div_ [class_ "flex flex-row flex-wrap justify-around gap-1"] $ do
+                        div_ [class_ "flex flex-wrap"] $ do
+                            label_ [class_ "block font-semibold m-1", for_ "taskDesc"] "Task Desc"
+                            input_
+                                [ id_ "taskDesc"
+                                , type_ "text"
+                                , name_ "taskDesc"
+                                , value_ ""
+                                , class_ "h-8 ml-1 text-center border border-slate-300 rounded-md focus:border-slate-400"
+                                ]
+                        div_ [class_ "flex flex-wrap"] $ do
+                            label_ [class_ "block font-semibold m-1", for_ "taskPrio"] "Task Prio"
+                            select_ [class_ "text-sm rounded", id_ "taskPrio", name_ "taskPrio"] $ do
+                                option_ [value_ "High"] "High"
+                                option_ [value_ "Medium"] "Medium"
+                                option_ [value_ "Low"] "Low"
+                    div_ [class_ "flex justify-around"] $ do
+                        appSumitButton "Add Task"
+                        appButton ctx.wid "del-item" "Del Tasks(s)"
+        -- Items display
         div_ [] $ do
             showItems ctx.wid appStateM
 
@@ -68,7 +86,7 @@ showItems :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 showItems appID appStateM = do
     (TodoManager _ todoTasks) <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
-        forM_ todoTasks $ \(TodoTask taskId taskSelected taskDesc) -> do
+        forM_ todoTasks $ \(TodoTask taskId taskSelected taskDesc taskPrio) -> do
             div_ [class_ "flex flex-row gap-2"] $ do
                 withEvent appID "checkbox-click" [("taskID", Number $ fromInteger $ toInteger taskId)] $ do
                     input_
@@ -78,19 +96,20 @@ showItems appID appStateM = do
                                 TaskNotSelected -> mempty
                         )
 
+                div_ [] $ toHtml $ show taskPrio
                 div_ [] $ toHtml taskDesc
 
-addTask :: TodoManager -> Text -> TodoManager
-addTask (TodoManager (TaskIndex i) todoTasks) content =
+addTask :: TodoManager -> Text -> TaskPrio -> TodoManager
+addTask (TodoManager (TaskIndex i) todoTasks) content taskPrio =
     let newId = i + 1
-        task = newTask content (TaskId newId)
+        task = newTask content taskPrio (TaskId newId)
      in TodoManager (TaskIndex newId) (task : todoTasks)
 
 delSelectedTasks :: TodoManager -> TodoManager
 delSelectedTasks (TodoManager taskIndex todoTasks) =
     TodoManager taskIndex $
         filter
-            ( \(TodoTask _ taskSelected _) ->
+            ( \(TodoTask _ taskSelected _ _) ->
                 case taskSelected of
                     TaskSelected -> False
                     TaskNotSelected -> True
@@ -98,20 +117,20 @@ delSelectedTasks (TodoManager taskIndex todoTasks) =
             todoTasks
 
 selectTask :: TodoTask -> TodoTask
-selectTask (TodoTask taskId taskSelected taskDesc) =
+selectTask (TodoTask taskId taskSelected taskDesc taskPrio) =
     let newSelectState = case taskSelected of
             TaskSelected -> TaskNotSelected
             TaskNotSelected -> TaskSelected
-     in TodoTask taskId newSelectState taskDesc
+     in TodoTask taskId newSelectState taskDesc taskPrio
 
-newTask :: Text -> TaskId -> TodoTask
-newTask content taskId = TodoTask taskId TaskNotSelected $ TaskDesc content
+newTask :: Text -> TaskPrio -> TaskId -> TodoTask
+newTask content taskPrio taskId = TodoTask taskId TaskNotSelected (TaskDesc content) taskPrio
 
 setSelectedTask :: TodoManager -> TaskId -> TodoManager
 setSelectedTask (TodoManager taskIndex todoTasks) taskId =
     TodoManager taskIndex $
         map
-            ( \task@(TodoTask tId _ _) ->
+            ( \task@(TodoTask tId _ _ _) ->
                 if tId == taskId
                     then selectTask task
                     else task
@@ -134,11 +153,12 @@ startTodoManager ctx = do
                 case ev.trigger of
                     "add-item" -> do
                         logInfo "Adding item" ["ev" .= ev]
-                        case ev.body ^? key "taskDesc" . _JSON of
-                            Just taskDesc -> do
+                        case (ev.body ^? key "taskDesc" . _JSON, ev.body ^? key "taskPrio" . _JSON) of
+                            (Just "", _) -> pure ()
+                            (Just taskDesc, Just @Text taskPrio) -> do
                                 atomically $ modifyMemoryVar appStateM $ \tm -> do
-                                    addTask tm taskDesc
-                            Nothing -> pure ()
+                                    addTask tm taskDesc (textToPrio taskPrio)
+                            _ -> pure ()
                     "del-item" -> do
                         logInfo "Removing item" ["ev" .= ev]
                         atomically $ modifyMemoryVar appStateM $ \tm -> do
