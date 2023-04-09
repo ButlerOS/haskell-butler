@@ -70,6 +70,7 @@ module Butler.Prelude (
     (%~),
     (.~),
     (^?),
+    (?~),
     Control.Lens.ix,
     Control.Lens.set,
     Control.Lens.over,

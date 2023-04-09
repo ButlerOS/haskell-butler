@@ -30,6 +30,14 @@ module Butler.Display.Client (
     addClient,
     delClient,
 
+    -- * Clients data
+    ClientsData,
+    newClientsData,
+    addClientsData,
+    delClientsData,
+    lookupClientData,
+    withClientsData,
+
     -- * Internal
     newClient,
     Endpoint (..),
@@ -38,6 +46,7 @@ where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Map.Strict qualified as Map
 import Lucid
 import Network.WebSockets qualified as WS
 
@@ -165,3 +174,25 @@ addClient (DisplayClients x) = void . NM.add x
 
 delClient :: DisplayClients -> DisplayClient -> STM ()
 delClient (DisplayClients x) client = NM.nmDelete x (\o -> o.endpoint == client.endpoint)
+
+newtype ClientsData a = ClientsData (TVar (Map Endpoint (TVar a)))
+
+newClientsData :: STM (ClientsData a)
+newClientsData = ClientsData <$> newTVar mempty
+
+addClientsData :: ClientsData a -> DisplayClient -> a -> STM ()
+addClientsData (ClientsData tv) client value = do
+    tValue <- newTVar value
+    modifyTVar' tv $ Map.insert client.endpoint tValue
+
+delClientsData :: ClientsData a -> DisplayClient -> STM ()
+delClientsData (ClientsData tv) client = modifyTVar' tv $ Map.delete client.endpoint
+
+lookupClientData :: ClientsData a -> DisplayClient -> STM (Maybe (TVar a))
+lookupClientData (ClientsData tv) client = Map.lookup client.endpoint <$> readTVar tv
+
+withClientsData :: ClientsData a -> DisplayClient -> (TVar a -> ProcessIO ()) -> ProcessIO ()
+withClientsData cd client cb = do
+    atomically (lookupClientData cd client) >>= \case
+        Just v -> cb v
+        Nothing -> logError "Unknown client" ["client" .= client]
