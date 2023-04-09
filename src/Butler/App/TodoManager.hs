@@ -36,24 +36,32 @@ textToPrio = \case
     "High" -> High
     _ -> error "Unable to handle taskPrio value"
 
-appButtonClass :: Attribute
-appButtonClass = class_ "border m-2 p-1 cursor-pointer bg-indigo-100 border-black rounded"
+buttonClass :: Attribute
+buttonClass = class_ "border m-2 p-1 cursor-pointer bg-indigo-100 border-black rounded"
 
-appButton :: AppID -> TriggerName -> Text -> HtmlT STM ()
-appButton appID triggerName displayText =
+disabledButtonClass :: Attribute
+disabledButtonClass = class_ "border m-2 p-1 bg-gray-100 border-black rounded"
+
+button :: AppID -> TriggerName -> Text -> HtmlT STM ()
+button appID triggerName displayText =
     withEvent appID triggerName [] $ do
-        div_ [appButtonClass] $ toHtml displayText
+        div_ [buttonClass] $ toHtml displayText
+
+disabledButton :: Text -> HtmlT STM ()
+disabledButton displayText =
+    div_ [disabledButtonClass] $ toHtml displayText
 
 appSumitButton :: Text -> HtmlT STM ()
 appSumitButton displayText =
     button_
         [ type_ "submit"
-        , appButtonClass
+        , buttonClass
         ]
         $ toHtml displayText
 
 appUI :: AppContext -> MemoryVar TodoManager -> HtmlT STM ()
 appUI ctx appStateM = do
+    todoManager <- lift $ readMemoryVar appStateM
     div_ [id_ "MainDiv", class_ "flex flex-col"] $ do
         -- Form
         div_ [class_ "flex flex-row justify-around m-2"] $ do
@@ -77,7 +85,9 @@ appUI ctx appStateM = do
                                 option_ [value_ "Low"] "Low"
                     div_ [class_ "flex justify-around"] $ do
                         appSumitButton "Add Task"
-                        appButton ctx.wid "del-item" "Del Tasks(s)"
+                        if countSelectedTasks todoManager > 0
+                            then button ctx.wid "del-item" "Del Tasks(s)"
+                            else disabledButton "Del Tasks(s)"
         -- Items display
         div_ [] $ do
             showItems ctx.wid appStateM
@@ -87,7 +97,7 @@ showItems appID appStateM = do
     (TodoManager _ todoTasks) <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
         forM_ todoTasks $ \(TodoTask taskId taskSelected taskDesc taskPrio) -> do
-            div_ [class_ $ "flex flex-row align-middle gap-2 " <> taskBg taskPrio ] $ do
+            div_ [class_ $ "flex flex-row align-middle gap-2 " <> taskBg taskPrio] $ do
                 withEvent appID "checkbox-click" [("taskID", Number $ fromInteger $ toInteger taskId)] $ do
                     input_
                         ( [type_ "checkbox", class_ "mt-1"]
@@ -98,13 +108,12 @@ showItems appID appStateM = do
 
                 div_ [class_ "w-16"] $ toHtml $ show taskPrio
                 div_ [] $ toHtml taskDesc
-    where
-        taskBg :: TaskPrio -> Text
-        taskBg  = \case
-            High -> "bg-red-100"
-            Medium -> "bg-blue-100"
-            Low -> "bg-green-100"
-
+  where
+    taskBg :: TaskPrio -> Text
+    taskBg = \case
+        High -> "bg-red-100"
+        Medium -> "bg-blue-100"
+        Low -> "bg-green-100"
 
 addTask :: TodoManager -> Text -> TaskPrio -> TodoManager
 addTask (TodoManager (TaskIndex i) todoTasks) content taskPrio =
@@ -112,16 +121,18 @@ addTask (TodoManager (TaskIndex i) todoTasks) content taskPrio =
         task = newTask content taskPrio (TaskId newId)
      in TodoManager (TaskIndex newId) (task : todoTasks)
 
+isTaskSelected :: TodoTask -> Bool
+isTaskSelected (TodoTask _ taskSelected _ _) = case taskSelected of
+    TaskSelected -> True
+    TaskNotSelected -> False
+
 delSelectedTasks :: TodoManager -> TodoManager
 delSelectedTasks (TodoManager taskIndex todoTasks) =
-    TodoManager taskIndex $
-        filter
-            ( \(TodoTask _ taskSelected _ _) ->
-                case taskSelected of
-                    TaskSelected -> False
-                    TaskNotSelected -> True
-            )
-            todoTasks
+    TodoManager taskIndex $ filter (not . isTaskSelected) todoTasks
+
+countSelectedTasks :: TodoManager -> Int
+countSelectedTasks (TodoManager _ todoTasks) =
+    length $ filter isTaskSelected todoTasks
 
 selectTask :: TodoTask -> TodoTask
 selectTask (TodoTask taskId taskSelected taskDesc taskPrio) =
