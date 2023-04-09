@@ -87,17 +87,24 @@ showItems appID appStateM = do
     (TodoManager _ todoTasks) <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
         forM_ todoTasks $ \(TodoTask taskId taskSelected taskDesc taskPrio) -> do
-            div_ [class_ "flex flex-row gap-2"] $ do
+            div_ [class_ $ "flex flex-row align-middle gap-2 " <> taskBg taskPrio ] $ do
                 withEvent appID "checkbox-click" [("taskID", Number $ fromInteger $ toInteger taskId)] $ do
                     input_
-                        ( [type_ "checkbox"]
+                        ( [type_ "checkbox", class_ "mt-1"]
                             <> case taskSelected of
                                 TaskSelected -> [checked_]
                                 TaskNotSelected -> mempty
                         )
 
-                div_ [] $ toHtml $ show taskPrio
+                div_ [class_ "w-16"] $ toHtml $ show taskPrio
                 div_ [] $ toHtml taskDesc
+    where
+        taskBg :: TaskPrio -> Text
+        taskBg  = \case
+            High -> "bg-red-100"
+            Medium -> "bg-blue-100"
+            Low -> "bg-green-100"
+
 
 addTask :: TodoManager -> Text -> TaskPrio -> TodoManager
 addTask (TodoManager (TaskIndex i) todoTasks) content taskPrio =
