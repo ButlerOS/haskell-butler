@@ -117,10 +117,11 @@ startDesktopApp services ctx = do
                 win <- newWindow wm.windows wid (from name)
                 pure (wid, win)
 
+            renderNewWindow wid win
+
             mGuiApp <- launchApp ctx.shared.appSet name ctx.shared wid
             forM_ mGuiApp \guiApp -> do
                 atomically $ addApp wm ctx.shared guiApp
-                renderNewWindow wid win
                 forM_ mEvent $ writePipe guiApp.pipe
                 clients <- atomically (getClients ctx.shared.clients)
                 forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
