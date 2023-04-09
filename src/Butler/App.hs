@@ -145,14 +145,14 @@ data AppSharedContext = AppSharedContext
     , extraHandlers :: TVar (Map ChannelName (DisplayEvent -> ProcessIO ()))
     }
 
-newAppSharedContext :: Display -> ProcessEnv -> AppSet -> STM AppSharedContext
+newAppSharedContext :: MonadIO m => Display -> ProcessEnv -> AppSet -> m AppSharedContext
 newAppSharedContext display processEnv appSet =
     AppSharedContext display processEnv appSet
-        <$> newDisplayClients
+        <$> atomically newDisplayClients
         <*> newDynamics
-        <*> newAppIDCounter
-        <*> newApps
-        <*> newTVar mempty
+        <*> atomically newAppIDCounter
+        <*> atomically newApps
+        <*> newTVarIO mempty
 
 newtype Apps = Apps (TVar (Map AppID AppInstance))
 
@@ -235,7 +235,7 @@ startShellApp appSet prefix app display = do
     mvShared <- newEmptyMVar
     process <- spawnProcess (from prefix <> app.name) do
         processEnv <- ask
-        shared <- atomically (newAppSharedContext display processEnv appSet)
+        shared <- newAppSharedContext display processEnv appSet
         putMVar mvShared shared
         withSettings shared.dynamics do
             app.start (AppContext wid pipe shared)
@@ -247,7 +247,7 @@ startShellApp appSet prefix app display = do
 startApps :: [App] -> Display -> ProcessIO AppSharedContext
 startApps apps display = do
     processEnv <- ask
-    shared <- atomically (newAppSharedContext display processEnv (newAppSet apps))
+    shared <- newAppSharedContext display processEnv (newAppSet apps)
     traverse_ (go shared) apps
     pure shared
   where
