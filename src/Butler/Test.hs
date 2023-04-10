@@ -4,6 +4,7 @@ import Butler.App
 import Butler.AppID
 import Butler.Core
 import Butler.Core.Clock
+import Butler.Core.Logger
 import Butler.Core.Process
 import Butler.Display
 import Butler.Display.GUI
@@ -50,6 +51,9 @@ withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
     processEnv <- ask
     display <- atomically (Display sessions <$> newTVar mempty)
     appSharedContext <- newAppSharedContext display processEnv appSet
+    --
+    when False do
+        void $ superviseProcess "logger" (stdoutLogger processEnv.os.logger)
     cb appSharedContext
 
 withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()

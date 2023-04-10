@@ -8,7 +8,6 @@ import Butler.Service.FileService
 
 import XStatic.Ace qualified as XStatic
 
-import Data.Map.Strict qualified as Map
 import Data.Text.Lines qualified as Lines
 
 noterApp :: App
@@ -23,27 +22,32 @@ noterApp =
         }
 
 newtype Position = Position (Word, Word)
-    deriving newtype (FromJSON)
+    deriving newtype (ToJSON, FromJSON, Eq)
 
 instance From Position Lines.Position where
     from (Position (posLine, posColumn)) = Lines.Position{posLine, posColumn}
 
 data Editor = Editor
     { client :: DisplayClient
-    , position :: Word
+    , selection :: (Position, Maybe Position)
     }
     deriving (Generic, ToJSON)
+
+newEditor :: DisplayClient -> Editor
+newEditor client = Editor client (Position (0, 0), Nothing)
 
 data EditorAction
     = Insert Position Text
     | Delete Position Position
+    | Select Position (Maybe Position)
 
 instance FromJSON EditorAction where
     parseJSON = withObject "EditorAction" \obj -> do
         let
             insertParser = Insert <$> obj .: "p" <*> obj .: "i"
             deleteParser = Delete <$> obj .: "p" <*> obj .: "e"
-        insertParser <|> deleteParser
+            selectParser = Select <$> obj .: "p" <*> obj .:? "s"
+        insertParser <|> deleteParser <|> selectParser
 
 data NoterStatus
     = NewFile
@@ -54,7 +58,6 @@ data NoterState = NoterState
     { status :: NoterStatus
     , dirty :: Bool
     , content :: Lines.TextLines
-    , editors :: Map Endpoint Editor
     }
     deriving (Generic, ToJSON)
 
@@ -66,17 +69,20 @@ startNoterApp ctx = do
         atomically (resolveFileLoc rootDir currentFile) >>= \case
             Just (dir, Just file) -> do
                 content <- decodeUtf8 <$> readFileBS dir file
-                newTVarIO $ NoterState (EditingFile dir file) False (Lines.fromText content) mempty
-            _ -> newTVarIO (NoterState NewFile False mempty mempty)
+                newTVarIO $ NoterState (EditingFile dir file) False (Lines.fromText content)
+            _ -> newTVarIO (NoterState NewFile False "")
+
+    editors <- atomically newClientsData
 
     let updateContent :: Lines.TextLines -> NoterState -> NoterState
         updateContent newContent = (#content .~ newContent) . (#dirty .~ True)
 
     let saveBtn = withTrigger_ "click" ctx.wid "save-file" button_ [class_ ("mx-2 " <> btnGreenClass)] "Save"
         fileNameInput = withTrigger_ "" ctx.wid "new-file" (input_ []) [type_ "text", placeholder_ "File name", name_ "file"]
-        editorList editors =
+        editorList =
             with div_ [wid_ ctx.wid "editors"] do
-                forM_ editors \editor -> do
+                xs <- lift (getClientsData editors)
+                forM_ xs \editor -> do
                     userIcon =<< lift (readTVar editor.client.session.username)
 
         fileNameForm state = do
@@ -93,7 +99,7 @@ startNoterApp ctx = do
                 with div_ [class_ "flex flex-row"] do
                     withTrigger_ "click" ctx.wid "refresh" i_ [class_ "ri-refresh-line cursor-pointer mx-1"] mempty
                     fileNameForm state
-                    editorList state.editors
+                    editorList
                 with div_ [wid_ ctx.wid "txt", class_ "absolute bottom-0 top-10 left-0 right-0"] (toHtmlRaw (Lines.toText state.content))
                 script_ (noterClient ctx.wid)
 
@@ -117,7 +123,6 @@ startNoterApp ctx = do
                         forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Insert failed" ["client" .= client, "txt" .= txt]
             Delete start end -> do
-                -- logDebug "Deleting" ["count" .= count]
                 mDirty <- atomically $ stateTVar tState \state ->
                     let
                         -- The new content
@@ -136,20 +141,27 @@ startNoterApp ctx = do
                         sendsBinaryButSelf client ctx.shared.clients rawBuffer
                         forM_ dirtyChanged (sendsHtml ctx.shared.clients . fileNameForm)
                     Nothing -> logError "Delete failed" ["client" .= client]
-
-    let modifyEditors edit state =
-            let newEditors = edit state.editors
-             in (newEditors, state & #editors .~ newEditors)
+            Select start mEnd -> withClientsData editors client \tEditor -> do
+                hasChanged <- atomically $ stateTVar tEditor \editor ->
+                    let newSelection = (start, mEnd)
+                     in (newSelection /= editor.selection, editor & #selection .~ newSelection)
+                when hasChanged do
+                    let withEnd = case mEnd of
+                            Nothing -> id
+                            Just e -> ("e" .= e :)
+                        msg = object $ withEnd ["c" .= client.process.pid, "p" .= start]
+                     in sendsBinaryButSelf client ctx.shared.clients (encodeMessage (from ctx.wid) (encodeJSON msg))
+                logInfo "Selecting" ["changed" .= hasChanged, "start" .= start, "end" .= mEnd]
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> do
-                editors <- atomically $ stateTVar tState (modifyEditors $ Map.insert client.endpoint (Editor client 0))
+                atomically $ addClientsData editors client (newEditor client)
                 atomically $ sendHtml client mountUI
-                sendsHtmlButSelf client ctx.shared.clients (editorList editors)
+                sendsHtmlButSelf client ctx.shared.clients editorList
             AppDisplay (UserLeft client) -> do
-                editors <- atomically $ stateTVar tState (modifyEditors $ Map.delete client.endpoint)
-                sendsHtml ctx.shared.clients (editorList editors)
+                atomically $ delClientsData editors client
+                sendsHtml ctx.shared.clients editorList
             AppTrigger ev -> case ev.trigger of
                 "refresh" -> atomically do
                     content <- (.content) <$> readTVar tState
@@ -200,9 +212,10 @@ function setupNoterClient(wid) {
   const elt = document.getElementById(withWID(wid, "txt"))
   const editor = ace.edit(elt)
 
-  let localEvent = false
   editor.setTheme("ace/theme/monokai");
   editor.resize()
+
+  let localEvent = false
   editor.addEventListener("change", ev => {
     if (!localEvent) {
       const msg = {p: [ev.start.row, ev.start.column]}
@@ -217,22 +230,73 @@ function setupNoterClient(wid) {
     }
   })
 
+  editor.addEventListener("changeSelection", debounceData(100, () => {
+    const {start,end} = editor.getSelectionRange()
+    const msg = {p: [start.row, start.column]}
+    if (start.row !== end.row || start.column !== end.column) {
+      msg.s = [end.row, end.column]
+    }
+    butlerDataSocket.send(encodeDataMessage(wid, msg))
+  }))
+
   const getPoint = arr => ({row: arr[0], column: arr[1]})
+
+  const cursors = {}
+  const markerUpdate = (html, markerLayer, session, config) => {
+    var start = config.firstRow, end = config.lastRow;
+    for (const cursor of Object.values(cursors)) {
+        if (cursor.start.row < start || cursor.start.row > end) {
+            continue
+        } else {
+            const pos = cursor.toScreenRange(session)
+            if (pos.start.row == pos.end.row) {
+              markerLayer.drawSingleLineMarker(html, pos, "ace_selected-word", config)
+            } else {
+              markerLayer.drawMultiLineMarker(html, pos, "ace_selected-word", config)
+            }
+
+        }
+    }
+  }
+  const redrawCursors = () => {
+   editor.session._signal("changeFrontMarker");
+  }
+  const setCursor = (pid, start, mEnd) => {
+    if (mEnd === undefined) {
+      mEnd = start
+    }
+    cursors[pid] = new ace.Range(start[0], start[1], mEnd[0], mEnd[1])
+    redrawCursors()
+  }
+  const delCursor = (pid) => {
+    delete cursors[pid]
+    redrawCursors()
+  }
+  editor.session.addDynamicMarker({update: markerUpdate}, true)
 
   // handle server event
   butlerDataHandlers[wid] = buf => {
     const body = decodeJSON(buf)
-    console.log("Got server event", body)
+    // console.log("Got server event", body)
     localEvent = true
     try {
       if (body.text !== undefined) {
+        const prevSelection = editor.getSelectionRange()
         editor.setValue(body.text)
         editor.focus()
-      } else if (body.i) {
-        console.log("Inserting", getPoint(body.p), body.i)
+        editor.navigateTo(prevSelection.start.row, prevSelection.start.column)
+      } else if (body.i) { // Insert event
         editor.session.insert(getPoint(body.p), body.i)
-      } else if (body.e) {
+      } else if (body.c) { // Cursor event
+        if (body.p) { // Cursor moved
+          setCursor(body.c, body.p, body.e)
+        } else { // Cursor removed
+          delCursor(body.c)
+        }
+      } else if (body.e) { // Remove event
         editor.session.remove({start: getPoint(body.p), end: getPoint(body.e)})
+      } else {
+        console.error("Unknown event", body)
       }
     } finally {
       localEvent = false
