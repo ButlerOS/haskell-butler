@@ -97,7 +97,7 @@ demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     let authApp = invitationAuthApp indexHtml
     isolation <- getIsolation
-    desktop <- superviseProcess "desktops" $ startDisplay Nothing xfiles' authApp $ \display -> do
+    desktop <- superviseProcess "desktops" $ startDisplay Nothing allXfiles authApp $ \display -> do
         chat <- atomically (newChatServer display.clients)
         lobbyProgram butlerSupervisor (mkAppSet chat butlerSupervisor isolation) chat display
     void $ waitProcess desktop
@@ -172,7 +172,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             ]
                 <> extraApps
 
-    xfiles', xfiles :: [XStaticFile]
+    allXfiles, xfiles :: [XStaticFile]
     xfiles =
         defaultXFiles
             <> [ XStatic.sweetAlert2
@@ -186,7 +186,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
                ]
             <> XStatic.xterm
             <> XStatic.pcmPlayer
-    xfiles' = XStatic.noVNC <> XStatic.winbox <> xfiles
+    allXfiles = XStatic.noVNC <> XStatic.winbox <> xfiles
 
 run :: ProcessIO _ -> IO ()
 run action = withButlerOS action >>= print
