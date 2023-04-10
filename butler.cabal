@@ -195,6 +195,7 @@ library
     , witch
     , with-utf8
     , xstatic
+    , xstatic-ace
     , xstatic-htmx
     , xstatic-hyperscript
     , xstatic-novnc
@@ -311,6 +312,7 @@ executable butler
     , witch
     , with-utf8
     , xstatic
+    , xstatic-ace
     , xstatic-htmx
     , xstatic-hyperscript
     , xstatic-novnc
@@ -437,6 +439,7 @@ test-suite spec
     , witch
     , with-utf8
     , xstatic
+    , xstatic-ace
     , xstatic-htmx
     , xstatic-hyperscript
     , xstatic-novnc

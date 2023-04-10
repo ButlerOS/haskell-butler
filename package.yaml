@@ -142,6 +142,7 @@ dependencies:
   - xstatic
   - xstatic-th
   - lucid-xstatic
+  - xstatic-ace
   - xstatic-htmx
   - xstatic-tailwind
   - xstatic-sweetalert2

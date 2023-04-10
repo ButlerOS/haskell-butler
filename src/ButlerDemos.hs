@@ -186,7 +186,8 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
                ]
             <> XStatic.xterm
             <> XStatic.pcmPlayer
-    allXfiles = XStatic.noVNC <> XStatic.winbox <> xfiles
+            <> noterApp.xfiles
+    allXfiles = noterApp.extraXfiles <> XStatic.noVNC <> XStatic.winbox <> xfiles
 
 run :: ProcessIO _ -> IO ()
 run action = withButlerOS action >>= print
