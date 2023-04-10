@@ -101,7 +101,9 @@ data App = App
     , size :: Maybe (Int, Int)
     -- ^ An optional size.
     , xfiles :: [XStaticFile]
-    -- ^ Required XStaticFile
+    -- ^ XStaticFile to preload in the page head.
+    , extraXfiles :: [XStaticFile]
+    -- ^ XStaticFile to be served.
     , acceptFiles :: Maybe ContentType
     , start :: AppContext -> ProcessIO ()
     -- ^ Start action.
@@ -120,6 +122,7 @@ defaultApp name start =
         , settings = mempty
         , size = Nothing
         , xfiles = []
+        , extraXfiles = []
         , acceptFiles = Nothing
         , start
         }

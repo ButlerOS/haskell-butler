@@ -242,13 +242,14 @@ serveApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
+            startDisplay Nothing allXfiles (mkAuth xfiles) $ \display -> do
                 allSessionApps <- AllSessionApps <$> newMVar mempty
                 pure $ \session _ws -> do
                     sa <- startSessionApps allSessionApps display session.sessionID apps
                     pure (sa.env, staticClientHandler sa.shared)
     error "Display exited?!"
   where
+    allXfiles = concatMap (.extraXfiles) apps <> xfiles
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
 -- | Serve applications with one instance for all clients.
@@ -256,13 +257,14 @@ serveDashboardApps :: DisplayApplication -> [App] -> ProcessIO Void
 serveDashboardApps (DisplayApplication mkAuth) apps = do
     void $
         waitProcess =<< superviseProcess "gui" do
-            startDisplay Nothing xfiles (mkAuth xfiles) $ \display -> do
+            startDisplay Nothing allXfiles (mkAuth xfiles) $ \display -> do
                 shared <- startApps apps display
                 pure $ \_session _ws -> do
                     env <- ask
                     pure (env, staticClientHandler shared)
     error "Display exited?!"
   where
+    allXfiles = concatMap (.extraXfiles) apps <> xfiles
     xfiles = concatMap (.xfiles) apps <> defaultXFiles
 
 staticClientHandler :: AppSharedContext -> DisplayEvent -> ProcessIO ()

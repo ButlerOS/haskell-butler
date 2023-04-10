@@ -40,7 +40,7 @@ vncApp =
     (defaultApp "vnc" startVncApp)
         { tags = fromList ["Development"]
         , description = "NoVNC client"
-        , xfiles = XStatic.noVNC
+        , extraXfiles = XStatic.noVNC
         }
 
 startVncApp :: AppContext -> ProcessIO ()
