@@ -35,6 +35,7 @@ module Butler.Display.Client (
     newClientsData,
     addClientsData,
     delClientsData,
+    getClientsData,
     lookupClientData,
     withClientsData,
 
@@ -179,6 +180,9 @@ newtype ClientsData a = ClientsData (TVar (Map Endpoint (TVar a)))
 
 newClientsData :: STM (ClientsData a)
 newClientsData = ClientsData <$> newTVar mempty
+
+getClientsData :: ClientsData a -> STM [a]
+getClientsData (ClientsData tv) = traverse readTVar =<< (Map.elems <$> readTVar tv)
 
 addClientsData :: ClientsData a -> DisplayClient -> a -> STM ()
 addClientsData (ClientsData tv) client value = do
