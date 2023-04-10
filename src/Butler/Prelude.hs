@@ -47,6 +47,7 @@ module Butler.Prelude (
     Data.Aeson.toJSON,
     Data.Aeson.withText,
     Data.Aeson.withObject,
+    Data.Aeson.withArray,
     Data.Aeson.Result (..),
     encodeJSON,
     decodeJSON,
@@ -200,6 +201,7 @@ import Data.Text qualified
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
 import Data.Text.IO qualified
+import Data.Text.Lines
 import Data.Text.Rope
 import Data.Time.Clock qualified
 import Data.UUID qualified
@@ -292,6 +294,9 @@ sktSendAll skt = liftIO . Network.Socket.ByteString.sendAll skt
 
 instance ToJSON Rope where
     toJSON = toJSON . Data.Text.Rope.toText
+
+instance ToJSON TextLines where
+    toJSON = toJSON . Data.Text.Lines.toText
 
 {- | Combine a list of function.
 
