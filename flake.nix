@@ -64,7 +64,7 @@
 
       butlerTools = pkgs.symlinkJoin {
         name = "butler-tools";
-        paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap ];
+        paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap pkgs.tini ];
       };
 
       mkContainer = name: extra-pkgs:

@@ -1,6 +1,10 @@
-module Butler.App.Terminal (termApp) where
+module Butler.App.Terminal (termApp, TermApp (..), startTermApp) where
 
 import Data.List qualified
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
+import System.Directory (doesPathExist)
+import System.FilePath (takeDirectory)
 import System.Posix.Files qualified
 import System.Posix.Pty qualified as Pty
 
@@ -46,14 +50,45 @@ renderTray wid server = do
 
 termApp :: Isolation -> App
 termApp isolation =
-    (defaultApp "term" (startTermApp isolation))
+    (defaultApp "term" (startTermApp isolation tmuxTermApp))
         { tags = fromList ["Development"]
         , description = "XTerm"
         , xfiles = [XStatic.xtermFitAddonJs, XStatic.xtermFitAddonJsMap] <> XStatic.xterm
         }
 
-startTermApp :: Isolation -> AppContext -> ProcessIO ()
-startTermApp isolation ctx = do
+data TermApp = TermApp
+    { backgroundCommand :: Maybe [String]
+    , attachCommand :: [String]
+    }
+
+tmuxTermApp :: Isolation -> String -> TermApp
+tmuxTermApp isolation name =
+    TermApp
+        { backgroundCommand = Just $ cmd : withSktPath ["-2", "new-session", "-d", "-s", name, "bash", "-l"]
+        , attachCommand = cmd : withSktPath ["-2", "attach", "-t", name]
+        }
+  where
+    cmd = case isolation.toolbox of
+        Just path -> path </> "bin/tmux"
+        Nothing -> "tmux"
+    withSktPath = case isolation.runtime of
+        None -> id
+        _ -> \xs -> "-S" : "/butler/.skt/default" : xs
+
+writeIfNeeded :: MonadIO m => FilePath -> Text -> m ()
+writeIfNeeded fp content = liftIO do
+    pathExist <- doesPathExist fp
+    if pathExist
+        then do
+            prev <- Text.readFile fp
+            when (prev /= content) do
+                Text.writeFile fp content
+        else do
+            createDirectoryIfMissing True (takeDirectory fp)
+            Text.writeFile fp content
+
+startTermApp :: Isolation -> (Isolation -> String -> TermApp) -> AppContext -> ProcessIO ()
+startTermApp isolation mkApp ctx = do
     let clients = ctx.shared.clients
         wid = ctx.wid
     server <- atomically newXtermServer
@@ -81,7 +116,7 @@ startTermApp isolation ctx = do
 
     -- prep directory tree
     baseDir <- from . decodeUtf8 <$> getPath "rootfs"
-    let sktPath = baseDir </> "skt"
+    let sktPath = baseDir </> ".skt"
         homePath = baseDir </> "home"
     case isolation.runtime of
         None -> pure ()
@@ -117,47 +152,53 @@ startTermApp isolation ctx = do
                 else pure id
         _ -> pure id
 
-    let tmuxPath = case isolation.toolbox of
-            Just path -> path </> "bin/tmux"
-            Nothing -> "tmux"
+    fixSshConfig <- case isolation.runtime of
+        Bubblewrap -> liftIO do
+            let sshConfigPath = "/etc/ssh/ssh_config.d"
+            -- With bwrap, that directory is owned by nobody and ssh fails with `Bad owner or permissions`
+            doesPathExist sshConfigPath >>= \case
+                True -> pure (\xs -> "--tmpfs" : "/etc/ssh/ssh_config.d" : xs)
+                False -> pure id
+        _ -> pure id
 
-    let sess = "butler-term-" <> show wid
-        tmuxAttach = ["-2", "attach", "-t", sess] :: [String]
-        env = maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color"]
-        cmd = "env" : "-" : env <> ["bash", "-l"]
-        tmuxSession = ["-2", "new-session", "-d", "-s", sess] <> cmd
-        prog = case isolation.runtime of
-            None -> into @Text tmuxPath
-            Bubblewrap{} -> "bwrap"
-            Podman{} -> "podman"
-        mkArgs dieWithParent baseArgs = case isolation.runtime of
+    case isolation.runtime of
+        None -> pure ()
+        _ -> do
+            let nixConfigHostPath = homePath </> ".config/nix/nix.conf"
+            writeIfNeeded nixConfigHostPath $
+                Text.unlines ["sandbox = false", "build-users-group =", "experimental-features = nix-command flakes"]
+
+    let tApp = mkApp isolation $ "butler-term-" <> show wid
+        env = "-" : maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color"]
+        mkArgs isBackground baseArgs = case isolation.runtime of
             None -> baseArgs
-            Podman image -> ["run", via @Text image, "--", "tmux"] <> baseArgs
+            Podman image -> "podman" : "run" : via @Text image : "--" : baseArgs
             Bubblewrap ->
                 let addNix = case isolation.toolbox of
                         Nothing -> id
                         Just{} -> \xs -> "--bind" : "/nix" : "/nix" : xs
-                    addEnv = case isolation.toolbox of
-                        Nothing -> id
-                        Just path -> \xs -> "--setenv" : "PATH" : (path </> "bin:/bin:/sbin") : xs
                     addDieWithParent
-                        | dieWithParent = ("--die-with-parent" :)
+                        | isBackground = ("--die-with-parent" :)
                         | otherwise = id
-                 in addNix . addEnv . addDieWithParent $
-                        ["--unshare-pid", "--unshare-ipc", "--unshare-uts"]
-                            <> ["--bind", baseDir, "/butler", "--chdir", "/butler"]
-                            <> concatMap (\p -> ["--ro-bind", p, p]) (addResolv ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"])
-                            <> ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
-                            <> ["--tmpfs", "/etc/ssh/ssh_config.d"] -- remove host default because ssh fails with `Bad owner or permissions`
-                            <> (tmuxPath : "-S" : "/butler/skt/default" : baseArgs)
-
+                    bwrapArgs =
+                        addNix . addDieWithParent $
+                            ["--unshare-pid", "--unshare-ipc", "--unshare-uts"]
+                                <> ["--bind", baseDir, "/butler", "--chdir", "/butler"]
+                                <> concatMap (\p -> ["--ro-bind", p, p]) (addResolv ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"])
+                                <> fixSshConfig ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
+                                <> baseArgs
+                 in "bwrap" : bwrapArgs
         mkProc =
-            spawnProcess (ProgramName prog <> "-pty") do
-                let procSpec = System.Process.Typed.proc (from prog) (mkArgs False tmuxSession)
-                logDebug "spawning" ["prog" .= show procSpec]
-                void $ System.Process.Typed.runProcess procSpec
+            spawnProcess (ProgramName $ showT ctx.wid <> "-pty") do
+                forM_ tApp.backgroundCommand \bgCommand -> do
+                    let procSpec = System.Process.Typed.proc "env" (env <> mkArgs False bgCommand)
+                    logDebug "spawning" ["prog" .= show procSpec]
+                    void $ System.Process.Typed.runProcess procSpec
                 dim <- fromMaybe (80, 25) <$> readTVarIO server.dimension
-                (pty, phandle) <- liftIO (Pty.spawnWithPty Nothing True (from prog) (mkArgs True tmuxAttach) dim)
+                let attachArgs = env <> mkArgs True tApp.attachCommand
+                logDebug "attaching" ["args" .= attachArgs]
+                (pty, phandle) <- liftIO do
+                    Pty.spawnWithPty Nothing True "env" attachArgs dim
                 handleProc dim pty `finally` do
                     liftIO do
                         Pty.closePty pty
@@ -172,16 +213,16 @@ startTermApp isolation ctx = do
                             if currentDim == dim
                                 then retrySTM
                                 else pure currentDim
-                        logDebug (prog <> " term resized") ["dim" .= dim]
+                        logDebug "term resized" ["dim" .= dim]
                         forM_ mNewDim \newDim -> do
                             sendsHtml clients (renderTray wid server)
                             liftIO (Pty.resizePty pty newDim)
                         handleDimChange mNewDim
                 handleDimChange (Just startDim)
+
             -- shell writer thread
             spawnThread_ $ forever do
                 inputData <- atomically $ readTChan server.inputChan
-                -- logDebug (prog <> "-write") ["buf" .= BSLog inputData]
                 liftIO (Pty.writePty pty inputData)
 
             -- shell reader thread
@@ -189,10 +230,9 @@ startTermApp isolation ctx = do
                 outputData <- liftIO do
                     Pty.threadWaitReadPty pty
                     Pty.readPty pty
-                -- logDebug (prog <> "-read") ["buf" .= BSLog outputData]
                 sendsBinary clients (encodeMessage (from wid) (from outputData))
 
-    let welcomeMessage = "\rConnected to " <> encodeUtf8 prog
+    let welcomeMessage = "\rConnected!"
     statusMsg <- newTVarIO welcomeMessage
 
     let supervisor = do
@@ -200,7 +240,7 @@ startTermApp isolation ctx = do
             res <- waitProcess ptyProcess
             logError "pty stopped" ["res" .= res]
             now <- getTime
-            let errorMessage = "\r\n" <> from now <> " " <> encodeUtf8 prog <> " exited: " <> encodeUtf8 (from $ show res) <> "\r\n"
+            let errorMessage = "\r\n" <> from now <> " exited: " <> encodeUtf8 (from $ show res) <> "\r\n"
             atomically $ writeTVar statusMsg errorMessage
             sendsBinary clients (encodeMessage (from wid) (from errorMessage))
 

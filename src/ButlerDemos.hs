@@ -35,6 +35,7 @@ import Butler.App.SoundTest
 import Butler.App.Tabletop
 import Butler.App.Template
 import Butler.App.Terminal
+import Butler.App.Terminal.Emacs
 import Butler.App.TodoManager
 
 import Butler.Service.Assistant
@@ -151,6 +152,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , desktopApp (services butlerSupervisor isolation)
             , logViewerApp
             , termApp isolation
+            , emacsApp isolation
             , soundTestApp
             , mumblerApp
             , peApp
