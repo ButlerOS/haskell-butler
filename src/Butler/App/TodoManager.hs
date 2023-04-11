@@ -17,19 +17,36 @@ newtype TaskDesc = TaskDesc Text
 
 newtype TaskId = TaskId Natural
     deriving newtype (Serialise, Enum, Eq, Ord, Num, Real, Integral)
-data TaskSelected = TaskSelected | TaskNotSelected deriving (Generic, Serialise)
+
+data TaskSelected
+    = TaskSelected
+    | TaskNotSelected
+    deriving (Generic, Serialise)
 
 newtype TaskIndex = TaskIndex Natural
     deriving newtype (Num, Serialise)
 
-data TaskPrio = High | Medium | Low deriving (Generic, Serialise, Show)
+data TaskPrio
+    = High
+    | Medium
+    | Low
+    deriving (Generic, Serialise, Show)
 
-data TodoTask = TodoTask TaskId TaskSelected TaskDesc TaskPrio
+data TodoTask = TodoTask
+    { taskId :: TaskId
+    , taskSelected :: TaskSelected
+    , taskDesc :: TaskDesc
+    , taskPrio :: TaskPrio
+    }
     deriving (Generic, Serialise)
 
 data EditingTask = NoEditingTask | EditingTask TodoTask deriving (Generic, Serialise)
 
-data TodoManager = TodoManager TaskIndex EditingTask [TodoTask]
+data TodoManager = TodoManager
+    { todoTaskIndex :: TaskIndex
+    , todoEditingTask :: EditingTask
+    , todoTasks :: [TodoTask]
+    }
     deriving (Generic, Serialise)
 
 textToPrio :: Text -> TaskPrio
@@ -74,13 +91,13 @@ appUI ctx appStateM = do
 
 inputForm :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 inputForm appID appStateM = do
-    (TodoManager _ editingTask _) <- lift $ readMemoryVar appStateM
-    withEvent' editingTask $ do
+    TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
+    withEvent' todoEditingTask $ do
         form_ [class_ "w-full"] $ do
             div_ [class_ "flex flex-row flex-wrap justify-around gap-1"] $ do
                 formInputs appStateM
             div_ [class_ "flex justify-around"] $ do
-                case editingTask of
+                case todoEditingTask of
                     EditingTask _ -> submitButton "Update Task"
                     NoEditingTask -> submitButton "Add Task"
                 editTasksButton appID appStateM
@@ -93,14 +110,14 @@ inputForm appID appStateM = do
 
 formInputs :: MemoryVar TodoManager -> HtmlT STM ()
 formInputs appStateM = do
-    (TodoManager _ editingTask _) <- lift $ readMemoryVar appStateM
+    TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-wrap"] $ do
         label_ [class_ "block font-semibold m-1", for_ "taskDesc"] "Task Desc"
         input_
             [ id_ "taskDesc"
             , type_ "text"
             , name_ "taskDesc"
-            , value_ $ case editingTask of
+            , value_ $ case todoEditingTask of
                 NoEditingTask -> ""
                 EditingTask (TodoTask _ _ (TaskDesc taskDesc) _) -> taskDesc
             , class_ "h-8 ml-1 text-center border border-slate-300 rounded-md focus:border-slate-400"
@@ -108,12 +125,12 @@ formInputs appStateM = do
     div_ [class_ "flex flex-wrap"] $ do
         label_ [class_ "block font-semibold m-1", for_ "taskPrio"] "Task Prio"
         select_ [class_ "text-sm rounded", id_ "taskPrio", name_ "taskPrio"] $ do
-            option_ (optionAttributes editingTask "Low") "Low"
-            option_ (optionAttributes editingTask "Medium") "Medium"
-            option_ (optionAttributes editingTask "High") "High"
+            option_ (optionAttributes todoEditingTask "Low") "Low"
+            option_ (optionAttributes todoEditingTask "Medium") "Medium"
+            option_ (optionAttributes todoEditingTask "High") "High"
   where
     optionAttributes :: EditingTask -> Text -> [Attribute]
-    optionAttributes (EditingTask (TodoTask _ _ _ taskPrio)) value =
+    optionAttributes (EditingTask (TodoTask{taskPrio})) value =
         if show taskPrio == from value
             then [value_ value, selected_ ""]
             else [value_ value]
@@ -135,9 +152,9 @@ editTasksButton appID appStateM = do
 
 showItems :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 showItems appID appStateM = do
-    todoManager@(TodoManager _ _ todoTasks) <- lift $ readMemoryVar appStateM
+    todoManager@(TodoManager{todoTasks}) <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
-        forM_ todoTasks $ \(TodoTask taskId taskSelected taskDesc taskPrio) -> do
+        forM_ todoTasks $ \(TodoTask{..}) -> do
             div_
                 [ class_ $
                     "flex flex-row align-middle gap-2 "
@@ -169,41 +186,44 @@ addTask (TodoManager (TaskIndex i) _ todoTasks) content taskPrio =
      in TodoManager (TaskIndex newId) NoEditingTask (task : todoTasks)
 
 updateTask :: TodoManager -> TaskId -> TaskDesc -> TaskPrio -> TodoManager
-updateTask (TodoManager taskIndex _ todoTasks) taskId taskDesc taskPrio =
-    TodoManager taskIndex NoEditingTask $
-        map
-            ( \task@(TodoTask tId _ _ _) ->
-                if tId == taskId
-                    then TodoTask taskId TaskNotSelected taskDesc taskPrio
-                    else task
-            )
-            todoTasks
+updateTask todoManager@(TodoManager{todoTasks}) taskId' taskDesc taskPrio =
+    todoManager
+        { todoEditingTask = NoEditingTask
+        , todoTasks =
+            map
+                ( \task@(TodoTask{taskId}) ->
+                    if taskId == taskId'
+                        then TodoTask taskId' TaskNotSelected taskDesc taskPrio
+                        else task
+                )
+                todoTasks
+        }
 
 isTaskSelected :: TodoTask -> Bool
-isTaskSelected (TodoTask _ taskSelected _ _) = case taskSelected of
+isTaskSelected (TodoTask{taskSelected}) = case taskSelected of
     TaskSelected -> True
     TaskNotSelected -> False
 
 isTaskEdited :: TodoManager -> TaskId -> Bool
-isTaskEdited (TodoManager _ (EditingTask (TodoTask tId _ _ _)) _) taskId = tId == taskId
+isTaskEdited (TodoManager _ (EditingTask (TodoTask{taskId})) _) taskId' = taskId == taskId'
 isTaskEdited _ _ = False
 
 delSelectedTasks :: TodoManager -> TodoManager
-delSelectedTasks (TodoManager taskIndex _ todoTasks) =
-    TodoManager taskIndex NoEditingTask $ filter (not . isTaskSelected) todoTasks
+delSelectedTasks todoManager@(TodoManager{todoTasks}) =
+    todoManager{todoTasks = filter (not . isTaskSelected) todoTasks}
 
 getFirstSelectedTask :: TodoManager -> Maybe TodoTask
-getFirstSelectedTask (TodoManager _ _ todoTasks) =
+getFirstSelectedTask (TodoManager{todoTasks}) =
     case filter isTaskSelected todoTasks of
         (x : _) -> Just x
         _ -> Nothing
 
 countSelectedTasks :: TodoManager -> Int
-countSelectedTasks (TodoManager _ _ todoTasks) =
+countSelectedTasks (TodoManager{todoTasks}) =
     length $ filter isTaskSelected todoTasks
 
 selectTask :: TodoTask -> TodoTask
-selectTask (TodoTask taskId taskSelected taskDesc taskPrio) =
+selectTask (TodoTask{..}) =
     let newSelectState = case taskSelected of
             TaskSelected -> TaskNotSelected
             TaskNotSelected -> TaskSelected
@@ -213,23 +233,23 @@ newTask :: Text -> TaskPrio -> TaskId -> TodoTask
 newTask content taskPrio taskId = TodoTask taskId TaskNotSelected (TaskDesc content) taskPrio
 
 setSelectedTask :: TodoManager -> TaskId -> TodoManager
-setSelectedTask (TodoManager taskIndex editingTask todoTasks) taskId =
-    TodoManager taskIndex editingTask $
+setSelectedTask (TodoManager{..}) taskId' =
+    TodoManager todoTaskIndex todoEditingTask $
         map
-            ( \task@(TodoTask tId _ _ _) ->
-                if tId == taskId
+            ( \task@(TodoTask{taskId}) ->
+                if taskId == taskId'
                     then selectTask task
                     else task
             )
             todoTasks
 
 setEditingTask :: TodoManager -> TodoTask -> TodoManager
-setEditingTask (TodoManager taskIndex _ todoTasks) taskToEdit =
-    TodoManager taskIndex (EditingTask taskToEdit) todoTasks
+setEditingTask todoManager taskToEdit =
+    todoManager{todoEditingTask = EditingTask taskToEdit}
 
 unSetEditingTask :: TodoManager -> TodoManager
-unSetEditingTask (TodoManager taskIndex _ todoTasks) =
-    TodoManager taskIndex NoEditingTask todoTasks
+unSetEditingTask todoManager =
+    todoManager{todoEditingTask = NoEditingTask}
 
 startTodoManager :: AppContext -> ProcessIO ()
 startTodoManager ctx = do
