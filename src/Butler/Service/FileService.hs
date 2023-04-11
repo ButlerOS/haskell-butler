@@ -134,7 +134,7 @@ startFileService ctx = do
                     Nothing -> logError "Missing request" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             AppData ev -> case decodeMessage ev.buffer of
-                Just (pui, buf) -> handlePendingUpload pui buf
+                Just (pui, buf) -> handlePendingUpload pui (from buf)
                 Nothing -> logError "Unknown data event" ["ev" .= ev]
             ev -> logDebug "Got ev" ["ev" .= ev]
 

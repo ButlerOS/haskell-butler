@@ -202,8 +202,8 @@ startDesktopApp services ctx = do
                 Just obj -> case (obj ^? key "ev" . _String, obj ^? key "w" . _JSON) of
                     (Just winEvent, Just winId) -> do
                         handleWinEvent de.client de winEvent winId obj
-                    _ -> logError "invalid win event" ["buf" .= BSLog de.buffer]
-                Nothing -> logError "unknown win event" ["buf" .= BSLog de.buffer]
+                    _ -> logError "invalid win event" ["buf" .= LBSLog de.buffer]
+                Nothing -> logError "unknown win event" ["buf" .= LBSLog de.buffer]
             AppTrigger ev -> case ev.trigger of
                 "wm-start" -> createNewWindow "launcher" Nothing
                 "start-app" -> handleNewApp ev.body

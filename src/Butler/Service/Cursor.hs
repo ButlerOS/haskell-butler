@@ -152,7 +152,7 @@ startSeatApp ctx = do
                 case mSeat of
                     Just seat -> sendsHtml clients (removeSeat seat.client)
                     Nothing -> pure ()
-            AppData de -> dataHandler de.client de.buffer
+            AppData de -> dataHandler de.client (from de.buffer)
             AppTrigger ge -> case ge.trigger of
                 "toggle-cursor" -> do
                     username <- readTVarIO ge.client.session.username
@@ -175,9 +175,9 @@ function seatClient(chan) {
   }
   globalThis.mouseHandler = debounceData(100, ev => {
         // console.log("Got mouse ev", ev)
-        return encodeDataMessage(chan, {x: ev.clientX, y: ev.clientY})
+        sendJSONMessage(chan, {x: ev.clientX, y: ev.clientY})
     });
-  butlerDataSocketSend(encodeDataMessage(chan, {w: window.innerWidth, h: window.innerHeight}));
+  sendJSONMessage(chan, {w: window.innerWidth, h: window.innerHeight});
 }
 |]
         <> "seatClient("

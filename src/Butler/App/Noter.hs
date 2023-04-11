@@ -226,7 +226,7 @@ function setupNoterClient(wid) {
       } else {
         console.error("Unknown event:", ev)
       }
-      butlerDataSocket.send(encodeDataMessage(wid, msg))
+      sendJSONMessage(wid, msg)
     }
   })
 
@@ -236,7 +236,7 @@ function setupNoterClient(wid) {
     if (start.row !== end.row || start.column !== end.column) {
       msg.s = [end.row, end.column]
     }
-    butlerDataSocket.send(encodeDataMessage(wid, msg))
+    sendJSONMessage(wid, msg)
   }))
 
   const getPoint = arr => ({row: arr[0], column: arr[1]})

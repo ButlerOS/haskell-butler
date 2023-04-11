@@ -102,7 +102,7 @@ startTermApp isolation mkApp ctx = do
         ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppDisplay _ -> sendHtmlOnConnect draw ev
-            AppData de -> atomically $ writeTChan server.inputChan de.buffer
+            AppData de -> atomically $ writeTChan server.inputChan (from de.buffer)
             AppTrigger de ->
                 case (de.body ^? key "cols" . _Integer, de.body ^? key "rows" . _Integer) of
                     (Just (unsafeFrom -> cols), Just (unsafeFrom -> rows)) -> do
@@ -270,11 +270,7 @@ function startTermClient(wid, w, h) {
   // Handle i/o
   term.butlerForward = d => {
     let ds = new TextEncoder().encode(d);
-    let buf = new Uint8Array(1 + ds.length);
-    buf[0] = wid
-    buf.set(ds, 1)
-    // console.log("Input to server:", tid, buf)
-    butlerDataSocket.send(buf)
+    sendBinaryMessage(wid, ds)
   }
   term.onData(d => {
     term.butlerForward(d)

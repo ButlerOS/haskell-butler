@@ -8,7 +8,6 @@ Copyright (c) 2023, Butler
 Changes for butler
 ==================
 
-- Add 'butlerDataHandlers' and 'butlerOnData' to handle binary message.
 - Set socket.binaryType = 'arraybuffer' to receive binary message.
 - Create 'butlerDataSocket' to allow sending message from javascript.
 - Call 'butlerOnData' when a message is not a string.
@@ -17,20 +16,7 @@ WebSockets Extension
 ============================
 This extension adds support for WebSockets to htmx.  See /www/extensions/ws.md for usage instructions.
 */
-
-globalThis.butlerDataHandlers = {};
-
 (function () {
-
-    const butlerOnData = arr => {
-        const hdl = butlerDataHandlers[arr[0]]
-        if (hdl) {
-            hdl(arr.slice(1))
-        } else {
-            console.error("Unknown butler data", arr)
-        }
-    }
-
 	/** @type {import("../htmx").HtmxInternalApi} */
 	var api;
 
