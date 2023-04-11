@@ -1,6 +1,6 @@
 module Butler.App.Mumbler where
 
-import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 
 import Butler
 import Butler.Core.Logger
@@ -234,10 +234,10 @@ startMumbler ctx = do
             case ev of
                 Left (AppDisplay (UserJoined client)) -> atomically $ sendHtml client mountUI
                 Left (AppData de) -> do
-                    case BS.uncons de.buffer of
+                    case LBS.uncons de.buffer of
                         Just (0, "") -> updateMumbler de.client False
                         Just (1, "") -> updateMumbler de.client True
-                        _ -> logError "unknown ev" ["ev" .= BSLog de.buffer]
+                        _ -> logError "unknown ev" ["ev" .= LBSLog de.buffer]
                 Right (SoundUserJoined client) -> do
                     atomically (addMumbler state client)
                     sendsHtml clients $ appStateHtml wid state

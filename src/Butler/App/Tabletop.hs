@@ -557,7 +557,7 @@ function startTabletop(wid, initialObjects) {
     if (in_width && in_height) {
       const moveEv = {x, y}
       updateTrash(event.pageX, event.pageY)
-      return encodeDataMessage(wid, moveEv)
+      sendJSONMessage(wid, moveEv)
     }
   })
   winElt.onmouseup = event => {
@@ -567,7 +567,7 @@ function startTabletop(wid, initialObjects) {
     if (glTT.trashed) {
       const delEv = {del: glTT.current.id}
       console.log(delEv)
-      butlerDataSocketSend(encodeDataMessage(wid, delEv))
+      sendJSONMessage(wid, delEv)
     }
     updateTrash(0, 0)
     glTT.current = null
@@ -587,7 +587,7 @@ function startTabletop(wid, initialObjects) {
       glTT.current = elt
       const clickEv = {click: glTT.current.id}
       // Tell the server
-      butlerDataSocketSend(encodeDataMessage(wid, clickEv))
+      sendJSONMessage(wid, clickEv)
     };
     elt.ondragstart = function() {
       return false;

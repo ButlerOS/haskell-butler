@@ -106,14 +106,14 @@ function setupWindowManager(chan) {
     if (ev == "resize" && onWindowResize[w] !== undefined) {
       onWindowResize[w]()
     }
-    return encodeDataMessage(chan, {ev: ev, w: w, x: x, y: y})
+    sendJSONMessage(chan, {ev: ev, w: w, x: x, y: y})
   })
 
   // Special handler for close event by the js client.
   const onWinClose = (w) => (force) => {
     let doDelete = force
     if (!force) {
-      butlerDataSocket.send(encodeDataMessage(chan, {ev: "close", w: w}))
+      sendJSONMessage(chan, {ev: "close", w: w})
       // Don't delete the window right away, let's wait for ack from server
       doDelete = false
     }

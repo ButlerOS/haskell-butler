@@ -137,7 +137,7 @@ function setupPainterClient(wid) {
     const boundingRect = elt.getBoundingClientRect()
     const x = event.clientX - boundingRect.left
     const y = event.clientY - boundingRect.top
-    butlerDataSocketSend(encodeDataMessage(wid, [x, y]));
+    sendJSONMessage(wid, [x, y]);
   }
 
   butlerDataHandlers[wid] = buf => {

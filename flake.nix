@@ -14,8 +14,8 @@
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
           repo = "haskell-ebml";
-          rev = "aff25512b52e48e92d77cd59019a0291a8b43bf4";
-          sha256 = "sha256-U2Mo83gr7dLm+rRKOLzS9LZUaZ90ECO6Zjbv6maflyc=";
+          rev = "4196b6be0d469bc8b7252dbf58c6e15b8146aa43";
+          sha256 = "sha256-OnOfzsAZvp26nah+KkhbBUAz6BwQaOuM1dc+f6/65ak=";
         }) { };
         # https://github.com/awkward-squad/ki/issues/19
         ki = let

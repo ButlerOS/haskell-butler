@@ -3,7 +3,6 @@ module Butler.Service.SoundBlaster where
 import Codec.EBML qualified as EBML
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
 import Lucid
 
 import Butler
@@ -37,7 +36,7 @@ startSoundCard ctx = do
                         btn = renderAudioToggle ctx.wid ge.client.session.username (not running)
                      in atomically $ sendHtml ge.client btn
                 | otherwise -> logError "Invalid ev" ["ev" .= ge]
-            AppData de -> soundHandler sc de.client de.buffer
+            AppData de -> soundHandler sc de.client (from de.buffer)
             ev -> logError "Unknown event" ["ev" .= ev]
 
 renderAudioToggle :: AppID -> TVar UserName -> Bool -> HtmlT STM ()
@@ -233,7 +232,7 @@ stopSoundChannel sc soundChannel = do
     broadcast sc.events (SoundChannelEvent soundChannel.id)
 
 mkControlMessage :: SoundCard -> Text -> [Pair] -> LByteString
-mkControlMessage sc op attrs = encodeMessage (from sc.wid) $ LBS.cons 0 buf
+mkControlMessage sc op attrs = encodeMessage (from sc.wid) $ encodeMessage 0 buf
   where
     buf = encodeJSON (KM.fromList $ ["op" .= op] <> attrs)
 
@@ -357,14 +356,14 @@ soundHandler sc client msg = do
         Just (0, "\x03") -> do
             logInfo "audio receiver stopped" ["client" .= client]
             atomically $ delSoundReceiver sc client
-        Just (0, bs) | BS.length bs == 2 -> case decodeMessage bs of
+        Just (0, bs) | BS.length bs == 2 -> case decodeMessage (from bs) of
             Just (SoundChannelID -> channelID, ev) -> do
                 mSoundChannel <- atomically (lookupSoundChannel sc channelID)
                 case mSoundChannel of
                     Just soundChannel -> soundChannelHandler soundChannel ev
                     Nothing
                         | ev == "\x00" -> pure ()
-                        | otherwise -> logError "unknown channel id" ["chan" .= channelID, "ev" .= BSLog ev]
+                        | otherwise -> logError "unknown channel id" ["chan" .= channelID, "ev" .= LBSLog ev]
             Nothing -> logError "the impossible has happened" ["ev" .= BSLog bs]
         _ -> soundReceiverHandler sc client msg
   where
@@ -384,18 +383,13 @@ soundClient wid =
     [raw|
 function setupSoundClient(chan) {
   // protocol helpers
-  const sendPlaying = (achan) => butlerDataSocketSend(new Uint8Array([chan, 0, achan, 1]))
-  const sendStopped = (achan) => butlerDataSocketSend(new Uint8Array([chan, 0, achan, 0]))
-  const sendStoppedRec = () =>   butlerDataSocketSend(new Uint8Array([chan, 0, 3]))
-  const sendRecording = () =>    butlerDataSocketSend(new Uint8Array([chan, 0, 2]))
-  const sendConnected = () =>    butlerDataSocketSend(new Uint8Array([chan, 0, 1]))
-  const sendDisconnected = () => butlerDataSocketSend(new Uint8Array([chan, 0, 0]))
-  const sendAudioBuffer = (arr) => {
-    let msg = new Uint8Array(1 + arr.length);
-    msg[0] = chan;
-    msg.set(arr, 1);
-    butlerDataSocket.send(msg);
-  }
+  const sendPlaying = (achan) => sendBinaryMessage(chan, new Uint8Array([0, achan, 1]))
+  const sendStopped = (achan) => sendBinaryMessage(chan, new Uint8Array([0, achan, 0]))
+  const sendStoppedRec = () =>   sendBinaryMessage(chan, new Uint8Array([0, 3]))
+  const sendRecording = () =>    sendBinaryMessage(chan, new Uint8Array([0, 2]))
+  const sendConnected = () =>    sendBinaryMessage(chan, new Uint8Array([0, 1]))
+  const sendDisconnected = () => sendBinaryMessage(chan, new Uint8Array([0, 0]))
+  const sendAudioBuffer = (arr) => sendBinaryMessage(chan, arr)
 
   // display helpers
   const setHighlight = (elt) => {
@@ -584,15 +578,13 @@ function setupSoundClient(chan) {
   }
 
   // Handlers for event received by the server
-  butlerDataHandlers[chan] = buf => {
-    const audioChan = buf[0];
-    const audioBuf = buf.slice(1);
+  butlerDataHandlers[chan] = buf => readVint(buf, (audioChan, audioBuf) => {
     if (audioChan === 0) {
       handleAudioControl(decodeJSON(audioBuf))
     } else {
       butlerPlayers[audioChan].feed(audioBuf);
     }
-  }
+  })
 
   globalThis.butlerRecorder = { wins: {}, stopped: true }
   const isRecording = () => (Object.keys(butlerRecorder.wins).length > 0)

@@ -27,7 +27,7 @@ newtype AppID = AppID Natural
 decodeAppID :: Text -> Maybe (AppID, Text)
 decodeAppID txt = first AppID <$> decodeNaturalSuffix txt
 
-decodeAppIDMessage :: ByteString -> Maybe (AppID, ByteString)
+decodeAppIDMessage :: LByteString -> Maybe (AppID, LByteString)
 decodeAppIDMessage buf = first AppID <$> decodeMessage buf
 
 instance From AppID Natural where

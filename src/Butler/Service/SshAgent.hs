@@ -93,7 +93,7 @@ startApp isolation ctx = do
                     withRequest reqID ["data" .= de] \request -> do
                         atomically (tryReadTMVar request.provider) >>= \case
                             Just provider | provider.endpoint == de.client.endpoint -> do
-                                sktSendAll request.socket buf
+                                sktSendAll request.socket (from buf)
                             _ -> pure ()
                 _ -> logError "Unknown data" ["ev" .= de]
             ev -> logError "Unexpected event" ["ev" .= ev]
