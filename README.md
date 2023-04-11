@@ -72,7 +72,7 @@ Start the service with:
 
 ```ShellSession
 ./bin/run-vnc
-./bin/run-ghcid "ButlerDemos.multiDesktop"
+./bin/run-ghcid
 firefox https://localhost:8080
 ```
 

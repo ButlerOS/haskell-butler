@@ -1,2 +1,2 @@
 #!/bin/sh
-nix develop --command ghcid -W --test "$1"
+ghcid -W --test "${1:-ButlerDemos.multiDesktop}"
