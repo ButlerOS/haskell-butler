@@ -143,6 +143,7 @@ dependencies:
   - xstatic-th
   - lucid-xstatic
   - xstatic-ace
+  - xstatic-pdfjs
   - xstatic-htmx
   - xstatic-tailwind
   - xstatic-sweetalert2

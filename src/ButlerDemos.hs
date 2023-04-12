@@ -25,6 +25,7 @@ import Butler.App.Mumbler
 import Butler.App.NoVnc
 import Butler.App.Noter
 import Butler.App.Painter
+import Butler.App.PdfViewer
 import Butler.App.PokerPlanner
 import Butler.App.ProcessExplorer
 import Butler.App.QRTest
@@ -166,6 +167,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , launcherApp
             , noterApp
             , painterApp
+            , pdfViewerApp
             , pokerPlannerApp
             , randomCatApp
             , todoManagerApp
@@ -189,7 +191,8 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             <> XStatic.xterm
             <> XStatic.pcmPlayer
             <> noterApp.xfiles
-    allXfiles = noterApp.extraXfiles <> XStatic.noVNC <> XStatic.winbox <> xfiles
+            <> pdfViewerApp.xfiles
+    allXfiles = pdfViewerApp.extraXfiles <> noterApp.extraXfiles <> XStatic.noVNC <> XStatic.winbox <> xfiles
 
 run :: ProcessIO _ -> IO ()
 run action = withButlerOS action >>= print

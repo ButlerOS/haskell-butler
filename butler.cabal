@@ -42,6 +42,7 @@ library
       Butler.App.Noter
       Butler.App.NoVnc
       Butler.App.Painter
+      Butler.App.PdfViewer
       Butler.App.PokerPlanner
       Butler.App.ProcessExplorer
       Butler.App.QRTest
@@ -201,6 +202,7 @@ library
     , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
+    , xstatic-pdfjs
     , xstatic-remixicon
     , xstatic-sweetalert2
     , xstatic-tailwind
@@ -318,6 +320,7 @@ executable butler
     , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
+    , xstatic-pdfjs
     , xstatic-remixicon
     , xstatic-sweetalert2
     , xstatic-tailwind
@@ -445,6 +448,7 @@ test-suite spec
     , xstatic-hyperscript
     , xstatic-novnc
     , xstatic-pcm-player
+    , xstatic-pdfjs
     , xstatic-remixicon
     , xstatic-sweetalert2
     , xstatic-tailwind

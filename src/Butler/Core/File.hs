@@ -362,6 +362,7 @@ data ContentType
     | ImageContent
     | VideoContent
     | TextContent
+    | PdfContent
     | ArchiveContent
     deriving (Enum, Eq, Ord, Show)
 
@@ -370,6 +371,7 @@ allContentTypeExtensions =
     [ (ImageContent, ["png", "jpg", "jpeg", "gif"])
     , (VideoContent, ["webm", "mkv", "avi"])
     , (TextContent, ["txt", "md", "hs"])
+    , (PdfContent, ["pdf"])
     , (ArchiveContent, ["zip", "tar"])
     ]
 

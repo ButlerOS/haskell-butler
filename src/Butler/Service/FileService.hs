@@ -122,7 +122,7 @@ startFileService ctx = do
                     when (current >= pendingUpload.size) do
                         void $ finalizePartialFile pendingUpload.pfile (from current)
                         atomically $ NM.delete uploads pui
-                Nothing -> logError "Unknown upload req" ["ev" .= pui]
+                Nothing -> logError "Unknown upload req" ["ev" .= pui, "size" .= BS.length buf]
 
     withDynamic ctx.shared.dynamics "file-service" rootDir $ forever do
         atomically (readPipe ctx.pipe) >>= \case
