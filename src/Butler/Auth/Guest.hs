@@ -28,25 +28,15 @@ authServer os process sessions mkIndexHtml jwtSettings auth =
 loginServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> Maybe Workspace -> ServerT LoginAPI Servant.Handler
 loginServer os process sessions mkIndexHtml jwtSettings auth mWorkspace = indexRoute auth :<|> getSessionRoute
   where
-    pathPrefix = case mWorkspace of
-        Nothing -> ""
-        Just (Workspace ws) -> "/" <> ws
-
     -- Create session on _login request
     getSessionRoute :: Servant.Handler AuthResp
     getSessionRoute = do
-        mSession <- liftIO $ runProcessIO os process $ createSession sessions "guest" Nothing
-        case mSession of
-            Nothing -> do
-                liftIO $ runProcessIO os process $ logError "Couldn't create guest session" []
-                pure $ clearSession cookieSettings "No guest session available"
-            Just session -> do
-                resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings session.sessionID
-                case resp of
-                    Just r -> do
-                        let page = fromMaybe "/" mWorkspace
-                        pure $ r (script_ $ "window.location.href = '" <> into @Text page <> "'")
-                    Nothing -> error "oops?!"
+        session <- liftIO $ runProcessIO os process $ newSession sessions "guest"
+        liftIO (SAS.acceptLogin cookieSettings jwtSettings session.sessionID) >>= \case
+            Just r -> do
+                let page = workspaceUrl mWorkspace
+                pure $ r (script_ $ "window.location.href = " <> showT page)
+            Nothing -> error "oops?!"
 
     indexRoute :: AuthResult SessionID -> Servant.Handler (Html ())
     indexRoute = \case
@@ -54,11 +44,11 @@ loginServer os process sessions mkIndexHtml jwtSettings auth mWorkspace = indexR
             mSession <- atomically (lookupSession sessions sessionID)
             case mSession of
                 Just _ ->
-                    pure $ mkIndexHtml (websocketHtml pathPrefix sessionID)
+                    pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace) sessionID)
                 Nothing -> do
                     liftIO $ runProcessIO os process $ logError "no more auth?" ["id" .= sessionID]
                     pure "Unknown session"
-        _ -> throwError $ err303{errHeaders = [("Location", "/_login")]}
+        _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_login")]}
 
 cookieSettings :: CookieSettings
 cookieSettings =

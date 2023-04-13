@@ -19,7 +19,6 @@ module Butler.Display.GUI (
     showScript,
     websocketHtml,
     splashHtml,
-    loginForm,
 
     -- * Widget
     renderToggle,
@@ -129,11 +128,11 @@ topRightMenu items = do
 -- | Create the htmx websocket root element
 websocketHtml :: Text -> SessionID -> Html ()
 websocketHtml pathPrefix sessionID = do
-    let wsUrl = pathPrefix <> "/ws/htmx" <> queryArgs
+    let wsUrl = pathPrefix <> "ws/htmx" <> queryArgs
     with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
         with div_ [id_ "display-wins", class_ "h-full"] mempty
         -- script to get extra websocket url from javascript
-        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '" <> queryArgs <> "';"
+        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "ws/' + n + '" <> queryArgs <> "';"
   where
     queryArgs = "?session=" <> from sessionID
 
@@ -149,13 +148,6 @@ splashHtml content = do
                     content
 
         with div_ [class_ "basis-1/6 flex bg-sky-600 border-sky-800 border-t-8"] mempty
-
-loginForm :: Text -> Text -> [Pair] -> Html ()
-loginForm pathPrefix title attr = do
-    with form_ [id_ "login-form", hxPost_ (pathPrefix <> "/login"), encodeVal attr, hxTarget_ "#display-ws"] do
-        with div_ [class_ "font-semibold pb-2 flex flex-row justify-center"] do
-            toHtml title
-        with (input_ mempty) [name_ "username", type_ "text", placeholder_ "What is your name?"]
 
 renderToggle :: Text -> [Attribute] -> Bool -> Text -> Text -> HtmlT STM ()
 renderToggle icon attrs enabled onScript offScript = do

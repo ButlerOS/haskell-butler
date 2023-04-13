@@ -8,10 +8,11 @@ module Butler.Display.Session (
     isEmptySessions,
     lookupSession,
     checkInvite,
-    createSession,
+    newSession,
     changeUsername,
     UserName (..),
     isValidUserName,
+    isUsernameAvailable,
     SessionID (..),
     InviteID (..),
 
@@ -204,37 +205,15 @@ changeUsername sessions session username = withMVar sessions.lock \() -> do
             [":username" := into @Text username, ":uuid" := into @Text session.sessionID]
         atomically $ writeTVar session.username username
 
-createSession :: Sessions -> UserName -> Maybe InviteID -> ProcessIO (Maybe Session)
-createSession sessions username mInvite = withMVar sessions.lock \() -> do
-    avail <- case username of
-        "guest" -> pure True
-        _ -> isUsernameAvailable sessions username
-    if avail
-        then doCreateSession
-        else pure Nothing
-  where
-    doCreateSession = do
-        sessionID <- SessionID <$> liftIO UUID.nextRandom
-        mSession <- atomically do
-            firstSession <- isEmptySessions sessions
-            validInvite <- case mInvite of
-                Just invite -> checkInvite sessions invite
-                Nothing -> pure False
-            when validInvite do
-                let invite = fromMaybe (error "oops?") mInvite
-                    alter = \case
-                        Just xs -> Just (sessionID : xs)
-                        Nothing -> Just [sessionID]
-                modifyMemoryVar sessions.invitations (Map.alter alter invite)
-            if firstSession || validInvite || username == "guest"
-                then do
-                    session <- Session sessionID <$> newTVar username <*> newTVar firstSession <*> newTVar Nothing
-                    modifyTVar' sessions.sessions (Map.insert session.sessionID session)
-                    pure (Just session)
-                else pure Nothing
-
-        forM_ mSession (addSessionDB sessions)
-        pure mSession
+newSession :: Sessions -> UserName -> ProcessIO Session
+newSession sessions username = do
+    sessionID <- SessionID <$> liftIO UUID.nextRandom
+    session <- atomically do
+        isAdmin <- isEmptySessions sessions
+        Session sessionID <$> newTVar username <*> newTVar isAdmin <*> newTVar Nothing
+    addSessionDB sessions session
+    atomically $ modifyTVar' sessions.sessions (Map.insert session.sessionID session)
+    pure session
 
 newtype JsonUID = JsonUID UUID
     deriving newtype (Eq, Hashable)

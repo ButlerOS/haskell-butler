@@ -4,6 +4,7 @@ module Butler.Display.WebSocket (
     websocketServer,
     ChannelName (..),
     Workspace (..),
+    workspaceUrl,
 ) where
 
 import Lucid
@@ -26,6 +27,18 @@ instance From Workspace Text where
 
 instance From Workspace StorageAddress where
     from (Workspace n) = StorageAddress (encodeUtf8 n)
+
+{- | Return the absolute workspace url
+
+>>> workspaceUrl Nothing
+"/"
+>>> workspaceUrl (Just "tasty")
+"/tasty/"
+-}
+workspaceUrl :: Maybe Workspace -> Text
+workspaceUrl = \case
+    Nothing -> "/"
+    Just ws -> "/" <> into ws <> "/"
 
 type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
 
