@@ -116,8 +116,8 @@ inputForm appID appStateM taskDueDate = do
   where
     withEvent' editingTask = case editingTask of
         NoEditingTask -> withEvent appID "add-item" []
-        EditingTask (TodoTask{..}) ->
-            withEvent appID "edited-item" [("taskID", Number $ fromInteger $ toInteger taskId)]
+        EditingTask task ->
+            withEvent appID "edited-item" [("taskID", Number $ fromIntegral task.taskId)]
 
 formInputs :: MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
 formInputs appStateM defaultTaskDueDate = do
