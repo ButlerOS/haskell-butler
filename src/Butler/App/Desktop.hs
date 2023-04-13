@@ -58,7 +58,7 @@ startDesktopApp services ctx = do
     let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
 
     forM_ services \(Service service) -> do
-        wid <- atomically (nextAppID ctx.shared.appIDCounter)
+        wid <- atomically (nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps)
         atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared wid
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
@@ -69,7 +69,7 @@ startDesktopApp services ctx = do
 
     Map.toList <$> atomically (readMemoryVar wm.apps) >>= \case
         [] -> do
-            wid <- atomically (nextAppID ctx.shared.appIDCounter)
+            wid <- atomically (nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps)
             void $ atomically $ newWindow wm.windows wid "Welcome"
             atomically . addApp wm ctx.shared =<< startDeskApp wid
         xs -> do
@@ -89,8 +89,7 @@ startDesktopApp services ctx = do
                             else atomically $ registerApp ctx.shared.apps app
                     Nothing -> logError "Couldn't start app" ["wid" .= wid, "prog" .= prog]
 
-    let
-        handleNewApp value = case value ^? key "name" . _JSON of
+    let handleNewApp value = case value ^? key "name" . _JSON of
             Just name -> do
                 let rootDir = getRootDir dir
                 mEvent <- atomically do
@@ -113,7 +112,7 @@ startDesktopApp services ctx = do
         createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
         createNewWindow name mEvent = do
             (wid, win) <- atomically do
-                wid <- nextAppID ctx.shared.appIDCounter
+                wid <- nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps
                 win <- newWindow wm.windows wid (from name)
                 pure (wid, win)
 
@@ -166,8 +165,7 @@ startDesktopApp services ctx = do
                 sendsBinaryButSelf client ctx.shared.clients (from ev.rawBuffer)
 
     acls <- newTVarIO mempty
-    let
-        desktop =
+    let desktop =
             Desktop
                 { mountUI = desktopHtml vBgColor ctx.shared.apps dir wm.windows
                 , thumbnail = do

@@ -58,13 +58,13 @@ withTestSharedContext appSet cb = withSessions ":memory:" \sessions -> do
 
 withAppInstance :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> ProcessIO ()
 withAppInstance app cb = withTestSharedContext (newAppSet [app]) \shared -> do
-    wid <- atomically (nextAppID shared.appIDCounter)
+    wid <- atomically (nextAppID shared.appIDCounter mempty)
     appInstance <- startApp "app" app shared wid
     cb shared appInstance
 
 startTestService :: AppSharedContext -> Service -> ProcessIO ()
 startTestService shared (Service app) = do
-    wid <- atomically (nextAppID shared.appIDCounter)
+    wid <- atomically (nextAppID shared.appIDCounter mempty)
     void $ startApp "srv" app shared wid
 
 butlerAppTestCase :: App -> (AppSharedContext -> AppInstance -> ProcessIO ()) -> TestTree

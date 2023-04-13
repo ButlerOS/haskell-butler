@@ -255,7 +255,7 @@ startApps apps display = do
     pure shared
   where
     go shared app = do
-        wid <- atomically (nextAppID shared.appIDCounter)
+        wid <- atomically (nextAppID shared.appIDCounter =<< getApps shared.apps)
         startApp "app-" app shared wid
 
 tagIcon :: AppTag -> Maybe Text

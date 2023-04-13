@@ -16,6 +16,7 @@ import Butler.Core.NatMap qualified as NM
 import Butler.Display.GUI (decodeNaturalSuffix)
 import Butler.Frame (decodeMessage)
 import Butler.Prelude
+import Data.Map.Strict qualified as Map
 
 shellAppID :: AppID
 shellAppID = AppID 0
@@ -42,5 +43,11 @@ newtype AppIDCounter = AppIDCounter NM.NatCounter
 newAppIDCounter :: STM AppIDCounter
 newAppIDCounter = AppIDCounter <$> NM.newNatCounter
 
-nextAppID :: AppIDCounter -> STM AppID
-nextAppID (AppIDCounter nc) = AppID <$> NM.incr nc
+nextAppID :: AppIDCounter -> Map AppID a -> STM AppID
+nextAppID (AppIDCounter nc) apps = getNextAppID
+  where
+    getNextAppID = do
+        appID <- AppID <$> NM.incr nc
+        case Map.lookup appID apps of
+            Nothing -> pure appID
+            Just{} -> getNextAppID
