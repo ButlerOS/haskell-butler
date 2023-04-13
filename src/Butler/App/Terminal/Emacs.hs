@@ -18,4 +18,4 @@ emacsTermApp =
         , attachCommand = emacsCmd []
         }
   where
-    emacsCmd xs = "tini" : "nix" : "run" : "github:podenv/devenv#emacs-nox" : xs
+    emacsCmd xs = "tini" : "-s" : "nix" : "run" : "github:podenv/devenv/5acaa5446df29b08fb4dba008c314cb3b306d5ae#emacs-nox" : xs

@@ -131,7 +131,7 @@ startTermApp isolation mkApp ctx = do
         agentEnv =
             "SSH_AUTH_SOCK=" <> case isolation.runtime of
                 None -> "/tmp/butler-agent.sock"
-                _ -> "/butler/skt/agent.sock"
+                _ -> "/butler/.skt/agent.sock"
     homeEnv <-
         ("HOME=" <>) <$> case isolation.runtime of
             None -> maybe "/tmp" (into @String . decodeUtf8) <$> liftIO (getEnv "HOME")
@@ -169,7 +169,7 @@ startTermApp isolation mkApp ctx = do
                 Text.unlines ["sandbox = false", "build-users-group =", "experimental-features = nix-command flakes"]
 
     let tApp = mkApp isolation $ "butler-term-" <> show wid
-        env = "-" : maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color"]
+        env = "-" : maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color", "LC_ALL=C.UTF-8"]
         mkArgs isBackground baseArgs = case isolation.runtime of
             None -> baseArgs
             Podman image -> "podman" : "run" : via @Text image : "--" : baseArgs

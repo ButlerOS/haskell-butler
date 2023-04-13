@@ -68,7 +68,7 @@ startApp isolation ctx = do
     sktPath <- case isolation.runtime of
         None -> pure "/tmp/butler-agent.sock" -- TODO: make the path unique per desktop
         _ -> do
-            let sktDir = baseDir </> "skt"
+            let sktDir = baseDir </> ".skt"
                 sktPath = sktDir </> "agent.sock"
             liftIO $ createDirectoryIfMissing True sktDir
             pure sktPath
