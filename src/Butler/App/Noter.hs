@@ -302,6 +302,10 @@ function setupNoterClient(wid) {
       localEvent = false
     }
   }
+
+  onWindowResize[wid] = (x, y) => {
+    editor.resize(true)
+  }
 }
 |]
         <> ("\nsetupNoterClient(" <> showT wid <> ");")
