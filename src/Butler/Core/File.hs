@@ -310,7 +310,14 @@ moveEntry src dst entry = do
             File f -> f.name /= file.name
             Directory{} -> True
 
-data PartialFile = PartialFile Directory RawFilePath FilePath
+data PartialFile = PartialFile
+    { dir :: Directory
+    , fileName :: RawFilePath
+    , tempPath :: FilePath
+    }
+
+instance ToJSON PartialFile where
+    toJSON pf = toJSON pf.tempPath
 
 -- | FileName are provided by the user, they must not begin or end with a '/'.
 newtype FileName = FileName Text
@@ -347,14 +354,14 @@ ensureDirectory dir =
     liftIO $ createDirectoryIfMissing True (from $ decodeUtf8 dir.path)
 
 appendPartialFile :: MonadIO m => PartialFile -> ByteString -> m ()
-appendPartialFile (PartialFile _ _ fp) = liftIO . BS.appendFile fp
+appendPartialFile pf = liftIO . BS.appendFile pf.tempPath
 
 finalizePartialFile :: MonadIO m => PartialFile -> FileOffset -> m File
-finalizePartialFile (PartialFile dir name fp) size = do
-    let rfp = encodeUtf8 (from fp)
+finalizePartialFile pf size = do
+    let rfp = encodeUtf8 (from pf.tempPath)
     liftIO $ rename rfp (BS.dropEnd 5 rfp)
-    file <- MkFile name <$> newTVarIO size
-    atomically (addFile dir file)
+    file <- MkFile pf.fileName <$> newTVarIO size
+    atomically (addFile pf.dir file)
     pure file
 
 data ContentType

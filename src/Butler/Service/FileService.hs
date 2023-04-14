@@ -120,6 +120,7 @@ startFileService ctx = do
                     when (current > pendingUpload.size) do
                         logError "Received too much!" ["got" .= current, "expected" .= pendingUpload.size]
                     when (current >= pendingUpload.size) do
+                        logInfo "Completed upload req" ["file" .= pendingUpload.pfile, "size" .= pendingUpload.size]
                         void $ finalizePartialFile pendingUpload.pfile (from current)
                         atomically $ NM.delete uploads pui
                 Nothing -> logError "Unknown upload req" ["ev" .= pui, "size" .= BS.length buf]
@@ -183,7 +184,7 @@ function setupFileSystemClient(wid) {
           if (chunk.length == 0) {
             break
           }
-          sendBinaryMessage2(wid, fileUploadID, arr)
+          sendBinaryMessage2(wid, fileUploadID, chunk)
           fileOffset += chunk.length
          }
       }))
