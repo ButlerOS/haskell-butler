@@ -46,7 +46,7 @@ startPdfViewer ctx = do
                 with div_ [wid_ ctx.wid "page-current"] "?"
                 div_ "/"
                 with div_ [wid_ ctx.wid "page-count"] "?"
-            with canvas_ [id_ "the-canvas"] mempty
+            with canvas_ [wid_ ctx.wid "canvas"] mempty
             script_ $ pdfClient ctx.wid
 
         pageMessage page = encodeMessage (from ctx.wid) (BSL.pack [1, unsafeFrom page])
@@ -99,8 +99,8 @@ function setupPdfClient(wid) {
   // The workerSrc property shall be specified.
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/xstatic/pdf.worker.min.js'
 
-  var pdf = null
-  var nextPage = 1
+  let pdf = null
+  let nextPage = 1
   const renderPage = pageNumber => {
     curElt.textContent = pageNumber
     // Fetch the first page
@@ -110,7 +110,7 @@ function setupPdfClient(wid) {
       const viewport = page.getViewport({scale: 2});
 
       // Prepare canvas using PDF page dimensions
-      const canvas = document.getElementById('the-canvas');
+      const canvas = document.getElementById(withWID(wid, 'canvas'));
       const context = canvas.getContext('2d');
 
       canvas.width = viewport.width;
