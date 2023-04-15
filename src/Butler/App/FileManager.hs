@@ -18,7 +18,7 @@ fileManagerApp =
 
 startFileManagerApp :: AppContext -> ProcessIO ()
 startFileManagerApp ctx = do
-    (currentDirectory, memDirectory) <- newProcessMemory (from $ withWID ctx.wid "fm") (pure mempty)
+    (currentDirectory, memDirectory) <- newAppMemory ctx.wid "fm" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tDir <- atomically do
         resolveFileLoc rootDir currentDirectory >>= \case

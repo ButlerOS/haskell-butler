@@ -13,6 +13,7 @@ module Butler.AppID (
 ) where
 
 import Butler.Core.NatMap qualified as NM
+import Butler.Core.Storage (StorageAddress)
 import Butler.Display.GUI (decodeNaturalSuffix)
 import Butler.Frame (decodeMessage)
 import Butler.Prelude
@@ -32,6 +33,9 @@ decodeAppIDMessage buf = first AppID <$> decodeMessage buf
 
 instance From AppID Natural where
     from (AppID n) = n
+
+instance From AppID StorageAddress where
+    from (AppID n) = via @Text (showT n)
 
 -- This will crash for the application number 2e9, which should not happen before reaching
 -- a limitation somewhere else in the system. Thus it's ok to use 'unsafeFrom'.

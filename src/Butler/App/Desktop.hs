@@ -71,6 +71,7 @@ startDesktopApp services ctx = do
         [] -> do
             wid <- atomically (nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps)
             void $ atomically $ newWindow wm.windows wid "Welcome"
+            delAppMemory wid
             atomically . addApp wm ctx.shared =<< startDeskApp wid
         xs -> do
             logInfo "Restoring apps" ["apps" .= xs]
@@ -118,6 +119,7 @@ startDesktopApp services ctx = do
 
             renderNewWindow wid win
 
+            delAppMemory wid
             mGuiApp <- launchApp ctx.shared.appSet name ctx.shared wid
             forM_ mGuiApp \guiApp -> do
                 atomically $ addApp wm ctx.shared guiApp
@@ -151,6 +153,7 @@ startDesktopApp services ctx = do
                             delWin wm ctx wid
                             -- Close event are not performed client side and we to trigger the handler manually
                             sendBinary client (from ev.rawBuffer)
+                        delAppMemory wid
                         sendsHtml (ctx.shared.clients) do
                             with span_ [wid_ wid "bar", hxSwapOob_ "delete"] mempty
                             with span_ [wid_ wid "tray", hxSwapOob_ "delete"] mempty
@@ -304,6 +307,7 @@ handleWinSwap wm ctx wid appName mEvent = do
         Map.lookup wid <$> getApps ctx.shared.apps >>= \case
             Just prevApp -> delApp ctx.shared prevApp
             Nothing -> pure ()
+    delAppMemory wid
     mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared wid
     case mGuiApp of
         Just guiApp -> swapWindow guiApp

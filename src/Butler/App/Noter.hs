@@ -63,7 +63,7 @@ data NoterState = NoterState
 
 startNoterApp :: AppContext -> ProcessIO ()
 startNoterApp ctx = do
-    (currentFile, memFile) <- newProcessMemory (from $ withWID ctx.wid "noter-file") (pure mempty)
+    (currentFile, memFile) <- newAppMemory ctx.wid "noter-file" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tState <-
         atomically (resolveFileLoc rootDir currentFile) >>= \case

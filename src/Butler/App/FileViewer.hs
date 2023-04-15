@@ -20,7 +20,7 @@ readFileContent dir file = FileContent file (getFileLoc dir (Just file)) . BS.ta
 
 startFileViewerApp :: AppContext -> ProcessIO ()
 startFileViewerApp ctx = do
-    (currentFile, memFile) <- newProcessMemory (from $ withWID ctx.wid "fv") (pure mempty)
+    (currentFile, memFile) <- newAppMemory ctx.wid "fv" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tmFile <-
         atomically (resolveFileLoc rootDir currentFile) >>= \case
