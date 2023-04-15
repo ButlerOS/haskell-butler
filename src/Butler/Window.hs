@@ -112,7 +112,7 @@ function setupWindowManager(chan) {
   // Special handler for close event by the js client.
   const onWinClose = (w) => (force) => {
     let doDelete = force
-    if (!force && confirm("Close window?")) {
+    if (!force) {
       butlerDataSocket.send(encodeDataMessage(chan, {ev: "close", w: w}))
       // Don't delete the window right away, let's wait for ack from server
       doDelete = false
