@@ -2,7 +2,9 @@ module Butler.App.RandomCat (randomCatApp) where
 
 import Butler
 import Network.HTTP.Client (
+    HttpException,
     Manager,
+    Request,
     Response (responseBody, responseStatus),
     brConsume,
     parseRequest_,
@@ -23,31 +25,59 @@ randomCatApp =
         , size = Just (500, 500)
         }
 
-data RandomCatState = NoCat | LoadingCat | LoadingCatError | Cat ByteString
+data ImageType = PNG | GIF
+
+data RandomCatState
+    = NoCat
+    | LoadingCat
+    | LoadingCatError Text
+    | Cat ImageType ByteString
+
+catButton :: Text -> HtmlT STM ()
+catButton label =
+    button_ [class_ "border-2 border-indigo-300 bg-indigo-100 p-1 m-1"] $
+        toHtml label
 
 startRandomCat :: AppContext -> ProcessIO ()
 startRandomCat ctx = do
     -- Setup state
     logInfo "RandomCat started!" []
     state <- newTVarIO NoCat
-    let setState = atomically . writeTVar state
-
     manager <- newTlsManager
+    let setState = atomically . writeTVar state
+        encodeImg img = C8.unpack $ B64.encode img
+        renderImg iType img =
+            let header = case iType of
+                    PNG -> "data:image/jpeg;base64,"
+                    GIF -> "data:image/git;base64,"
+                imgSrc = header <> encodeImg img
+             in img_ [src_ $ from imgSrc]
 
     -- UI
     let mountUI :: HtmlT STM ()
         mountUI = with div_ [wid_ ctx.wid "w", class_ "flex flex-col gap-2"] do
-            let getACatButton = button_ [class_ "border-2 border-indigo-300 bg-indigo-100 p-1 m-1"] "Give me a 🐱 !"
-            div_ [class_ "flex justify-center"] $ do
-                withEvent ctx.wid "get-a-cat" [] getACatButton
+            div_ [class_ "flex flex-row justify-center"] $ do
+                div_ [class_ "flex justify-center"] $ do
+                    withEvent ctx.wid "get-a-cat" [] $ catButton "Give me a 🐱 !"
+                div_ [class_ "flex justify-center"] $ do
+                    withEvent ctx.wid "get-a-gif-cat" [] $ catButton "Give me a 🐱 Gif !!!"
             div_ [class_ "flex justify-center"] $ do
                 lift (readTVar state) >>= \case
                     LoadingCat -> p_ "Maouhhh ..."
-                    Cat catBS -> do
-                        let imgSrc = "data:image/jpeg;base64," <> C8.unpack (B64.encode catBS)
-                        img_ [src_ $ from imgSrc]
-                    LoadingCatError -> p_ "Oh no - unable to get a Cat !"
+                    Cat iType img -> renderImg iType img
+                    LoadingCatError err -> do
+                        div_ [class_ "flex flex-col"] $ do
+                            div_ "Oh no - unable to get a Cat !"
+                            div_ $ toHtml err
                     NoCat -> pure ()
+
+    let displayCat iType = do
+            setState LoadingCat
+            sendsHtml ctx.shared.clients mountUI
+            catM <- getACat manager iType
+            case catM of
+                Right cat -> setState $ Cat iType cat
+                Left err -> setState $ LoadingCatError $ from err
 
     -- Handle events
     forever do
@@ -55,25 +85,31 @@ startRandomCat ctx = do
             AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
             AppTrigger ev -> do
                 case ev.trigger of
-                    "get-a-cat" -> do
-                        setState LoadingCat
-                        sendsHtml ctx.shared.clients mountUI
-                        catM <- getACat manager
-                        case catM of
-                            Just cat -> setState $ Cat cat
-                            Nothing -> setState LoadingCatError
+                    "get-a-cat" -> displayCat PNG
+                    "get-a-gif-cat" -> displayCat GIF
                     _ -> logError "Unknown trigger" ["ev" .= ev]
                 sendsHtml ctx.shared.clients mountUI
             ev -> logError "Unknown ev" ["ev" .= ev]
 
-getACat :: Manager -> ProcessIO (Maybe ByteString)
-getACat manager = performRequest getCatRequest
+catRequest :: Request
+catRequest = parseRequest_ "https://cataas.com/cat?width=400&height=400"
+
+catGifRequest :: Request
+catGifRequest = parseRequest_ "https://cataas.com/cat/gif?width=400&height=400"
+
+getACat :: Manager -> ImageType -> ProcessIO (Either String ByteString)
+getACat manager iType = performRequest $ case iType of
+    PNG -> catRequest
+    GIF -> catGifRequest
   where
-    getCatRequest = parseRequest_ "https://cataas.com/cat?width=400&height=400"
     performRequest req = do
-        liftIO $ withResponse req manager $ \r -> do
+        er <- liftIO $ try $ withResponse req manager $ \r -> do
             if statusIsSuccessful r.responseStatus
                 then do
                     content <- brConsume $ r.responseBody
                     pure $ Just $ mconcat content
                 else pure Nothing
+        case er of
+            Left (exc :: HttpException) -> pure $ Left $ show exc
+            Right Nothing -> pure $ Left "Unable to access cataas"
+            Right (Just mCat) -> pure $ Right mCat
