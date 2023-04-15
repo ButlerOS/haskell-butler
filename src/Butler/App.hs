@@ -13,7 +13,9 @@ import Butler.Core
 import Butler.Core.Clock
 import Butler.Core.Dynamic
 import Butler.Core.File
+import Butler.Core.Memory
 import Butler.Core.Pipe
+import Butler.Core.Storage
 import Butler.Display.Client
 import Butler.Display.GUI
 import Butler.Display.Session
@@ -356,3 +358,14 @@ appSetHtml wid (AppSet apps) = do
                     " ("
                     toHtml app.description
                     ")"
+
+newAppMemory :: Serialise a => AppID -> StorageAddress -> a -> ProcessIO (a, MemoryVar a)
+newAppMemory wid addr value = do
+    baseDir <- getPath (from wid)
+    liftIO $ createDirectoryIfMissing True (from $ decodeUtf8 baseDir)
+    newProcessMemory (mconcat [from wid, "/", addr]) (pure value)
+
+delAppMemory :: AppID -> ProcessIO ()
+delAppMemory wid = do
+    os <- asks os
+    removeStorage os.storage (from wid)

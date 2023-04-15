@@ -9,10 +9,12 @@ module Butler.Core.Storage (
     StorageAddress (..),
     writeStorage,
     readStorage,
+    removeStorage,
 ) where
 
 import Data.ByteString qualified as BS
 import Data.Map qualified as Map
+import System.Directory qualified
 import System.Posix.Files.ByteString (fileExist)
 import Prelude hiding (readFile, writeFile)
 
@@ -21,7 +23,7 @@ import Butler.Core.Logger (BSLog (..))
 import Butler.Prelude
 
 newtype StorageAddress = StorageAddress ByteString
-    deriving newtype (Eq, Ord, Serialise, IsString, Semigroup)
+    deriving newtype (Eq, Ord, Serialise, IsString, Semigroup, Monoid)
     deriving (Show)
 
 instance From Text StorageAddress where
@@ -100,3 +102,10 @@ writeStorage :: Storage -> StorageAddress -> LByteString -> STM ()
 writeStorage storage addr obj = do
     modifyTVar' storage.journal (Map.insert (getStoragePath storage addr) obj)
     void $ tryPutTMVar storage.sync ()
+
+removeStorage :: MonadIO m => Storage -> StorageAddress -> m ()
+removeStorage storage addr = do
+    let path = getStoragePath storage addr
+    let isChild child = child == path || (path <> "/") `BS.isPrefixOf` child
+    atomically $ modifyTVar' storage.journal $ Map.filterWithKey (\k _ -> not (isChild k))
+    liftIO $ System.Directory.removePathForcibly (from (decodeUtf8 path))

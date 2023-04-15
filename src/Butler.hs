@@ -60,6 +60,7 @@ module Butler (
     publicDisplayApp,
     Service (..),
     AppID,
+    newAppMemory,
 
     -- * GUI toolkit
     wid_,
