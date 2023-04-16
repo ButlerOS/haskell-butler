@@ -88,7 +88,7 @@ lobbyProgram bs appSet chat display = do
                     when (isNothing owner && isNothing mDesktopStatus) do
                         atomically $ modifyMemoryVar dm.desktopsList (name :)
 
-                    desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance
+                    desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance "desktop-ui"
 
                     let desktopInstance = DesktopInstance owner desktop (shared.processEnv, shellHandler bs owner desktop shared)
                     atomically $ broadcast dm.update ()
@@ -118,7 +118,7 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
                     -- Request permission
                     ownerButler <- getSessionButler shared.display butlerSupervisor owner
                     tmReply <- newEmptyTMVarIO
-                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client "desktop-access-request" (SyncEvent tmReply)))
+                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client (SyncEvent "desktop-access-request" tmReply)))
                     -- Wait for result...
                     atomically (fromDynamic <$> takeTMVar tmReply) >>= \case
                         Just True -> do

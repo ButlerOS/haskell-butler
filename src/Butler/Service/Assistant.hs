@@ -50,7 +50,6 @@ data ButlerEvent
 
 data ButlerSyncEvent = ButlerSyncEvent
     { client :: DisplayClient
-    , trigger :: TriggerName
     , sync :: SyncEvent
     }
     deriving (Generic, ToJSON)
@@ -288,7 +287,7 @@ runButler display db session pipe state = do
                 atomically (Map.lookup ev.client.endpoint <$> readTVar state.clients) >>= \case
                     Just butlerInstance -> handleEvent ev butlerInstance
                     Nothing -> logError "Unknown client" ["ev" .= ev]
-            ButlerSync ev -> case ev.trigger of
+            ButlerSync ev -> case ev.sync.name of
                 "desktop-access-request" -> do
                     -- Check if authorizer is running
                     mAuthorizer <-

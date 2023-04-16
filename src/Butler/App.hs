@@ -62,16 +62,20 @@ data AppEvent
       AppSettingChanged SettingKey SettingValue SettingValue
     deriving (Generic, ToJSON)
 
-newtype SyncEvent = SyncEvent
-    { reply :: TMVar Dynamic
+newtype SyncName = SyncName Text
+    deriving newtype (IsString, Eq, ToJSON)
+
+data SyncEvent = SyncEvent
+    { name :: SyncName
+    , reply :: TMVar Dynamic
     }
 
-instance ToJSON SyncEvent where toJSON = const "SyncEvent"
+instance ToJSON SyncEvent where toJSON se = object ["name" .= se.name]
 
-appCall :: Typeable a => AppInstance -> ProcessIO (Maybe a)
-appCall appInstance = do
+appCall :: Typeable a => AppInstance -> SyncName -> ProcessIO (Maybe a)
+appCall appInstance name = do
     mvReply <- newEmptyTMVarIO
-    writePipe appInstance.pipe (AppSync (SyncEvent mvReply))
+    writePipe appInstance.pipe (AppSync (SyncEvent name mvReply))
     res <- atomically =<< waitTransaction 100 (takeTMVar mvReply)
     pure $ case res of
         WaitTimeout -> Nothing
@@ -135,6 +139,8 @@ data AppContext = AppContext
     -- ^ the instance identifier. The app should mount its UI with `with div_ [wid_ wid] "body"`, and the trigger must container the AppID suffix too.
     , pipe :: Pipe AppEvent
     -- ^ the channel to receive events.
+    , argv :: Maybe Value
+    -- ^ the application arguments
     , shared :: AppSharedContext
     }
 
@@ -214,18 +220,18 @@ sendHtmlOnConnect htmlT = \case
 newAppSet :: [App] -> AppSet
 newAppSet = AppSet . Map.fromList . map (\app -> (app.name, app))
 
-launchApp :: AppSet -> ProgramName -> AppSharedContext -> AppID -> ProcessIO (Maybe AppInstance)
-launchApp (AppSet apps) (ProgramName name) shared wid = case Map.lookup (ProgramName appName) apps of
-    Just app -> Just <$> startApp "app-" app shared wid
+launchApp :: AppSet -> ProgramName -> Maybe Value -> AppSharedContext -> AppID -> ProcessIO (Maybe AppInstance)
+launchApp (AppSet apps) (ProgramName name) argv shared wid = case Map.lookup (ProgramName appName) apps of
+    Just app -> Just <$> startApp "app-" app argv shared wid
     Nothing -> pure Nothing
   where
     appName = fromMaybe name $ Text.stripPrefix "app-" name
 
-startApp :: Text -> App -> AppSharedContext -> AppID -> ProcessIO AppInstance
-startApp prefix app shared wid = do
+startApp :: Text -> App -> Maybe Value -> AppSharedContext -> AppID -> ProcessIO AppInstance
+startApp prefix app argv shared wid = do
     -- Start app process
     pipe <- atomically newPipe
-    let ctx = AppContext wid pipe shared
+    let ctx = AppContext wid pipe argv shared
     process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
     let appInstance = AppInstance{app, process, wid, pipe}
@@ -243,7 +249,7 @@ startShellApp appSet prefix app display = do
         shared <- newAppSharedContext display processEnv appSet
         putMVar mvShared shared
         withSettings shared.dynamics do
-            app.start (AppContext wid pipe shared)
+            app.start (AppContext wid pipe Nothing shared)
     shared <- takeMVar mvShared
     let appInstance = AppInstance{app, process, wid, pipe}
     atomically (registerApp shared.apps appInstance)
@@ -258,7 +264,7 @@ startApps apps display = do
   where
     go shared app = do
         wid <- atomically (nextAppID shared.appIDCounter =<< getApps shared.apps)
-        startApp "app-" app shared wid
+        startApp "app-" app Nothing shared wid
 
 tagIcon :: AppTag -> Maybe Text
 tagIcon = \case

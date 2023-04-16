@@ -55,11 +55,11 @@ startDesktopApp services ctx = do
             Just v -> pure v
     logDebug "current setting" ["setting" .= appSettings]
 
-    let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) ctx.shared
+    let startDeskApp = startApp "app-" (deskApp ctx.shared.appSet) Nothing ctx.shared
 
     forM_ services \(Service service) -> do
         wid <- atomically (nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps)
-        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service ctx.shared wid
+        atomically . registerApp ctx.shared.apps =<< startApp "srv-" service Nothing ctx.shared wid
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
 
@@ -78,8 +78,8 @@ startDesktopApp services ctx = do
             forM_ xs $ \(wid, prog) -> do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> startDeskApp wid
-                    "app-launcher" -> launchApp ctx.shared.appSet "launcher" ctx.shared wid
-                    _ -> launchApp ctx.shared.appSet prog ctx.shared wid
+                    "app-launcher" -> launchApp ctx.shared.appSet "launcher" Nothing ctx.shared wid
+                    _ -> launchApp ctx.shared.appSet prog Nothing ctx.shared wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow wm.windows wid)) do
@@ -105,13 +105,14 @@ startDesktopApp services ctx = do
                                         Directory d -> AppFile d Nothing
                                         File file -> AppFile dir (Just file)
                                  in fmap toLookupResult <$> lookupChild dir fp
+                let argv = value ^? key "argv" . _JSON
                 case value ^? key "wid" . _JSON of
-                    Just wid -> handleWinSwap wm ctx wid name mEvent
-                    Nothing -> createNewWindow name mEvent
+                    Just wid -> handleWinSwap wm ctx wid name argv mEvent
+                    Nothing -> createNewWindow name argv mEvent
             Nothing -> logError "missing name" ["ev" .= value]
 
-        createNewWindow :: ProgramName -> Maybe AppEvent -> ProcessIO ()
-        createNewWindow name mEvent = do
+        createNewWindow :: ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO ()
+        createNewWindow name argv mEvent = do
             (wid, win) <- atomically do
                 wid <- nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps
                 win <- newWindow wm.windows wid (from name)
@@ -120,7 +121,7 @@ startDesktopApp services ctx = do
             renderNewWindow wid win
 
             delAppMemory wid
-            mGuiApp <- launchApp ctx.shared.appSet name ctx.shared wid
+            mGuiApp <- launchApp ctx.shared.appSet name argv ctx.shared wid
             forM_ mGuiApp \guiApp -> do
                 atomically $ addApp wm ctx.shared guiApp
                 forM_ mEvent $ writePipe guiApp.pipe
@@ -208,11 +209,12 @@ startDesktopApp services ctx = do
                     _ -> logError "invalid win event" ["buf" .= LBSLog de.buffer]
                 Nothing -> logError "unknown win event" ["buf" .= LBSLog de.buffer]
             AppTrigger ev -> case ev.trigger of
-                "wm-start" -> createNewWindow "launcher" Nothing
+                "wm-start" -> createNewWindow "launcher" Nothing Nothing
                 "start-app" -> handleNewApp ev.body
                 _otherwise -> logError "Unknown ev" ["ev" .= ev]
-            AppSync ev ->
-                atomically . putTMVar ev.reply . toDyn $ desktop
+            AppSync ev -> case ev.name of
+                "desktop-ui" -> atomically . putTMVar ev.reply . toDyn $ desktop
+                _ -> logError "Unknown en" ["ev" .= ev]
             AppSettingChanged setting prev new -> case setting of
                 "background" -> do
                     sendsHtml ctx.shared.clients do
@@ -301,14 +303,14 @@ welcomeWin appSet wid = do
         with div_ [class_ "m-2"] do
             appSetHtml wid appSet
 
-handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe AppEvent -> ProcessIO ()
-handleWinSwap wm ctx wid appName mEvent = do
+handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO ()
+handleWinSwap wm ctx wid appName argv mEvent = do
     atomically do
         Map.lookup wid <$> getApps ctx.shared.apps >>= \case
             Just prevApp -> delApp ctx.shared prevApp
             Nothing -> pure ()
     delAppMemory wid
-    mGuiApp <- launchApp ctx.shared.appSet appName ctx.shared wid
+    mGuiApp <- launchApp ctx.shared.appSet appName argv ctx.shared wid
     case mGuiApp of
         Just guiApp -> swapWindow guiApp
         Nothing -> logInfo "unknown win-swap prog" ["v" .= appName]
