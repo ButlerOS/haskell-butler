@@ -117,6 +117,7 @@ dependencies:
   - uuid
   - unix-time
   - serialise
+  - cborg-json
   - jose
   - retry
   - ebml

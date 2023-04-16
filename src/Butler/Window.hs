@@ -4,7 +4,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid
 
-import Butler.App (wid_)
+import Butler.App (AppInstance (..), wid_)
 import Butler.AppID
 import Butler.Core
 import Butler.Core.Memory
@@ -28,7 +28,7 @@ type Windows = MemoryVar WindowsState
 
 data WindowManager = WindowManager
     { windows :: MemoryVar WindowsState
-    , apps :: MemoryVar (Map AppID ProgramName)
+    , apps :: MemoryVar (Map AppID (Maybe Value, ProgramName))
     }
 
 newWindowManager :: ProcessIO WindowManager
@@ -45,9 +45,11 @@ getWindowIDs ws = do
 newWindows :: WindowsState
 newWindows = WindowsState mempty Nothing
 
-addWindowApp :: WindowManager -> AppID -> Process -> STM ()
-addWindowApp wm wid process = do
-    modifyMemoryVar wm.apps (Map.insert wid process.program)
+addWindowApp :: WindowManager -> AppInstance -> STM ()
+addWindowApp wm appInstance = do
+    let wid = appInstance.wid
+        process = appInstance.process
+    modifyMemoryVar wm.apps (Map.insert wid (appInstance.argv, process.program))
     Map.lookup wid . (.windows) <$> readMemoryVar wm.windows >>= \case
         Nothing -> void $ newWindow wm.windows wid (processID process)
         Just _win -> void $ updateWindow wm.windows wid (#title .~ processID process)

@@ -134,6 +134,7 @@ library
     , base64-bytestring
     , binary
     , bytestring
+    , cborg-json
     , cgroup-rts-threads
     , containers
     , directory
@@ -252,6 +253,7 @@ executable butler
     , binary
     , butler
     , bytestring
+    , cborg-json
     , cgroup-rts-threads
     , containers
     , directory
@@ -380,6 +382,7 @@ test-suite spec
     , binary
     , butler
     , bytestring
+    , cborg-json
     , cgroup-rts-threads
     , containers
     , directory

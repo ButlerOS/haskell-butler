@@ -75,16 +75,16 @@ startDesktopApp services ctx = do
             atomically . addApp wm ctx.shared =<< startDeskApp wid
         xs -> do
             logInfo "Restoring apps" ["apps" .= xs]
-            forM_ xs $ \(wid, prog) -> do
+            forM_ xs $ \(wid, (argv, prog)) -> do
                 mApp <- case prog of
                     "app-welcome" -> Just <$> startDeskApp wid
                     "app-launcher" -> launchApp ctx.shared.appSet "launcher" Nothing ctx.shared wid
-                    _ -> launchApp ctx.shared.appSet prog Nothing ctx.shared wid
+                    _ -> launchApp ctx.shared.appSet prog argv ctx.shared wid
                 case mApp of
                     Just app -> do
                         whenM (isNothing <$> atomically (lookupWindow wm.windows wid)) do
                             logError "Missing window for app" ["prog" .= prog]
-                            atomically $ addWindowApp wm wid app.process
+                            atomically $ addWindowApp wm app
                         if from wid <= length services
                             then logError "Can't restore app, conflict with services" ["app" .= prog, "wid" .= wid]
                             else atomically $ registerApp ctx.shared.apps app
@@ -250,7 +250,7 @@ delApp shared app = do
 addApp :: WindowManager -> AppSharedContext -> AppInstance -> STM ()
 addApp wm shared app = do
     registerApp shared.apps app
-    addWindowApp wm app.wid app.process
+    addWindowApp wm app
 
 delWin :: WindowManager -> AppContext -> AppID -> STM ()
 delWin wm ctx wid = do
@@ -317,7 +317,7 @@ handleWinSwap wm ctx wid appName argv mEvent = do
   where
     swapWindow :: AppInstance -> ProcessIO ()
     swapWindow guiApp = do
-        atomically $ addWindowApp wm guiApp.wid guiApp.process
+        atomically $ addWindowApp wm guiApp
         forM_ mEvent $ writePipe guiApp.pipe
         clients <- atomically $ getClients ctx.shared.clients
         forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)

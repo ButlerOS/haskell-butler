@@ -160,6 +160,7 @@ module Butler.Prelude (
     Data.Foldable.toList,
 ) where
 
+import Codec.CBOR.JSON qualified
 import Codec.Serialise qualified
 import Control.Applicative
 import Control.Category ((>>>))
@@ -305,3 +306,7 @@ instance ToJSON TextLines where
 -}
 composeFunctions :: [a -> a] -> (a -> a)
 composeFunctions = foldr (>>>) id
+
+instance Codec.Serialise.Serialise Data.Aeson.Value where
+    encode = Codec.CBOR.JSON.encodeValue
+    decode = Codec.CBOR.JSON.decodeValue True

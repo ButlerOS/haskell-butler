@@ -184,6 +184,7 @@ data AppInstance = AppInstance
     , process :: Process
     , wid :: AppID
     , pipe :: Pipe AppEvent
+    , argv :: Maybe Value
     }
     deriving (Generic)
 
@@ -234,7 +235,7 @@ startApp prefix app argv shared wid = do
     let ctx = AppContext wid pipe argv shared
     process <- spawnProcess (from prefix <> app.name) do
         app.start ctx
-    let appInstance = AppInstance{app, process, wid, pipe}
+    let appInstance = AppInstance{app, process, wid, pipe, argv}
     atomically (registerApp shared.apps appInstance)
     pure appInstance
 
@@ -242,6 +243,7 @@ startApp prefix app argv shared wid = do
 startShellApp :: AppSet -> Text -> App -> Display -> ProcessIO (AppSharedContext, AppInstance)
 startShellApp appSet prefix app display = do
     let wid = shellAppID
+        argv = Nothing
     pipe <- atomically newPipe
     mvShared <- newEmptyMVar
     process <- spawnProcess (from prefix <> app.name) do
@@ -249,9 +251,9 @@ startShellApp appSet prefix app display = do
         shared <- newAppSharedContext display processEnv appSet
         putMVar mvShared shared
         withSettings shared.dynamics do
-            app.start (AppContext wid pipe Nothing shared)
+            app.start (AppContext wid pipe argv shared)
     shared <- takeMVar mvShared
-    let appInstance = AppInstance{app, process, wid, pipe}
+    let appInstance = AppInstance{app, process, wid, pipe, argv}
     atomically (registerApp shared.apps appInstance)
     pure (shared, appInstance)
 
