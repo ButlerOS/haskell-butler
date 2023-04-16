@@ -12,6 +12,8 @@ module Butler.Core.File (
     FileName,
     lookupChild,
     baseName,
+    refreshDirectory,
+    readDirectoryEntries,
     deleteDirectory,
 
     -- * File API
@@ -78,6 +80,8 @@ data Directory = MkDirectory
     -- ^ The parent directory, Nothing for the root directory.
     , childs :: TVar [Entry]
     -- ^ The directory content
+    , lock :: MVar ()
+    -- ^ A lock to prevent concurrent directory read.
     }
 
 instance ToJSON Directory where
@@ -87,7 +91,7 @@ instance ToJSON Directory where
 getRootDir :: Directory -> Directory
 getRootDir dir = maybe dir getRootDir dir.parent
 
-newDirectory :: Directory -> FileName -> STM (Maybe Directory)
+newDirectory :: MonadUnliftIO m => Directory -> FileName -> m (Maybe Directory)
 newDirectory _ "" = pure Nothing
 newDirectory parent name =
     lookupChild parent name >>= \case
@@ -96,8 +100,8 @@ newDirectory parent name =
         Nothing -> do
             when ('/' `Text.elem` coerce name) do
                 error "NotImplemented: multiple directories creation at once"
-            dir <- MkDirectory (mconcat [parent.path, "/", from name]) (Just parent) <$> newTVar []
-            modifyTVar' parent.childs (Directory dir :)
+            dir <- MkDirectory (mconcat [parent.path, "/", from name]) (Just parent) <$> newTVarIO [] <*> newMVar ()
+            atomically $ modifyTVar' parent.childs (Directory dir :)
             pure (Just dir)
 
 deleteDirectory :: MonadIO m => Directory -> Directory -> m ()
@@ -173,14 +177,14 @@ readRootDirectory rootDir = do
         Right stat
             | isDirectory stat -> do
                 dir <- mkRootDir
-                readDirectory dir
+                void $ readDirectory dir
                 pure (Just dir)
             | otherwise -> pure Nothing
   where
-    mkRootDir = MkDirectory (removeTrailingSlash rootDir) Nothing <$> newTVarIO []
+    mkRootDir = MkDirectory (removeTrailingSlash rootDir) Nothing <$> newTVarIO [] <*> newMVar ()
 
-readDirectory :: MonadIO m => Directory -> m ()
-readDirectory dir = do
+readDirectoryImpl :: MonadIO m => Directory -> (RawFilePath -> m (Maybe a)) -> m [a]
+readDirectoryImpl dir mkEntry = do
     dstream <- liftIO $ openDirStream dir.path
     let getChilds acc =
             liftIO (readDirStream dstream) >>= \case
@@ -188,21 +192,48 @@ readDirectory dir = do
                     | cpath == mempty -> pure acc
                     | cpath `elem` ["", ".", ".."] -> getChilds acc
                     | otherwise ->
-                        readEntry dir (mconcat [dir.path, "/", cpath]) >>= \case
+                        mkEntry cpath >>= \case
                             Nothing -> getChilds acc
-                            Just e -> do
-                                getChilds (e : acc)
-    atomically . writeTVar dir.childs =<< getChilds []
+                            Just e -> getChilds (e : acc)
+    getChilds []
+
+readDirectory :: MonadIO m => Directory -> m [Entry]
+readDirectory dir = do
+    entries <- readDirectoryImpl dir \cpath -> readEntry dir (mconcat [dir.path, "/", cpath])
+    atomically $ writeTVar dir.childs entries
+    pure entries
+
+refreshDirectory :: MonadUnliftIO m => Directory -> m ()
+refreshDirectory dir = withMVar dir.lock \() -> do
+    curEntries <- readTVarIO dir.childs
+    newEntries <- readDirectoryImpl dir \cpath ->
+        case isKnownEntry cpath curEntries of
+            Just e -> pure $ Just e
+            Nothing -> readEntry dir (mconcat [dir.path, "/", cpath])
+    atomically $ writeTVar dir.childs newEntries
+  where
+    isKnownEntry :: RawFilePath -> [Entry] -> Maybe Entry
+    isKnownEntry _ [] = Nothing
+    isKnownEntry name (x : rest) = case x of
+        File f | f.name == name -> Just x
+        Directory d | baseName d.path == name -> Just x
+        _ -> isKnownEntry name rest
+
+readDirectoryEntries :: MonadUnliftIO m => Directory -> m [Entry]
+readDirectoryEntries dir = withMVar dir.lock \() -> do
+    readTVarIO dir.childs >>= \case
+        [] -> readDirectory dir
+        xs -> pure xs
 
 readEntry :: MonadIO m => Directory -> RawFilePath -> m (Maybe Entry)
 readEntry parent epath = do
-    liftIO (getFileStatus epath) >>= \case
-        stat
+    liftIO (try $ getFileStatus epath) >>= \case
+        Left (_ :: SomeException) -> pure Nothing
+        Right stat
             | isRegularFile stat -> Just . File . MkFile (baseName epath) <$> newTVarIO (fileSize stat)
             | isDirectory stat -> do
                 let dpath = removeTrailingSlash epath
-                dir <- MkDirectory dpath (Just parent) <$> newTVarIO []
-                readDirectory dir
+                dir <- MkDirectory dpath (Just parent) <$> newTVarIO [] <*> newMVar ()
                 pure $ Just $ Directory dir
             | otherwise -> pure Nothing
 
@@ -230,7 +261,7 @@ getFileLoc baseDir mFile = mkFileLoc (fileComponent $ dnComponents baseDir)
         Nothing -> []
         Just parent -> baseName dir.path : dnComponents parent
 
-resolveFileLoc :: Directory -> FileLoc -> STM (Maybe (Directory, Maybe File))
+resolveFileLoc :: MonadUnliftIO m => Directory -> FileLoc -> m (Maybe (Directory, Maybe File))
 resolveFileLoc baseDir (FileLoc dn) = findEntry baseDir dnComponents
   where
     dnComponents
@@ -238,7 +269,7 @@ resolveFileLoc baseDir (FileLoc dn) = findEntry baseDir dnComponents
         | otherwise = encodeUtf8 <$> Text.split (== '/') dn
     findEntry dir [] = pure (Just (dir, Nothing))
     findEntry dir (x : xs) = do
-        childs <- readTVar dir.childs
+        childs <- readDirectoryEntries dir
         case filter (isEntry x dir) childs of
             (Directory d : _) -> findEntry d xs
             (File f : _) -> case xs of
@@ -249,8 +280,8 @@ resolveFileLoc baseDir (FileLoc dn) = findEntry baseDir dnComponents
         Directory dir -> dir.path == mconcat [parent.path, "/", name]
         File file -> file.name == name
 
-lookupChild :: Directory -> FileName -> STM (Maybe Entry)
-lookupChild baseDir (FileName (encodeUtf8 -> name)) = findChild <$> readTVar baseDir.childs
+lookupChild :: MonadUnliftIO m => Directory -> FileName -> m (Maybe Entry)
+lookupChild baseDir (FileName (encodeUtf8 -> name)) = findChild <$> readDirectoryEntries baseDir
   where
     findChild [] = Nothing
     findChild (x : rest) = case x of
@@ -274,7 +305,7 @@ renameEntry baseDir entry (FileName (encodeUtf8 -> newName)) = do
             atomically (modifyTVar' baseDir.childs (map (renameFile file.name)))
   where
     renameDir oldPath newPath = \case
-        Directory (MkDirectory dpath parent childs) | dpath == oldPath -> Directory (MkDirectory newPath parent childs)
+        Directory (MkDirectory dpath parent childs lock) | dpath == oldPath -> Directory (MkDirectory newPath parent childs lock)
         e -> e
     renameFile oldName = \case
         File (MkFile fname sz) | fname == oldName -> File (MkFile newName sz)
@@ -290,7 +321,7 @@ moveEntry src dst entry = do
             liftIO $ rename dir.path newPath
             atomically do
                 modifyTVar' src.childs (removeDir dir)
-                modifyTVar' dst.childs (Directory (MkDirectory newPath (Just dst) dir.childs) :)
+                modifyTVar' dst.childs (Directory (MkDirectory newPath (Just dst) dir.childs dir.lock) :)
         File file -> do
             let oldPath = mconcat [src.path, "/", file.name]
                 newPath = mconcat [dst.path, "/", file.name]

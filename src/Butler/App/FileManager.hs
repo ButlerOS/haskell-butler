@@ -22,10 +22,10 @@ startFileManagerApp :: AppContext -> ProcessIO ()
 startFileManagerApp ctx = do
     (currentDirectory, memDirectory) <- newAppMemory ctx.wid "fm" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
-    tDir <- atomically do
+    tDir <-
         resolveFileLoc rootDir currentDirectory >>= \case
-            Just (prevDir, Nothing) -> newTVar prevDir
-            _ -> newTVar rootDir
+            Just (prevDir, Nothing) -> newTVarIO prevDir
+            _ -> newTVarIO rootDir
 
     let requestor :: Maybe AppID
         requestor = do
@@ -136,21 +136,23 @@ startFileManagerApp ctx = do
                         ]
 
         chDir dir = do
-            writeTVar tDir dir
-            modifyMemoryVar memDirectory (const $ getFileLoc dir Nothing)
+            refreshDirectory dir
+            atomically do
+                writeTVar tDir dir
+                modifyMemoryVar memDirectory (const $ getFileLoc dir Nothing)
 
-        openDir dir name = atomically do
+        openDir dir name = do
             lookupChild dir name >>= \case
                 Just (Directory newDir) -> chDir newDir
                 _ -> pure ()
 
-        openFileLoc _dir name = atomically do
+        openFileLoc _dir name = do
             resolveFileLoc rootDir (from name) >>= \case
                 Just (newDir, Nothing) -> chDir newDir
                 _ -> pure ()
 
         tryDeleteFile dir name = do
-            atomically (lookupChild dir name) >>= \case
+            lookupChild dir name >>= \case
                 Just (Directory target) -> deleteDirectory dir target
                 Just (File target) -> deleteFile dir target
                 Nothing -> pure ()
@@ -164,7 +166,7 @@ startFileManagerApp ctx = do
             traverse_ (tryDeleteFile dir) files
 
         tryMoveEntry src dst name = do
-            atomically (lookupChild src name) >>= \case
+            lookupChild src name >>= \case
                 Just entry -> moveEntry src dst entry
                 Nothing -> pure ()
 
@@ -185,17 +187,17 @@ startFileManagerApp ctx = do
 
         doRename Nothing _ _ = atomically (writeTVar tEditFile mempty)
         doRename (Just newName) dir name = do
-            atomically (lookupChild dir name) >>= \case
+            lookupChild dir name >>= \case
                 Just e -> renameEntry dir e newName
                 Nothing -> pure ()
             atomically (writeTVar tEditFile mempty)
 
-        selectMoveTarget _dir name = atomically do
-            readTVar tMoveTarget >>= \case
+        selectMoveTarget _dir name = do
+            readTVarIO tMoveTarget >>= \case
                 Nothing -> pure ()
                 Just moveTarget ->
                     lookupChild moveTarget name >>= \case
-                        Just (Directory newTarget) -> writeTVar tMoveTarget (Just newTarget)
+                        Just (Directory newTarget) -> atomically $ writeTVar tMoveTarget (Just newTarget)
                         _ -> pure ()
 
         toggleSelection _dir name = atomically $ modifyTVar' tSelected \selected ->
@@ -205,7 +207,7 @@ startFileManagerApp ctx = do
 
         openRequestorFile dir name = case requestor of
             Just wid ->
-                atomically (lookupChild dir name) >>= \case
+                lookupChild dir name >>= \case
                     Just (File f) ->
                         atomically (Map.lookup wid <$> getApps ctx.shared.apps) >>= \case
                             Just app -> do
@@ -249,6 +251,6 @@ startFileManagerApp ctx = do
                     "stop-rename" -> atomically (writeTVar tEditFile mempty)
                     "file-rename" -> withFileName ev (doRename $ ev.body ^? key "new-name" . _JSON)
                     -- Create a new directory
-                    "mkdir" -> withFileName ev (\dir -> void . atomically . newDirectory dir)
+                    "mkdir" -> withFileName ev (\dir -> void . newDirectory dir)
                     _ -> logError "Unknown ev" ["ev" .= ev]
             _ -> pure ()

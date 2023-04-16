@@ -62,6 +62,8 @@ startDesktopApp services ctx = do
         atomically . registerApp ctx.shared.apps =<< startApp "srv-" service Nothing ctx.shared wid
 
     dir <- getVolumeDirectory ctx.shared (Just "Desktop")
+    -- Load the desktop files in the Dir childs
+    void $ readDirectoryEntries dir
 
     spawnThread_ $ renderOnChange (renderFileIcons shellAppID dir) \newHtml -> do
         logInfo "Updating desktop directory ui" []
@@ -93,7 +95,7 @@ startDesktopApp services ctx = do
     let handleNewApp value = case value ^? key "name" . _JSON of
             Just name -> do
                 let rootDir = getRootDir dir
-                mEvent <- atomically do
+                mEvent <- do
                     case value ^? key "fp" . _JSON of
                         Nothing -> pure $ Just (AppFile rootDir Nothing)
                         Just fp

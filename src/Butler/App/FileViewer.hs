@@ -23,7 +23,7 @@ startFileViewerApp ctx = do
     (currentFile, memFile) <- newAppMemory ctx.wid "fv" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tmFile <-
-        atomically (resolveFileLoc rootDir currentFile) >>= \case
+        resolveFileLoc rootDir currentFile >>= \case
             Just (dir, Just file) -> newTVarIO . Just =<< readFileContent dir file
             _ -> newTVarIO Nothing
     let

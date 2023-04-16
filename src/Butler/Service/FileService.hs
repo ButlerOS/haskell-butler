@@ -38,7 +38,7 @@ getVolumeDirectory shared mVolume =
     getVolumeDir dir = case mVolume of
         Nothing -> pure dir
         Just (VolumeName name) -> do
-            mDir <- atomically do
+            mDir <-
                 lookupChild dir name >>= \case
                     Just (Directory volumeDir) -> pure (Just volumeDir)
                     Just (File _) -> pure Nothing
@@ -103,7 +103,7 @@ startFileService ctx = do
         handleUploadRequest :: DisplayClient -> UploadRequest -> ProcessIO ()
         handleUploadRequest client uploadRequest = do
             logInfo "Handling upload request" ["req" .= uploadRequest]
-            atomically (resolveFileLoc rootDir uploadRequest.dirname) >>= \case
+            resolveFileLoc rootDir uploadRequest.dirname >>= \case
                 Just (dir, Nothing) -> do
                     -- Got a valid UploadRequest, setup the PendingUpload file and returns their id (PUI)
                     puis <- traverse (handleFileUploadRequest dir) uploadRequest.files
