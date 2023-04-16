@@ -137,6 +137,12 @@ startTermApp isolation mkApp ctx = do
             None -> maybe "/tmp" (into @String . decodeUtf8) <$> liftIO (getEnv "HOME")
             _ -> pure "/butler/home"
 
+    let tlsBundleFile = "/etc/pki/tls/certs/ca-bundle.crt"
+    tlsEnv <-
+        liftIO (doesPathExist tlsBundleFile) >>= \case
+            False -> pure Nothing
+            True -> pure (Just $ "NIX_SSL_CERT_FILE=" <> tlsBundleFile)
+
     addResolv <- case isolation.runtime of
         Bubblewrap -> liftIO do
             isSymlink <- System.Posix.Files.isSymbolicLink <$> System.Posix.Files.getSymbolicLinkStatus "/etc/resolv.conf"
@@ -169,7 +175,7 @@ startTermApp isolation mkApp ctx = do
                 Text.unlines ["sandbox = false", "build-users-group =", "experimental-features = nix-command flakes"]
 
     let tApp = mkApp isolation $ "butler-term-" <> show wid
-        env = "-" : maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color", "LC_ALL=C.UTF-8"]
+        env = "-" : maybe id (:) tlsEnv (maybe id (:) pathEnv [homeEnv, agentEnv, "TERM=xterm-256color", "LC_ALL=C.UTF-8"])
         mkArgs isBackground baseArgs = case isolation.runtime of
             None -> baseArgs
             Podman image -> "podman" : "run" : via @Text image : "--" : baseArgs
@@ -276,7 +282,9 @@ function startTermClient(wid, w, h) {
     term.butlerForward(d)
   });
 
-  butlerDataHandlers[wid] = buf => {term.write(buf)};
+  butlerDataHandlers[wid] = buf => {
+    term.write(buf)
+  };
 
   term.butlerResize = (cols, rows) => {
     term.resize(cols, rows)
