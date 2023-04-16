@@ -124,16 +124,19 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
                 with div_ [class_ "h-full w-0 fixed z-50 top-0 left-0 bg-blue-300/[0.9] overflow-x-hidden", id_ "ws-error-overlay"] do
                     with div_ [class_ "flex justify-center items-center h-full"] do
                         with div_ [class_ "bg-blue-100 rounded p-2"] do
-                            "Disconnected, retrying connection..."
+                            "Disconnected, retrying connection: "
+                            with span_ [id_ "recon-count"] "0"
 
     displayPulseError :: Text
     displayPulseError =
         [raw|
     document.body.addEventListener('htmx:wsError', function(evt) {
       try {
-        let elt = htmx.find("#ws-error-overlay");
+        let elt = htmx.find("#ws-error-overlay")
         htmx.addClass(elt, "w-full");
         htmx.removeClass(elt, "w-0");
+        let countElt = htmx.find("#recon-count")
+        countElt.textContent = parseInt(countElt.textContent) + 1
       } catch (e) { console.log("Error", e); }
     });
     |]
