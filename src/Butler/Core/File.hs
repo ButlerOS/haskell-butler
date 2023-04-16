@@ -361,7 +361,13 @@ finalizePartialFile pf size = do
     let rfp = encodeUtf8 (from pf.tempPath)
     liftIO $ rename rfp (BS.dropEnd 5 rfp)
     file <- MkFile pf.fileName <$> newTVarIO size
-    atomically (addFile pf.dir file)
+    let notPartFile :: Entry -> Bool
+        notPartFile = \case
+            File f -> f.name /= file.name <> ".part"
+            _ -> True
+    atomically do
+        addFile pf.dir file
+        modifyTVar' pf.dir.childs (filter notPartFile)
     pure file
 
 data ContentType
