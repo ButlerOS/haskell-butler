@@ -160,7 +160,7 @@ function setupFileSystemClient(wid) {
     request.elt = elt
   }
 
-  butlerDataHandlers[wid] = rawBuf => decodeDataMessage(rawBuf, (uid, buf) => {
+  butlerDataHandlers[wid] = rawBuf => readVint(rawBuf, (uid, buf) => {
     // We got the Pending Upload ID (puis) and the upload request.
     const puis = decodeJSON(buf)
     const request = uploadRequests[uid]

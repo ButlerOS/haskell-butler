@@ -105,7 +105,7 @@ async function setupSshAgentProvider(wid) {
   if (typeof butlerElectron !== "undefined" && await butlerElectron.hasSshAgent()) {
     sendTrigger(wid, "new-provider", {})
 
-    butlerDataHandlers[wid] = buf => decodeDataMessage(buf, (chan, data) => {
+    butlerDataHandlers[wid] = buf => readVint(buf, (chan, data) => {
       if (data.length == 0) {
         console.log("New ssh-agent request", chan)
         butlerElectron.connectSshAgent(chan, data => {
