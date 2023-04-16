@@ -1,10 +1,12 @@
 module Butler.App.FileManager where
 
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 
 import Butler
 import Butler.App
 import Butler.AppID
+import Butler.Core
 import Butler.GUI.File
 import Butler.Service.FileService
 
@@ -25,6 +27,11 @@ startFileManagerApp ctx = do
             Just (prevDir, Nothing) -> newTVar prevDir
             _ -> newTVar rootDir
 
+    let requestor :: Maybe AppID
+        requestor = do
+            argv <- ctx.argv
+            argv ^? key "requestor" . _JSON
+
     -- The filename currently being edited
     tEditFile <- newTVarIO mempty
     -- The list of selected file
@@ -32,8 +39,7 @@ startFileManagerApp ctx = do
     -- The move destination folder
     tMoveTarget <- newTVarIO Nothing
 
-    let
-        getParent :: Directory -> [Directory]
+    let getParent :: Directory -> [Directory]
         getParent dir = dir : maybe [] getParent dir.parent
 
         renderCrum :: Directory -> HtmlT STM ()
@@ -76,8 +82,12 @@ startFileManagerApp ctx = do
                             case child of
                                 Directory{} -> withTrigger "click" ctx.wid "chdir" ["fp" .= fn] span_ [class_ "cursor-pointer"] (toHtml name)
                                 File file ->
-                                    let vals = ["name" .= ProgramName "file-viewer", "fp" .= getFileLoc dir (Just file)]
-                                     in withTrigger "click" shellAppID "start-app" vals span_ [class_ "cursor-pointer"] (toHtml name)
+                                    let mkFile = case requestor of
+                                            Nothing ->
+                                                let vals = ["name" .= ProgramName "file-viewer", "fp" .= getFileLoc dir (Just file)]
+                                                 in withTrigger "click" shellAppID "start-app" vals
+                                            Just{} -> withTrigger "click" ctx.wid "open-file" ["fp" .= fn]
+                                     in mkFile span_ [class_ "cursor-pointer"] (toHtml name)
 
         renderMoveTarget :: Directory -> HtmlT STM ()
         renderMoveTarget dir = do
@@ -193,12 +203,23 @@ startFileManagerApp ctx = do
                 then Set.delete name selected
                 else Set.insert name selected
 
+        openRequestorFile dir name = case requestor of
+            Just wid ->
+                atomically (lookupChild dir name) >>= \case
+                    Just (File f) ->
+                        atomically (Map.lookup wid <$> getApps ctx.shared.apps) >>= \case
+                            Just app -> do
+                                -- close the file-manager app?
+                                writePipe app.pipe (AppFile dir (Just f))
+                            Nothing -> logError "Unknown requestor" ["wid" .= wid]
+                    _ -> logError "Invalid file" ["dir" .= dir, "name" .= name]
+            Nothing -> logError "Unknown requestor" []
+
     spawnThread_ $ renderOnChange mountUI \newHtml -> do
         logDebug "Updating file-manager ui" []
         sendsHtml ctx.shared.clients newHtml
 
-    let
-        withFileName :: GuiEvent -> (Directory -> FileName -> ProcessIO ()) -> ProcessIO ()
+    let withFileName :: GuiEvent -> (Directory -> FileName -> ProcessIO ()) -> ProcessIO ()
         withFileName ev cb = case ev.body ^? key "fp" . _JSON of
             Just fp -> do
                 dir <- readTVarIO tDir
@@ -217,6 +238,7 @@ startFileManagerApp ctx = do
                     -- Selection events
                     "select-file" -> withFileName ev toggleSelection
                     "files-delete" -> deleteFiles
+                    "open-file" -> withFileName ev openRequestorFile
                     -- Moving events
                     "start-move" -> atomically (writeTVar tMoveTarget (Just rootDir))
                     "select-target" -> withFileName ev selectMoveTarget

@@ -1,6 +1,8 @@
 module Butler.App.PdfViewer (pdfViewerApp) where
 
 import Butler
+import Butler.App
+import Butler.App.FileManager
 import Butler.Frame
 import Butler.Service.FileService
 
@@ -31,12 +33,13 @@ newPdfState dir file = PdfState dir file 1
 
 startPdfViewer :: AppContext -> ProcessIO ()
 startPdfViewer ctx = do
-    (currentFile, memFile) <- newProcessMemory (from $ withWID ctx.wid "noter-file") (pure mempty)
+    (currentFile, memFile) <- newAppMemory ctx.wid "pdf-file" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tmState <-
         atomically (resolveFileLoc rootDir currentFile) >>= \case
             Just (dir, Just file) -> newTVarIO $ Just (newPdfState dir file)
             _ -> newTVarIO Nothing
+
     -- UI
     let mountUI :: HtmlT STM ()
         mountUI = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
@@ -46,6 +49,10 @@ startPdfViewer ctx = do
                 with div_ [wid_ ctx.wid "page-current"] "?"
                 div_ "/"
                 with div_ [wid_ ctx.wid "page-count"] "?"
+                with div_ [class_ "flex-grow"] mempty
+                let openFileScript = startAppScript fileManagerApp ["argv" .= object ["requestor" .= ctx.wid]]
+                with button_ [class_ btnBlueClass, onclick_ openFileScript] do
+                    "Open File"
             with canvas_ [wid_ ctx.wid "canvas"] mempty
             script_ $ pdfClient ctx.wid
 
@@ -80,9 +87,15 @@ startPdfViewer ctx = do
                 "prev-page" -> updatePage (\x -> x - 1)
                 "next-page" -> updatePage (+ 1)
                 _ -> logError "Unknown trigger" ["ev" .= ev]
-            AppFile dir (Just file) -> atomically do
-                modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
-                writeTVar tmState (Just $ newPdfState dir file)
+            AppFile dir (Just file) -> do
+                let pdfState = newPdfState dir file
+                atomically do
+                    modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
+                    writeTVar tmState (Just pdfState)
+                sendsHtml ctx.shared.clients mountUI
+                buf <- readFileBS pdfState.dir pdfState.file
+                sendsBinary ctx.shared.clients (encodeMessage (from ctx.wid) (BSL.cons 0 $ from buf))
+                sendsBinary ctx.shared.clients (pageMessage pdfState.page)
             ev -> logError "Unknown ev" ["ev" .= ev]
 
 pdfClient :: AppID -> Text
