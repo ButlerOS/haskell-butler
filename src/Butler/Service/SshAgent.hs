@@ -35,7 +35,7 @@ startApp isolation ctx = do
             reqID <- atomically (NM.add requests request)
 
             let sendMessage = encodeMessage (from ctx.wid) . encodeMessage reqID
-            sendsBinary ctx.shared.clients $ sendMessage ""
+            sendsBinary providers $ sendMessage ""
 
             baton <- newEmptyTMVarIO
             void $ spawnThread do
