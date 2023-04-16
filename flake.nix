@@ -9,8 +9,18 @@
     let
       pkgs = hspkgs.pkgs;
 
+      xstatic-xterm = pkgs.fetchFromGitHub {
+        owner = "TristanCacqueray";
+        repo = "haskell-xstatic";
+        rev = "440811a9985730a11a06a79fbacba6aa56616329";
+        sha256 = "sha256-/dG6qk/DgAhZucJIffNDOyZ80b/cgH5J2mxljZUp9iw=";
+      };
+
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
+        xstatic-xterm =
+          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic-xterm}/xstatic-xterm"
+          { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
           repo = "haskell-ebml";
