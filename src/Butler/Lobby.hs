@@ -68,7 +68,6 @@ lobbyProgram bs appSet chat display = do
                     ( env
                     , \case
                         UserConnected "htmx" client -> do
-                            spawnThread_ (pingThread client)
                             spawnThread_ (sendThread client)
                             atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Workspace is not available!"))
                             sleep 600_000
@@ -109,7 +108,6 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
     UserConnected "htmx" client -> do
         -- Setup client
         spawnThread_ (sendThread client)
-        spawnThread_ (pingThread client)
 
         -- Verify ACL
         case mOwner of
@@ -168,7 +166,6 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
 lobbyHandler :: Lobby -> ChatServer -> DisplayEvent -> ProcessIO ()
 lobbyHandler dm chat = \case
     UserConnected "htmx" client -> do
-        spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
         atomically $ sendHtml client (with div_ [id_ "display-wins"] (splashHtml "Loading..."))
         sleep 100

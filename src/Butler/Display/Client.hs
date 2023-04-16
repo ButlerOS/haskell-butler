@@ -42,8 +42,7 @@ module Butler.Display.Client (
     -- * Internal
     newClient,
     Endpoint (..),
-)
-where
+) where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -73,20 +72,21 @@ data DisplayClient = DisplayClient
 newClient :: WS.Connection -> Endpoint -> ServerName -> Process -> Session -> STM DisplayClient
 newClient c endpoint server p s = DisplayClient c endpoint server p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
 
-{- | An action to keep a client alive.
-TODO: implement ping keep alive using a wait timeout on the send thread.
--}
+-- | An action to keep a client alive.
 pingThread :: DisplayClient -> ProcessIO Void
 pingThread client = forever do
     sleep 30_000
     liftIO (WS.sendPing client.conn ("ping" :: ByteString))
 
--- | An action to send data message.
+-- | An action to send data message. Send ping after 30sec of inactivity.
 sendThread :: DisplayClient -> ProcessIO Void
 sendThread client = forever do
-    dataMessage <- atomically (readTChan client.sendChannel)
-    atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length (from dataMessage)))
-    liftIO $ WS.sendDataMessage client.conn dataMessage
+    wDataMessage <- atomically =<< waitTransaction 30_000 (readTChan client.sendChannel)
+    case wDataMessage of
+        WaitTimeout -> liftIO $ WS.sendPing client.conn ("ping" :: ByteString)
+        WaitCompleted dataMessage -> do
+            atomically $ modifyTVar' client.send (+ unsafeFrom (LBS.length (from dataMessage)))
+            liftIO $ WS.sendDataMessage client.conn dataMessage
 
 -- | Low-level helper to read a 'DataMessage'.
 recvData :: MonadIO m => DisplayClient -> m WS.DataMessage

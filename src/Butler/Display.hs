@@ -270,7 +270,6 @@ serveDashboardApps (DisplayApplication mkAuth) apps = do
 staticClientHandler :: AppSharedContext -> DisplayEvent -> ProcessIO ()
 staticClientHandler shared = \case
     UserConnected "htmx" client -> do
-        spawnThread_ (pingThread client)
         spawnThread_ (sendThread client)
         atomically $ addClient shared.clients client
         appInstances <- atomically (getApps shared.apps)

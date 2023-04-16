@@ -80,7 +80,6 @@ startVncApp ctx = do
 
         extraHandler = \case
             UserConnected _ client -> do
-                spawnThread_ (sendThread client)
                 spawnThread_ (pingThread client)
                 onClient client
             _ -> pure ()
