@@ -36,7 +36,7 @@ startPdfViewer ctx = do
     (currentFile, memFile) <- newAppMemory ctx.wid "pdf-file" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tmState <-
-        atomically (resolveFileLoc rootDir currentFile) >>= \case
+        resolveFileLoc rootDir currentFile >>= \case
             Just (dir, Just file) -> newTVarIO $ Just (newPdfState dir file)
             _ -> newTVarIO Nothing
 

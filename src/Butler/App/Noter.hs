@@ -66,7 +66,7 @@ startNoterApp ctx = do
     (currentFile, memFile) <- newAppMemory ctx.wid "noter-file" mempty
     rootDir <- getVolumeDirectory ctx.shared Nothing
     tState <-
-        atomically (resolveFileLoc rootDir currentFile) >>= \case
+        resolveFileLoc rootDir currentFile >>= \case
             Just (dir, Just file) -> do
                 content <- decodeUtf8 <$> readFileBS dir file
                 newTVarIO $ NoterState (EditingFile dir file) False (Lines.fromText content)
@@ -179,7 +179,7 @@ startNoterApp ctx = do
                     Just fp -> do
                         state <- readTVarIO tState
                         mDir <- case state.status of
-                            NewFile -> atomically $ newDirectory rootDir "Documents"
+                            NewFile -> newDirectory rootDir "Documents"
                             EditingFile curDir _ -> pure (Just curDir)
                         case mDir of
                             Just dir -> do
