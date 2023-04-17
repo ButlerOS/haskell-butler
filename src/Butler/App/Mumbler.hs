@@ -113,7 +113,7 @@ startMumbler ctx = do
         (,) <$> newAppState soundCard.clients <*> newReaderChan soundCard.events
 
     let
-        sendEv (ev :: Word8) = "butlerDataSocketSend(new Uint8Array([" <> showT wid <> ", " <> showT ev <> "]))"
+        sendEv (ev :: Word8) = "sendBinaryMessage(" <> showT wid <> ", new Uint8Array([" <> showT ev <> "]))"
         pressedColor = "bg-red-500 px-10"
         readyColor = "bg-blue-500 hover:bg-blue-700"
         btn color (title :: Text) =
