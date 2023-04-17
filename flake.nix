@@ -12,8 +12,8 @@
       xstatic-xterm = pkgs.fetchFromGitHub {
         owner = "TristanCacqueray";
         repo = "haskell-xstatic";
-        rev = "440811a9985730a11a06a79fbacba6aa56616329";
-        sha256 = "sha256-/dG6qk/DgAhZucJIffNDOyZ80b/cgH5J2mxljZUp9iw=";
+        rev = "e5815a99bf329f54144a6a7f6a499a68beec2b23";
+        sha256 = "sha256-VNyOKa9rMKi8KV8ez4xvAm1G8QtKJHXTOTgejZR4xFQ=";
       };
 
       haskellExtend = hpFinal: hpPrev: {

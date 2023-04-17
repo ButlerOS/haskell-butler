@@ -188,6 +188,8 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
                , XStatic.logo
                , XStatic.xtermFitAddonJs
                , XStatic.xtermFitAddonJsMap
+               , XStatic.xtermWebGLAddonJs
+               , XStatic.xtermWebGLAddonJsMap
                , XStatic.winboxCss
                , XStatic.hyperscript
                ]

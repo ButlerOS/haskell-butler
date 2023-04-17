@@ -53,7 +53,7 @@ termApp isolation =
     (defaultApp "term" (startTermApp isolation tmuxTermApp))
         { tags = fromList ["Development"]
         , description = "XTerm"
-        , xfiles = [XStatic.xtermFitAddonJs, XStatic.xtermFitAddonJsMap] <> XStatic.xterm
+        , xfiles = XStatic.xtermWebGLAddonJs : XStatic.xtermWebGLAddonJsMap : XStatic.xtermFitAddonJs : XStatic.xtermFitAddonJsMap : XStatic.xterm
         }
 
 data TermApp = TermApp
@@ -267,8 +267,19 @@ if (typeof butlerTerminals === "undefined") {
 function startTermClient(wid, w, h) {
   // Start terminal
   var term = new Terminal({scrollback: 1e4});
-  term.fitAddon = new FitAddon.FitAddon();
-  term.loadAddon(term.fitAddon);
+
+  // fit-addon
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+
+  // webgl-addon
+  const webGLAddon = new window["WebglAddon"].WebglAddon()
+  webGLAddon.onContextLoss(e => {
+    console.log("Context lost!")
+    webGLAddon.dispose();
+  });
+  term.loadAddon(webGLAddon)
+
   term.open(document.getElementById('w-' + wid));
   term.writeln('Connecting...');
   butlerTerminals[wid] = term;
@@ -310,7 +321,7 @@ function startTermClient(wid, w, h) {
     if (x === undefined) {
       console.log("Looking for term dim")
       term.resize(1, 2);
-      term.fitAddon.fit()
+      fitAddon.fit()
       term.refresh(0, term.rows)
       sendTrigger(wid, "resize", {cols: term.cols, rows: term.rows})
     }

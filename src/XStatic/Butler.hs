@@ -8,6 +8,7 @@ import XStatic.Tailwind qualified as XStatic
 logo :: XStaticFile
 logo = $(embedXStaticFile "data/haskell-butler-logo.svg"){xfPath = "/favicon.ico"}
 
+-- | ws patch version 1
 butlerWS :: XStaticFile
 butlerWS = $(embedXStaticFile "data/ws.js")
 
