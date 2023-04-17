@@ -101,6 +101,7 @@ newDirectory parent name =
             when ('/' `Text.elem` coerce name) do
                 error "NotImplemented: multiple directories creation at once"
             dir <- MkDirectory (mconcat [parent.path, "/", from name]) (Just parent) <$> newTVarIO [] <*> newMVar ()
+            ensureDirectory dir
             atomically $ modifyTVar' parent.childs (Directory dir :)
             pure (Just dir)
 
@@ -171,9 +172,11 @@ readRootDirectory :: MonadIO m => RawFilePath -> m (Maybe Directory)
 readRootDirectory rootDir = do
     eStat <- liftIO $ try $ getFileStatus rootDir
     case eStat of
-        Left (_ :: SomeException) ->
+        Left (_ :: SomeException) -> do
             -- The directory does not exist
-            Just <$> mkRootDir
+            dir <- mkRootDir
+            ensureDirectory dir
+            pure (Just dir)
         Right stat
             | isDirectory stat -> do
                 dir <- mkRootDir
