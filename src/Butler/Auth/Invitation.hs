@@ -92,9 +92,7 @@ recoveryServer sessions jwtSettings mWorkspace mRecover = case mRecover of
             Just session -> do
                 resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings session.sessionID
                 case resp of
-                    Just r -> do
-                        liftIO $ putStrLn "Redirecting!!!"
-                        pure $ r $ redirect mWorkspace
+                    Just r -> pure $ r $ redirect mWorkspace
                     Nothing -> error "oops!"
   where
     denyResp :: ProcessIO AuthResp
