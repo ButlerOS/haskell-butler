@@ -79,7 +79,7 @@ firefox https://localhost:8080
 Use the electron client instead of firefox to forward your ssh-agent and enables Ctrl-T and Ctrl-N key code:
 
 ```ShellSession
-nix run .#electron https://localhost:8080
+nix run --impure .#electron https://localhost:8080
 ```
 
 Start the service with the pre-built container usage:

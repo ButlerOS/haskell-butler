@@ -151,9 +151,17 @@
 
       apps."x86_64-linux".electron = rec {
         type = "app";
-        script = pkgs.writers.writeBash "butler-electron.sh" ''
+        script = let
+          nixGLSrc = pkgs.fetchFromGitHub {
+            owner = "guibou";
+            repo = "nixGL";
+            rev = "c917918ab9ebeee27b0dd657263d3f57ba6bb8ad";
+            sha256 = "sha256-KCkWZXCjH+C4Kn7fUGSrEl5btk+sERHhZueSsvVbPWc=";
+          };
+          nixGL = import nixGLSrc { pkgs = pkgs; };
+        in pkgs.writers.writeBash "butler-electron.sh" ''
           set -xe
-          exec ${pkgs.electron}/bin/electron ${self}/bin/electron.js $*
+          exec ${nixGL.auto.nixGLDefault}/bin/nixGL ${pkgs.electron}/bin/electron ${self}/bin/electron.js $*
         '';
         program = builtins.toString script;
       };
