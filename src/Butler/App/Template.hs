@@ -5,6 +5,9 @@ Copy the file and replace 'template' with the name of your app.
 module Butler.App.Template (templateApp) where
 
 import Butler
+
+import Butler.App
+import Butler.App.PokerPlanner (pokerPlannerApp)
 import Butler.AppSettings
 
 templateApp :: App
@@ -39,6 +42,11 @@ startTemplate ctx = do
                     Just (Input txt) -> "Input: " <> toHtml txt
                     Nothing -> pure ()
 
+            -- Demo start an external app
+            let startPlannerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid]]
+            with button_ [class_ btnBlueClass, onclick_ startPlannerScript] do
+                "Start External App"
+
     -- Handle events
     forever do
         atomically (readPipe ctx.pipe) >>= \case
@@ -50,6 +58,13 @@ startTemplate ctx = do
                         case ev.body ^? key "value" . _String of
                             Just txt -> setState (Input txt)
                             Nothing -> logError "Missing value" ["ev" .= ev]
+                    "poker-result" ->
+                        -- Demo how to close external app on result trigger event
+                        case (ev.body ^? key "value" . _JSON, ev.body ^? key "wid" . _JSON) of
+                            (Just v, Just wid) -> do
+                                closeApp ctx.shared ev.client wid
+                                logInfo "Poker result" ["v" .= (v :: Float)]
+                            _ -> logError "Unknown result" ["ev" .= ev]
                     _ -> logError "Unknown trigger" ["ev" .= ev]
                 sendsHtml ctx.shared.clients mountUI
             ev -> logError "Unknown ev" ["ev" .= ev]

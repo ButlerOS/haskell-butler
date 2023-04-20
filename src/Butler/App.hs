@@ -341,6 +341,15 @@ sendTriggerScript wid name attrs =
 startAppScript :: App -> [Pair] -> Text
 startAppScript app args = sendTriggerScript shellAppID "start-app" (["name" .= app.name] <> args)
 
+closeApp :: AppSharedContext -> DisplayClient -> AppID -> ProcessIO ()
+closeApp shared client wid = do
+    atomically (Map.lookup shellAppID <$> getApps shared.apps) >>= \case
+        Just shell -> do
+            let msg = encodeJSON $ object ["ev" .= ("close" :: Text), "w" .= wid]
+                rawMsg = encodeMessage 0 msg
+            writePipe shell.pipe (AppData $ DataEvent client msg rawMsg)
+        Nothing -> logError "Can't find shell" []
+
 appSetHtml :: Monad m => AppID -> AppSet -> HtmlT m ()
 appSetHtml wid (AppSet apps) = do
     ul_ do

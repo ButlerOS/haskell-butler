@@ -140,18 +140,30 @@ startPokerPlannerApp ctx = do
                 withTrigger_ "click" ctx.wid "complete" button_ [class_ btnGreenClass] "Complete"
                 withTrigger_ "click" ctx.wid "reset" button_ [class_ btnRedClass] "Reset"
 
+    let requestor :: Maybe AppID
+        requestor = do
+            argv <- ctx.argv
+            argv ^? key "requestor" . _JSON
+
     let finishedUI txt = do
             with div_ [class_ "flex flex-col"] do
-                div_ "Good game, here are the result:"
-                div_ (toHtml txt)
+                with div_ [class_ "mb-3"] do
+                    "Good game, here are the result for: "
+                    b_ $ toHtml txt
                 renderPlayers \_ status -> case status of
                     Thinking -> " has not voted!"
                     Voted v -> " -> " <> toHtml v
                 finalResult <- voteSuggestion . getVotes <$> lift (readTVar state.players)
-                div_ $ "PokerPlanner suggests: " <> toHtml finalResult
+                with div_ [class_ "mt-3"] do
+                    "PokerPlanner suggests: "
+                    b_ $ toHtml finalResult
                 with div_ [class_ "flex flex-row gap-2 text-center justify-center content-place-center pt-2"] do
                     withTrigger "click" ctx.wid "new-game" ["name" .= txt] button_ [class_ btnBlueClass] "Revote"
-                    withTrigger_ "click" ctx.wid "reset" button_ [class_ btnGreenClass] "Next Game"
+                    case requestor of
+                        Just wid -> case finalResult of
+                            Vote value -> withTrigger "click" wid "poker-result" ["value" .= value, "wid" .= ctx.wid] button_ [class_ btnGreenClass] "Submit"
+                            _ -> pure ()
+                        Nothing -> withTrigger_ "click" ctx.wid "reset" button_ [class_ btnGreenClass] "Next Game"
 
     let mountUI :: DisplayClient -> HtmlT STM ()
         mountUI client = with div_ [wid_ ctx.wid "w", style_ "z-index: 9001"] do
