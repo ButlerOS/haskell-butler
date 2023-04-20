@@ -80,7 +80,7 @@ renderSeatTray session wid seats = do
         with div_ [id_ "current-seats"] do
             traverse_ renderSeat =<< lift (getSeats seats)
         username <- lift (readTVar session.username)
-        renderCursorToggle wid username True
+        renderCursorToggle wid username False
 
 data SeatEvent
     = SeatEventResolution Int Int
