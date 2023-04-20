@@ -121,9 +121,10 @@ startPokerPlannerApp ctx = do
                     renderStatus player.client.endpoint player.status
 
     let playingUI client n = with div_ [class_ "flex flex-col"] do
-            div_ $ toHtml $ "Playing: " <> n
+            with div_ [class_ "mb-3"] do
+                "Voting for: "
+                b_ $ toHtml n
             div_ do
-                div_ "Status"
                 renderPlayers \endpoint status -> case status of
                     Thinking -> " thinking about it..."
                     Voted vote
@@ -131,8 +132,8 @@ startPokerPlannerApp ctx = do
                         | otherwise -> " has voted!"
 
             let makeCard (value :: VoteValue) = do
-                    withTrigger "click" ctx.wid "vote" ["card" .= value] button_ [class_ "mx-2 border px-5 py-3"] (toHtml value)
-            with div_ [class_ "flex flex-row"] do
+                    withTrigger "click" ctx.wid "vote" ["card" .= value] button_ [class_ "mx-2 border w-16 py-1"] (toHtml value)
+            with div_ [class_ "flex flex-wrap gap-2 mt-3"] do
                 traverse_ makeCard $ (Vote <$> validVotes) <> [Unknown]
 
             with div_ [class_ "flex flex-row gap-2 text-center justify-center content-place-center pt-2"] do
@@ -148,7 +149,9 @@ startPokerPlannerApp ctx = do
                     Voted v -> " -> " <> toHtml v
                 finalResult <- voteSuggestion . getVotes <$> lift (readTVar state.players)
                 div_ $ "PokerPlanner suggests: " <> toHtml finalResult
-                withTrigger_ "click" ctx.wid "reset" button_ [class_ btnGreenClass] "Next Game"
+                with div_ [class_ "flex flex-row gap-2 text-center justify-center content-place-center pt-2"] do
+                    withTrigger "click" ctx.wid "new-game" ["name" .= txt] button_ [class_ btnBlueClass] "Revote"
+                    withTrigger_ "click" ctx.wid "reset" button_ [class_ btnGreenClass] "Next Game"
 
     let mountUI :: DisplayClient -> HtmlT STM ()
         mountUI client = with div_ [wid_ ctx.wid "w", style_ "z-index: 9001"] do
