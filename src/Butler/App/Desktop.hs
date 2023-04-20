@@ -70,11 +70,7 @@ startDesktopApp services ctx = do
         sendsHtml ctx.shared.clients newHtml
 
     Map.toList <$> atomically (readMemoryVar wm.apps) >>= \case
-        [] -> do
-            wid <- atomically (nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps)
-            void $ atomically $ newWindow wm.windows wid "Welcome"
-            delAppMemory wid
-            atomically . addApp wm ctx.shared =<< startDeskApp wid
+        [] -> pure ()
         xs -> do
             logInfo "Restoring apps" ["apps" .= xs]
             forM_ xs $ \(wid, (argv, prog)) -> do
