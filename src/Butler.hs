@@ -59,8 +59,8 @@ module Butler (
     serveDashboardApps,
     publicDisplayApp,
     Service (..),
-    AppID,
     newAppMemory,
+    module Butler.AppID,
 
     -- * GUI toolkit
     wid_,

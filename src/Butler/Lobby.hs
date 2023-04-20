@@ -12,7 +12,6 @@ import Lucid.Htmx
 import Butler
 import Butler.App
 import Butler.App.Desktop
-import Butler.AppID
 import Butler.Core
 import Butler.Core.Logger
 import Butler.Display

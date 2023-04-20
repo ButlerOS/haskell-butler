@@ -1,7 +1,6 @@
 module Butler.GUI.File where
 
 import Butler
-import Butler.AppID
 
 renderFileIcon :: Entry -> (Text, FileName)
 renderFileIcon = \case

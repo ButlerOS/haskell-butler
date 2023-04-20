@@ -5,7 +5,6 @@ import Data.Set qualified as Set
 
 import Butler
 import Butler.App
-import Butler.AppID
 import Butler.Core
 import Butler.GUI.File
 import Butler.Service.FileService
