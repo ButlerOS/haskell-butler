@@ -5,12 +5,17 @@ Copy the file and replace 'template' with the name of your app.
 module Butler.App.Template (templateApp) where
 
 import Butler
+import Butler.AppSettings
 
 templateApp :: App
 templateApp =
     (defaultApp "template" startTemplate)
         { tags = fromList ["Utility"]
         , description = "A template app"
+        , settings =
+            [ AppSetting "test-url" "" SettingURL
+            , AppSetting "test-token" "" SettingToken
+            ]
         }
 
 data TemplateState = Clicked | Input Text

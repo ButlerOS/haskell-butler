@@ -22,14 +22,20 @@ startSettings ctx = do
 
     -- UI
     let selectUI :: ProgramName -> AppSetting -> HtmlT STM ()
-        selectUI program appSetting = with form_ [wsSend, hxTrigger_ "change", wid_ ctx.wid "set"] do
+        selectUI program appSetting = with form_ [wsSend, hxTrigger_ "change", wid_ ctx.wid "set", onsubmit_ "return false"] do
             with (input_ mempty) [type_ "hidden", name_ "setting", value_ (from appSetting.name)]
             with (input_ mempty) [type_ "hidden", name_ "program", value_ (from program)]
             case appSetting.schema of
                 SettingChoice xs -> with select_ [name_ "value"] do
                     option_ "default"
                     traverse_ (option_ . toHtml) xs
-                SettingToggle -> with (input_ mempty) [name_ "value", type_ "checkbox"]
+                SettingToggle -> with (input_ mempty) [name_ "value", type_ "checkbox", onclick_ "alert('Not Implemented!'); return false"]
+                SettingURL -> with (input_ mempty) [name_ "value", type_ "text"]
+                SettingToken -> with (input_ mempty) [name_ "value", type_ "password"]
+        -- let fakeValue = case appSetting.value of
+        --         "" -> ""
+        --         _ -> "xxxx"
+        --  in with (input_ mempty) [name_ "value", type_ "password", value_ fakeValue]
 
         mountUI :: HtmlT STM ()
         mountUI = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
@@ -48,9 +54,20 @@ startSettings ctx = do
                             let savedSettings :: Map SettingKey SettingValue
                                 savedSettings = getSetting app.name settings
                             forM_ appSettings \appSetting -> do
+                                let mUserSetting = Map.lookup appSetting.name savedSettings
+                                    settingValue = fromMaybe appSetting.value mUserSetting
                                 tr_ do
                                     td_ $ toHtml appSetting.name
-                                    td_ $ toHtml $ fromMaybe appSetting.value (Map.lookup appSetting.name savedSettings)
+                                    td_ do
+                                        case mUserSetting of
+                                            Just{} -> withTrigger "click" ctx.wid "clear" ["setting" .= appSetting.name, "program" .= app.name] i_ [class_ "ri-delete-bin-2-fill text-red-500 mx-2 cursor-pointer", title_ "Clear the setting"] mempty
+                                            Nothing -> pure ()
+                                        case appSetting.schema of
+                                            SettingToken -> case mUserSetting of
+                                                Just{} -> "******"
+                                                Nothing -> ""
+                                            _ -> toHtml settingValue
+
                                     td_ $ selectUI app.name appSetting
 
         handleChange :: ProgramName -> SettingKey -> SettingValue -> ProcessIO ()
@@ -61,7 +78,7 @@ startSettings ctx = do
                     | prev == value -> pure ()
                     | otherwise -> do
                         logInfo "Changing setting" ["program" .= program, "setting" .= setting, "value" .= value]
-                        atomically $ putSetting program setting value mvSettings
+                        atomically $ putSetting program setting (Just value) mvSettings
                         appInstances <- atomically $ getApps ctx.shared.apps
                         forM_ appInstances \appInstance -> do
                             when (appInstance.app.name == program) do
@@ -74,10 +91,11 @@ startSettings ctx = do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
             AppTrigger ev -> do
-                case ev.trigger of
-                    "set" -> case (ev.body ^? key "program" . _JSON, ev.body ^? key "setting" . _JSON, ev.body ^? key "value" . _JSON) of
-                        (Just program, Just setting, Just value) -> handleChange program setting value
-                        _ -> logError "Unknown setting" ["ev" .= ev]
-                    _ -> logError "Unknown event" ["ev" .= ev]
+                case (ev.body ^? key "program" . _JSON, ev.body ^? key "setting" . _JSON, ev.body ^? key "value" . _JSON) of
+                    (Just program, Just setting, mValue) -> case (ev.trigger, mValue) of
+                        ("set", Just value) -> handleChange program setting value
+                        ("clear", Nothing) -> atomically $ putSetting program setting Nothing mvSettings
+                        _ -> logError "Unknown trigger" ["ev" .= ev]
+                    _ -> logError "Unknown settings" ["ev" .= ev]
                 sendsHtml ctx.shared.clients mountUI
             ev -> logError "Unknown ev" ["ev" .= ev]

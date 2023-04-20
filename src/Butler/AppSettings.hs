@@ -20,6 +20,8 @@ instance From SettingKey Text where from = coerce
 data SettingSchema
     = SettingChoice [SettingValue]
     | SettingToggle
+    | SettingURL
+    | SettingToken
 
 data AppSetting = AppSetting
     { name :: SettingKey
@@ -57,9 +59,13 @@ getSetting program settings = case Map.lookup program settings.settingsMap of
     Nothing -> mempty
     Just m -> m.settingMap
 
-putSetting :: ProgramName -> SettingKey -> SettingValue -> MemoryVar Settings -> STM ()
-putSetting program setting value mv = modifyMemoryVar mv \settings ->
+putSetting :: ProgramName -> SettingKey -> Maybe SettingValue -> MemoryVar Settings -> STM ()
+putSetting program setting mValue mv = modifyMemoryVar mv \settings ->
     let newSetting = case Map.lookup program settings.settingsMap of
-            Nothing -> Map.fromList [(setting, value)]
-            Just prev -> Map.insert setting value prev.settingMap
+            Nothing -> case mValue of
+                Nothing -> mempty
+                Just value -> Map.fromList [(setting, value)]
+            Just prev -> case mValue of
+                Nothing -> Map.delete setting prev.settingMap
+                Just value -> Map.insert setting value prev.settingMap
      in Settings $ Map.insert program (Setting newSetting) settings.settingsMap
