@@ -80,7 +80,7 @@ startVncApp ctx = do
 
         extraHandler = \case
             UserConnected _ client -> do
-                spawnThread_ (pingThread client)
+                spawnThread_ (sendThread client)
                 onClient client
             _ -> pure ()
     atomically (modifyTVar' ctx.shared.extraHandlers $ Map.insert "novnc" extraHandler)
