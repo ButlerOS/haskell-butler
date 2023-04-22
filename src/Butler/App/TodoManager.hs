@@ -140,9 +140,9 @@ formInputs appStateM = do
     div_ [class_ "flex flex-col w-32"] $ do
         label_ [class_ "block", for_ "taskPrio"] "Priority"
         select_ [class_ "text-sm rounded", id_ "taskPrio", name_ "taskPrio"] $ do
-            option_ (optionAttributes todoEditingTask "Low") "Low"
             option_ (optionAttributes todoEditingTask "Medium") "Medium"
             option_ (optionAttributes todoEditingTask "High") "High"
+            option_ (optionAttributes todoEditingTask "Low") "Low"
     div_ [class_ "flex flex-col w-48"] $ do
         label_ [class_ "block", for_ "taskDueDate"] "Due date"
         input_
@@ -207,8 +207,8 @@ showItems appID appStateM = do
     taskBg :: TaskPrio -> Text
     taskBg = \case
         High -> "bg-red-100"
-        Medium -> "bg-blue-100"
-        Low -> "bg-green-100"
+        Medium -> "bg-green-100"
+        Low -> "bg-gray-100"
     sortByDate :: [TodoTask] -> [TodoTask]
     sortByDate tasks =
         let compareTaskdate a b = compare a.taskDueDate b.taskDueDate
