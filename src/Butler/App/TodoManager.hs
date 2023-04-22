@@ -37,8 +37,8 @@ data TaskPrio
     | Low
     deriving (Generic, Serialise, Show)
 
-newtype TaskDueDate = TaskDueDate UTCTime
-    deriving newtype (Serialise, Eq, Ord)
+data TaskDueDate = NoDueDate | DueDate UTCTime
+    deriving (Generic, Serialise, Eq, Ord)
 
 data TodoTask = TodoTask
     { taskId :: TaskId
@@ -92,25 +92,26 @@ defaultDateFormat :: String
 defaultDateFormat = "%Y-%m-%d"
 
 dueDateToUIDate :: TaskDueDate -> Text
-dueDateToUIDate (TaskDueDate utcdate) = from $ formatTime defaultTimeLocale defaultDateFormat utcdate
+dueDateToUIDate (DueDate utcdate) = from $ formatTime defaultTimeLocale defaultDateFormat utcdate
+dueDateToUIDate NoDueDate = ""
 
-appUI :: AppContext -> MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
-appUI ctx appStateM taskDueDate = do
+appUI :: AppContext -> MemoryVar TodoManager -> HtmlT STM ()
+appUI ctx appStateM = do
     div_ [id_ "MainDiv", class_ "flex flex-col"] $ do
         -- Form
         div_ [class_ "m-1 p-1 border border-gray flex flex-row justify-around m-2"] $ do
-            inputForm ctx.wid appStateM taskDueDate
+            inputForm ctx.wid appStateM
         -- Items display
         div_ [class_ "m-1 p-1 border border-gray"] $ do
             showItems ctx.wid appStateM
 
-inputForm :: AppID -> MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
-inputForm appID appStateM taskDueDate = do
+inputForm :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
+inputForm appID appStateM = do
     TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
     withEvent' todoEditingTask $ do
         form_ [class_ "w-full"] $ do
             div_ [class_ "flex flex-row flex-wrap justify-around gap-3"] $ do
-                formInputs appStateM taskDueDate
+                formInputs appStateM
             div_ [class_ "flex flex-wrap justify-around"] $ do
                 case todoEditingTask of
                     EditingTask _ -> submitButton "Update Task"
@@ -122,8 +123,8 @@ inputForm appID appStateM taskDueDate = do
         EditingTask task ->
             withEvent appID "edited-item" [("taskID", Number $ fromIntegral task.taskId)]
 
-formInputs :: MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
-formInputs appStateM defaultTaskDueDate = do
+formInputs :: MemoryVar TodoManager -> HtmlT STM ()
+formInputs appStateM = do
     TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col grow"] $ do
         label_ [class_ "block m-1", for_ "taskDesc"] "Description"
@@ -149,7 +150,7 @@ formInputs appStateM defaultTaskDueDate = do
             , type_ "date"
             , name_ "taskDueDate"
             , value_ $ dueDateToUIDate $ case todoEditingTask of
-                NoEditingTask -> defaultTaskDueDate
+                NoEditingTask -> NoDueDate
                 EditingTask (TodoTask{taskDueDate}) -> taskDueDate
             ]
   where
@@ -302,9 +303,7 @@ startTodoManager ctx = do
     let appState = TodoManager 0 NoEditingTask []
         memAddr = "todo-manager-" <> showT ctx.wid <> ".bin"
     appStateM <- getSharedDynamic ctx.shared.dynamics "todo-manager" (snd <$> newProcessMemory (from memAddr) (pure appState))
-    now <- liftIO getCurrentTime
-    let mountUI = with div_ [wid_ ctx.wid "w"] $ appUI ctx appStateM defaultTaskDueDate
-        defaultTaskDueDate = TaskDueDate now
+    let mountUI = with div_ [wid_ ctx.wid "w"] $ appUI ctx appStateM
 
     spawnThread_ $ renderOnChange mountUI \newHtml -> do
         sendsHtml ctx.shared.clients newHtml
@@ -322,9 +321,9 @@ startTodoManager ctx = do
                              , ev.body ^? key "taskDueDate" . _JSON
                              ) of
                             (Just taskDesc, Just @Text taskPrio, Just taskDueDate') -> do
-                                taskDueDate <- parseTimeM False defaultTimeLocale defaultDateFormat taskDueDate'
+                                taskDueDate <- parseDueDate taskDueDate'
                                 atomically $ modifyMemoryVar appStateM $ \tm -> do
-                                    addTask tm taskDesc (textToPrio taskPrio) (TaskDueDate taskDueDate)
+                                    addTask tm taskDesc (textToPrio taskPrio) taskDueDate
                             _ -> pure ()
                     "del-item" -> do
                         logInfo "Removing item" ["ev" .= ev]
@@ -351,9 +350,9 @@ startTodoManager ctx = do
                              , ev.body ^? key "taskDueDate" . _JSON
                              ) of
                             (Just taskID, Just taskDesc, Just taskPrio, Just taskDueDate') -> do
-                                taskDueDate <- parseTimeM False defaultTimeLocale defaultDateFormat taskDueDate'
+                                taskDueDate <- parseDueDate taskDueDate'
                                 atomically $ modifyMemoryVar appStateM $ \tm -> do
-                                    updateTask (unSetEditingTask tm) (TaskId taskID) (TaskDesc taskDesc) (textToPrio taskPrio) (TaskDueDate taskDueDate)
+                                    updateTask (unSetEditingTask tm) (TaskId taskID) (TaskDesc taskDesc) (textToPrio taskPrio) taskDueDate
                             _ -> pure ()
                     "checkbox-click" -> do
                         logInfo "Selected item" ["ev" .= ev]
@@ -364,3 +363,9 @@ startTodoManager ctx = do
                             Nothing -> pure ()
                     _ -> logError "Unknown trigger" ["ev" .= ev]
             ev -> logError "Unknown ev" ["ev" .= ev]
+
+parseDueDate :: MonadFail m => String -> m TaskDueDate
+parseDueDate taskDueDate = do
+    if null taskDueDate
+        then pure NoDueDate
+        else DueDate <$> parseTimeM False defaultTimeLocale defaultDateFormat taskDueDate
