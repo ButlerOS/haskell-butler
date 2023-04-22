@@ -35,10 +35,17 @@ data TaskPrio
     = High
     | Medium
     | Low
-    deriving (Generic, Serialise, Show)
+    deriving (Generic, Serialise, Eq, Ord, Show)
 
 data TaskDueDate = NoDueDate | DueDate UTCTime
-    deriving (Generic, Serialise, Eq, Ord)
+    deriving (Generic, Serialise, Eq)
+
+instance Ord TaskDueDate where
+    compare a b = case (a, b) of
+        (NoDueDate, DueDate _) -> GT
+        (DueDate _, NoDueDate) -> LT
+        (DueDate a', DueDate b') -> compare a' b'
+        (NoDueDate, NoDueDate) -> EQ
 
 data TodoTask = TodoTask
     { taskId :: TaskId
@@ -184,7 +191,7 @@ showItems appID appStateM = do
             div_ [class_ "w-16 flex flex-row"] "Prio"
             div_ [class_ "w-32"] "Due date"
             div_ [] "Description"
-        forM_ (sortByDate todoManager.todoTasks) $ \(TodoTask{..}) -> do
+        forM_ (sortCombined todoManager.todoTasks) $ \(TodoTask{..}) -> do
             div_
                 [ class_ $
                     "flex flex-row flex-wrap align-middle gap-2 "
@@ -209,10 +216,12 @@ showItems appID appStateM = do
         High -> "bg-red-100"
         Medium -> "bg-green-100"
         Low -> "bg-gray-100"
-    sortByDate :: [TodoTask] -> [TodoTask]
-    sortByDate tasks =
-        let compareTaskdate a b = compare a.taskDueDate b.taskDueDate
-         in sortBy compareTaskdate tasks
+    sortCombined :: [TodoTask] -> [TodoTask]
+    sortCombined tasks =
+        let compareTask a b =
+                let c = compare a.taskPrio b.taskPrio
+                 in if c == EQ then compare a.taskDueDate b.taskDueDate else c
+         in sortBy compareTask tasks
 
 addTask :: TodoManager -> Text -> TaskPrio -> TaskDueDate -> TodoManager
 addTask (TodoManager (TaskIndex i) _ todoTasks) content taskPrio taskDueDate =
