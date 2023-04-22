@@ -4,13 +4,17 @@ import Butler
 import Butler.App (withEvent)
 import Butler.Core.Dynamic
 import Data.Aeson (Value (Number))
+import Data.List (sortBy)
 import Data.Time (defaultTimeLocale, formatTime, parseTimeM)
+import XStatic.Butler (defaultXFiles)
+import XStatic.Remixicon qualified as XStatic
 
 todoManagerApp :: App
 todoManagerApp =
     (defaultApp "TodoManager" startTodoManager)
         { tags = fromList ["Utility"]
         , description = "Manage your tasks"
+        , xfiles = XStatic.remixiconCss : defaultXFiles
         }
 
 newtype TaskDesc = TaskDesc Text
@@ -34,7 +38,7 @@ data TaskPrio
     deriving (Generic, Serialise, Show)
 
 newtype TaskDueDate = TaskDueDate UTCTime
-    deriving newtype (Serialise)
+    deriving newtype (Serialise, Eq, Ord)
 
 data TodoTask = TodoTask
     { taskId :: TaskId
@@ -94,10 +98,10 @@ appUI :: AppContext -> MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
 appUI ctx appStateM taskDueDate = do
     div_ [id_ "MainDiv", class_ "flex flex-col"] $ do
         -- Form
-        div_ [class_ "flex flex-row justify-around m-2"] $ do
+        div_ [class_ "m-1 p-1 border border-gray flex flex-row justify-around m-2"] $ do
             inputForm ctx.wid appStateM taskDueDate
         -- Items display
-        div_ [] $ do
+        div_ [class_ "m-1 p-1 border border-gray"] $ do
             showItems ctx.wid appStateM
 
 inputForm :: AppID -> MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
@@ -105,14 +109,13 @@ inputForm appID appStateM taskDueDate = do
     TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
     withEvent' todoEditingTask $ do
         form_ [class_ "w-full"] $ do
-            div_ [class_ "flex flex-row flex-wrap justify-around gap-1"] $ do
+            div_ [class_ "flex flex-row flex-wrap justify-around gap-3"] $ do
                 formInputs appStateM taskDueDate
             div_ [class_ "flex flex-wrap justify-around"] $ do
                 case todoEditingTask of
                     EditingTask _ -> submitButton "Update Task"
                     NoEditingTask -> submitButton "Add Task"
                 editTasksButton appID appStateM
-                delTasksButton appID appStateM
   where
     withEvent' editingTask = case editingTask of
         NoEditingTask -> withEvent appID "add-item" []
@@ -122,8 +125,8 @@ inputForm appID appStateM taskDueDate = do
 formInputs :: MemoryVar TodoManager -> TaskDueDate -> HtmlT STM ()
 formInputs appStateM defaultTaskDueDate = do
     TodoManager{todoEditingTask} <- lift $ readMemoryVar appStateM
-    div_ [class_ "flex flex-wrap"] $ do
-        label_ [class_ "block font-semibold m-1", for_ "taskDesc"] "Task Desc"
+    div_ [class_ "flex flex-col grow"] $ do
+        label_ [class_ "block m-1", for_ "taskDesc"] "Description"
         input_
             [ id_ "taskDesc"
             , type_ "text"
@@ -131,16 +134,16 @@ formInputs appStateM defaultTaskDueDate = do
             , value_ $ case todoEditingTask of
                 NoEditingTask -> ""
                 EditingTask (TodoTask _ _ (TaskDesc taskDesc) _ _) -> taskDesc
-            , class_ "h-8 ml-1 text-center border border-slate-300 rounded-md focus:border-slate-400"
+            , class_ "h-8 ml-1 border border-slate-300 rounded-md focus:border-slate-400"
             ]
-    div_ [class_ "flex flex-wrap"] $ do
-        label_ [class_ "block font-semibold m-1", for_ "taskPrio"] "Task Prio"
+    div_ [class_ "flex flex-col w-32"] $ do
+        label_ [class_ "block", for_ "taskPrio"] "Priority"
         select_ [class_ "text-sm rounded", id_ "taskPrio", name_ "taskPrio"] $ do
             option_ (optionAttributes todoEditingTask "Low") "Low"
             option_ (optionAttributes todoEditingTask "Medium") "Medium"
             option_ (optionAttributes todoEditingTask "High") "High"
-    div_ [class_ "flex flex-wrap"] $ do
-        label_ [class_ "block font-semibold m-1", for_ "taskDueDate"] "Due date"
+    div_ [class_ "flex flex-col w-48"] $ do
+        label_ [class_ "block", for_ "taskDueDate"] "Due date"
         input_
             [ id_ "taskDueDesc"
             , type_ "date"
@@ -157,13 +160,6 @@ formInputs appStateM defaultTaskDueDate = do
             else [value_ value]
     optionAttributes NoEditingTask value = [value_ value]
 
-delTasksButton :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
-delTasksButton appID appStateM = do
-    todoManager <- lift $ readMemoryVar appStateM
-    if countSelectedTasks todoManager > 0
-        then button appID "del-item" "Del Tasks(s)"
-        else disabledButton "Del Tasks(s)"
-
 editTasksButton :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 editTasksButton appID appStateM = do
     todoManager <- lift $ readMemoryVar appStateM
@@ -173,14 +169,21 @@ editTasksButton appID appStateM = do
 
 showItems :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 showItems appID appStateM = do
-    todoManager@(TodoManager{todoTasks}) <- lift $ readMemoryVar appStateM
+    todoManager <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
         div_ [class_ "flex flex-row flex-wrap align-middle gap-2 "] $ do
-            div_ [class_ "ml-4"] ""
-            div_ [class_ "w-16"] "Prio"
-            div_ [class_ "w-32"] "Date"
+            withEvent appID "del-item" [] $
+                i_
+                    [ class_
+                        if isTasksSelected todoManager
+                            then "cursor-pointer ri-delete-bin-5-line"
+                            else "ri-delete-bin-line"
+                    ]
+                    mempty
+            div_ [class_ "w-16 flex flex-row"] "Prio"
+            div_ [class_ "w-32"] "Due date"
             div_ [] "Description"
-        forM_ todoTasks $ \(TodoTask{..}) -> do
+        forM_ (sortByDate todoManager.todoTasks) $ \(TodoTask{..}) -> do
             div_
                 [ class_ $
                     "flex flex-row flex-wrap align-middle gap-2 "
@@ -205,6 +208,10 @@ showItems appID appStateM = do
         High -> "bg-red-100"
         Medium -> "bg-blue-100"
         Low -> "bg-green-100"
+    sortByDate :: [TodoTask] -> [TodoTask]
+    sortByDate tasks =
+        let compareTaskdate a b = compare a.taskDueDate b.taskDueDate
+         in sortBy compareTaskdate tasks
 
 addTask :: TodoManager -> Text -> TaskPrio -> TaskDueDate -> TodoManager
 addTask (TodoManager (TaskIndex i) _ todoTasks) content taskPrio taskDueDate =
@@ -252,6 +259,9 @@ getFirstSelectedTask (TodoManager{todoTasks}) =
 countSelectedTasks :: TodoManager -> Int
 countSelectedTasks (TodoManager{todoTasks}) =
     length $ filter isTaskSelected todoTasks
+
+isTasksSelected :: TodoManager -> Bool
+isTasksSelected tm = countSelectedTasks tm > 0
 
 isTaskExists :: TodoManager -> TaskId -> Bool
 isTaskExists (TodoManager{todoTasks}) taskId' =
