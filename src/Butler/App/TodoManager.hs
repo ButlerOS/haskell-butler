@@ -107,7 +107,7 @@ inputForm appID appStateM taskDueDate = do
         form_ [class_ "w-full"] $ do
             div_ [class_ "flex flex-row flex-wrap justify-around gap-1"] $ do
                 formInputs appStateM taskDueDate
-            div_ [class_ "flex justify-around"] $ do
+            div_ [class_ "flex flex-wrap justify-around"] $ do
                 case todoEditingTask of
                     EditingTask _ -> submitButton "Update Task"
                     NoEditingTask -> submitButton "Add Task"
@@ -175,6 +175,11 @@ showItems :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 showItems appID appStateM = do
     todoManager@(TodoManager{todoTasks}) <- lift $ readMemoryVar appStateM
     div_ [class_ "flex flex-col m-2 gap-1"] $ do
+        div_ [class_ "flex flex-row flex-wrap align-middle gap-2 "] $ do
+            div_ [class_ "ml-4"] ""
+            div_ [class_ "w-16"] "Prio"
+            div_ [class_ "w-32"] "Date"
+            div_ [] "Description"
         forM_ todoTasks $ \(TodoTask{..}) -> do
             div_
                 [ class_ $
