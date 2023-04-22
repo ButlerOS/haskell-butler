@@ -230,6 +230,10 @@ isTaskEdited :: TodoManager -> TaskId -> Bool
 isTaskEdited (TodoManager _ (EditingTask (TodoTask{taskId})) _) taskId' = taskId == taskId'
 isTaskEdited _ _ = False
 
+getEditedTask :: TodoManager -> Maybe TaskId
+getEditedTask (TodoManager _ (EditingTask (TodoTask{taskId})) _) = Just taskId
+getEditedTask _ = Nothing
+
 delSelectedTasks :: TodoManager -> TodoManager
 delSelectedTasks todoManager@(TodoManager{todoTasks}) =
     todoManager{todoTasks = filter (not . isTaskSelected) todoTasks}
@@ -243,6 +247,10 @@ getFirstSelectedTask (TodoManager{todoTasks}) =
 countSelectedTasks :: TodoManager -> Int
 countSelectedTasks (TodoManager{todoTasks}) =
     length $ filter isTaskSelected todoTasks
+
+isTaskExists :: TodoManager -> TaskId -> Bool
+isTaskExists (TodoManager{todoTasks}) taskId' =
+    any (\TodoTask{taskId} -> taskId == taskId') todoTasks
 
 selectTask :: TodoTask -> TodoTask
 selectTask task@(TodoTask{taskSelected}) =
@@ -306,7 +314,14 @@ startTodoManager ctx = do
                     "del-item" -> do
                         logInfo "Removing item" ["ev" .= ev]
                         atomically $ modifyMemoryVar appStateM $ \tm -> do
-                            delSelectedTasks tm
+                            let new = delSelectedTasks tm
+                                editedTaskM = getEditedTask tm
+                            case editedTaskM of
+                                Just taskId ->
+                                    if isTaskExists new taskId
+                                        then new
+                                        else unSetEditingTask new
+                                Nothing -> new
                     "edit-item" -> do
                         logInfo "Editing item" ["ev" .= ev]
                         atomically $ modifyMemoryVar appStateM $ \tm -> do
