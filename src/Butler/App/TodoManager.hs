@@ -142,8 +142,8 @@ settingsPanel appID appStateM = do
   where
     checkbox :: Text -> Text -> TriggerName -> Bool -> HtmlT STM ()
     checkbox cid label triggerName checked = do
-        withEvent appID triggerName [] $ do
-            div_ $ do
+        div_ $ do
+            withEvent appID triggerName [] $ do
                 input_ $ [type_ "checkbox", id_ cid, name_ cid] <> if checked then [checked_] else mempty
                 label_ [class_ "ml-1", for_ cid] $ toHtml label
 
