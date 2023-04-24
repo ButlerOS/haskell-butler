@@ -56,12 +56,23 @@ data TodoTask = TodoTask
     }
     deriving (Generic, Serialise)
 
-data EditingTask = NoEditingTask | EditingTask TodoTask deriving (Generic, Serialise)
+data EditingTask
+    = NoEditingTask
+    | EditingTask TodoTask
+    deriving (Generic, Serialise)
+
+data TodoSettings = TodoSettings
+    { showColumnPrio :: Bool
+    , showColumnDueDate :: Bool
+    }
+    deriving (Generic, Serialise)
 
 data TodoManager = TodoManager
     { todoTaskIndex :: TaskIndex
     , todoEditingTask :: EditingTask
     , todoTasks :: [TodoTask]
+    , todoSettings :: TodoSettings
+    , todoSettingsShow :: Bool
     }
     deriving (Generic, Serialise)
 
@@ -104,13 +115,37 @@ dueDateToUIDate NoDueDate = ""
 
 appUI :: AppContext -> MemoryVar TodoManager -> HtmlT STM ()
 appUI ctx appStateM = do
+    TodoManager{todoSettingsShow} <- lift $ readMemoryVar appStateM
     div_ [id_ "MainDiv", class_ "flex flex-col"] $ do
+        div_ [class_ "mr-1 ml-1"] $ do
+            withEvent ctx.wid "show-settings" [] $
+                i_ [class_ "flex justify-end ri-settings-2-line mr-1 cursor-pointer"] mempty
+        if todoSettingsShow
+            then div_ [class_ "m-1 p-1 border border-gray"] $ do
+                settingsPanel ctx.wid appStateM
+            else mempty
         -- Form
-        div_ [class_ "m-1 p-1 border border-gray flex flex-row justify-around m-2"] $ do
+        div_ [class_ "m-1 p-1 border border-gray flex flex-row justify-around"] $ do
             inputForm ctx.wid appStateM
         -- Items display
         div_ [class_ "m-1 p-1 border border-gray"] $ do
             showItems ctx.wid appStateM
+
+settingsPanel :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
+settingsPanel appID appStateM = do
+    TodoManager{todoSettings} <- lift $ readMemoryVar appStateM
+    let s1 = "setting-show-column-prio"
+        s2 = "setting-show-column-dueDate"
+    div_ [class_ "flex flex-row flex-wrap justify-around"] $ do
+        checkbox s1 "Show column 'Prio'" (TriggerName s1) todoSettings.showColumnPrio
+        checkbox s2 "Show column 'DueDate'" (TriggerName s2) todoSettings.showColumnDueDate
+  where
+    checkbox :: Text -> Text -> TriggerName -> Bool -> HtmlT STM ()
+    checkbox cid label triggerName checked = do
+        withEvent appID triggerName [] $ do
+            div_ $ do
+                input_ $ [type_ "checkbox", id_ cid, name_ cid] <> if checked then [checked_] else mempty
+                label_ [class_ "ml-1", for_ cid] $ toHtml label
 
 inputForm :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 inputForm appID appStateM = do
@@ -188,8 +223,12 @@ showItems appID appStateM = do
                             else "ri-delete-bin-line"
                     ]
                     mempty
-            div_ [class_ "w-16 flex flex-row"] "Prio"
-            div_ [class_ "w-32"] "Due date"
+            if todoManager.todoSettings.showColumnPrio
+                then div_ [class_ "w-16 flex flex-row"] "Prio"
+                else mempty
+            if todoManager.todoSettings.showColumnDueDate
+                then div_ [class_ "w-32"] "Due date"
+                else mempty
             div_ [] "Description"
         forM_ (sortCombined todoManager.todoTasks) $ \(TodoTask{..}) -> do
             div_
@@ -207,8 +246,12 @@ showItems appID appStateM = do
                                     TaskNotSelected -> mempty
                             )
 
-                    div_ [class_ "w-16"] $ toHtml $ show taskPrio
-                    div_ [class_ "w-32"] $ toHtml $ dueDateToUIDate taskDueDate
+                    if todoManager.todoSettings.showColumnPrio
+                        then div_ [class_ "w-16"] $ toHtml $ show taskPrio
+                        else mempty
+                    if todoManager.todoSettings.showColumnDueDate
+                        then div_ [class_ "w-32"] $ toHtml $ dueDateToUIDate taskDueDate
+                        else mempty
                     div_ [] $ toHtml taskDesc
   where
     taskBg :: TaskPrio -> Text
@@ -224,10 +267,10 @@ showItems appID appStateM = do
          in sortBy compareTask tasks
 
 addTask :: TodoManager -> Text -> TaskPrio -> TaskDueDate -> TodoManager
-addTask (TodoManager (TaskIndex i) _ todoTasks) content taskPrio taskDueDate =
+addTask (TodoManager (TaskIndex i) _ todoTasks todoSettings settingsShow) content taskPrio taskDueDate =
     let newId = i + 1
         task = newTask content taskPrio (TaskId newId) taskDueDate
-     in TodoManager (TaskIndex newId) NoEditingTask (task : todoTasks)
+     in TodoManager (TaskIndex newId) NoEditingTask (task : todoTasks) todoSettings settingsShow
 
 updateTask :: TodoManager -> TaskId -> TaskDesc -> TaskPrio -> TaskDueDate -> TodoManager
 updateTask todoManager@(TodoManager{todoTasks}) taskId' taskDesc taskPrio taskDueDate =
@@ -249,12 +292,14 @@ isTaskSelected (TodoTask{taskSelected}) = case taskSelected of
     TaskNotSelected -> False
 
 isTaskEdited :: TodoManager -> TaskId -> Bool
-isTaskEdited (TodoManager _ (EditingTask (TodoTask{taskId})) _) taskId' = taskId == taskId'
-isTaskEdited _ _ = False
+isTaskEdited tm taskId' = case tm.todoEditingTask of
+    EditingTask task -> task.taskId == taskId'
+    NoEditingTask -> False
 
 getEditedTask :: TodoManager -> Maybe TaskId
-getEditedTask (TodoManager _ (EditingTask (TodoTask{taskId})) _) = Just taskId
-getEditedTask _ = Nothing
+getEditedTask tm = case tm.todoEditingTask of
+    EditingTask task -> Just task.taskId
+    NoEditingTask -> Nothing
 
 delSelectedTasks :: TodoManager -> TodoManager
 delSelectedTasks todoManager@(TodoManager{todoTasks}) =
@@ -289,14 +334,19 @@ newTask content taskPrio taskId = TodoTask taskId TaskNotSelected (TaskDesc cont
 
 setSelectedTask :: TodoManager -> TaskId -> TodoManager
 setSelectedTask (TodoManager{..}) taskId' =
-    TodoManager todoTaskIndex todoEditingTask $
-        map
+    TodoManager
+        todoTaskIndex
+        todoEditingTask
+        ( map
             ( \task@(TodoTask{taskId}) ->
                 if taskId == taskId'
                     then selectTask task
                     else task
             )
             todoTasks
+        )
+        todoSettings
+        todoSettingsShow
 
 setEditingTask :: TodoManager -> TodoTask -> TodoManager
 setEditingTask todoManager taskToEdit =
@@ -309,7 +359,7 @@ unSetEditingTask todoManager =
 startTodoManager :: AppContext -> ProcessIO ()
 startTodoManager ctx = do
     logInfo "TodoManager started!" []
-    let appState = TodoManager 0 NoEditingTask []
+    let appState = TodoManager 0 NoEditingTask [] (TodoSettings True True) False
         memAddr = "todo-manager-" <> showT ctx.wid <> ".bin"
     appStateM <- getSharedDynamic ctx.shared.dynamics "todo-manager" (snd <$> newProcessMemory (from memAddr) (pure appState))
     let mountUI = with div_ [wid_ ctx.wid "w"] $ appUI ctx appStateM
@@ -370,6 +420,28 @@ startTodoManager ctx = do
                                 atomically $ modifyMemoryVar appStateM $ \tm -> do
                                     setSelectedTask tm $ TaskId $ fromInteger $ toInteger taskId
                             Nothing -> pure ()
+                    "show-settings" -> do
+                        logInfo "Show settings" ["ev" .= ev]
+                        atomically $ modifyMemoryVar appStateM $ \tm -> do
+                            tm{todoSettingsShow = not tm.todoSettingsShow}
+                    "setting-show-column-prio" -> do
+                        logInfo "Show settings" ["ev" .= ev]
+                        atomically $ modifyMemoryVar appStateM $ \tm -> do
+                            tm
+                                { todoSettings =
+                                    tm.todoSettings
+                                        { showColumnPrio = not tm.todoSettings.showColumnPrio
+                                        }
+                                }
+                    "setting-show-column-dueDate" -> do
+                        logInfo "Show settings" ["ev" .= ev]
+                        atomically $ modifyMemoryVar appStateM $ \tm -> do
+                            tm
+                                { todoSettings =
+                                    tm.todoSettings
+                                        { showColumnDueDate = not tm.todoSettings.showColumnDueDate
+                                        }
+                                }
                     _ -> logError "Unknown trigger" ["ev" .= ev]
             ev -> logError "Unknown ev" ["ev" .= ev]
 
