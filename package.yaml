@@ -121,6 +121,7 @@ dependencies:
   - jose
   - retry
   - ebml
+  - jira-client
 
   # network
   - http-client-tls

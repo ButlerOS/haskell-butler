@@ -12,6 +12,7 @@ import Butler.Prelude
 newtype SettingValue = SettingValue Text
     deriving newtype (Serialise, Show, IsString, FromJSON, ToJSON, ToHtml, Ord, Eq)
 instance From SettingValue Text where from = coerce
+instance From SettingValue ByteString where from (SettingValue txt) = encodeUtf8 txt
 
 newtype SettingKey = SettingKey Text
     deriving newtype (Serialise, Show, IsString, FromJSON, ToJSON, ToJSONKey, ToHtml, Ord, Eq)
@@ -21,6 +22,7 @@ data SettingSchema
     = SettingChoice [SettingValue]
     | SettingToggle
     | SettingURL
+    | SettingName
     | SettingToken
 
 data AppSetting = AppSetting

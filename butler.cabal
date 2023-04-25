@@ -35,6 +35,7 @@ library
       Butler.App.Desktop
       Butler.App.FileManager
       Butler.App.FileViewer
+      Butler.App.JiraClient
       Butler.App.Launcher
       Butler.App.LogViewer
       Butler.App.MineSweeper
@@ -147,6 +148,7 @@ library
     , http-client
     , http-client-tls
     , http-types
+    , jira-client
     , jose
     , ki
     , ki-unlifted
@@ -266,6 +268,7 @@ executable butler
     , http-client
     , http-client-tls
     , http-types
+    , jira-client
     , jose
     , ki
     , ki-unlifted
@@ -395,6 +398,7 @@ test-suite spec
     , http-client
     , http-client-tls
     , http-types
+    , jira-client
     , jose
     , ki
     , ki-unlifted
