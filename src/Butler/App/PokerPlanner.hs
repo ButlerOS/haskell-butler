@@ -105,8 +105,15 @@ getVotes = Map.foldr doGetVote []
 
 startPokerPlannerApp :: AppContext -> ProcessIO ()
 startPokerPlannerApp ctx = do
+    let story :: Maybe Text
+        story = do
+            argv <- ctx.argv
+            argv ^? key "story" . _JSON
+
+    let initialState = maybe WaitingForGame Playing story
+
     state <- atomically do
-        PokerPlannerState <$> newTVar mempty <*> newTVar WaitingForGame
+        PokerPlannerState <$> newTVar mempty <*> newTVar initialState
     let waitingUI = do
             withTrigger_ "" ctx.wid "new-game" (input_ []) [type_ "text", placeholder_ "New game name...", name_ "name"]
 
@@ -137,8 +144,8 @@ startPokerPlannerApp ctx = do
                 traverse_ makeCard $ (Vote <$> validVotes) <> [Unknown]
 
             with div_ [class_ "flex flex-row gap-2 text-center justify-center content-place-center pt-2"] do
-                withTrigger_ "click" ctx.wid "complete" button_ [class_ btnGreenClass] "Complete"
                 withTrigger_ "click" ctx.wid "reset" button_ [class_ btnRedClass] "Reset"
+                withTrigger_ "click" ctx.wid "complete" button_ [class_ btnGreenClass] "Complete"
 
     let requestor :: Maybe AppID
         requestor = do
@@ -161,7 +168,7 @@ startPokerPlannerApp ctx = do
                     withTrigger "click" ctx.wid "new-game" ["name" .= txt] button_ [class_ btnBlueClass] "Revote"
                     case requestor of
                         Just wid -> case finalResult of
-                            Vote value -> withTrigger "click" wid "poker-result" ["value" .= value, "wid" .= ctx.wid] button_ [class_ btnGreenClass] "Submit"
+                            Vote value -> withTrigger "click" wid "poker-result" ["value" .= value, "story" .= txt, "wid" .= ctx.wid] button_ [class_ btnGreenClass] "Submit"
                             _ -> pure ()
                         Nothing -> withTrigger_ "click" ctx.wid "reset" button_ [class_ btnGreenClass] "Next Game"
 

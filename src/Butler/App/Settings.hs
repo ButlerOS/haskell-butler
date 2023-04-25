@@ -31,6 +31,7 @@ startSettings ctx = do
                     traverse_ (option_ . toHtml) xs
                 SettingToggle -> with (input_ mempty) [name_ "value", type_ "checkbox", onclick_ "alert('Not Implemented!'); return false"]
                 SettingURL -> with (input_ mempty) [name_ "value", type_ "text"]
+                SettingName -> with (input_ mempty) [name_ "value", type_ "text"]
                 SettingToken -> with (input_ mempty) [name_ "value", type_ "password"]
         -- let fakeValue = case appSetting.value of
         --         "" -> ""

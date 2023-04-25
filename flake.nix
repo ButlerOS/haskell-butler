@@ -27,6 +27,12 @@
           rev = "4196b6be0d469bc8b7252dbf58c6e15b8146aa43";
           sha256 = "sha256-OnOfzsAZvp26nah+KkhbBUAz6BwQaOuM1dc+f6/65ak=";
         }) { };
+        jira-client = hpPrev.callCabal2nix "jira-client" (pkgs.fetchFromGitHub {
+          owner = "ButlerOS";
+          repo = "haskell-jira-client";
+          rev = "26d65d0d9d8b690c1774df7e0841561402bf1047";
+          sha256 = "sha256-D0cj3Pdxsvj4MKV2CSL/0qJSog0qIVqv+EeJjP4ZBQI=";
+        }) { };
         # https://github.com/awkward-squad/ki/issues/19
         ki = let
           src = pkgs.fetchFromGitHub {

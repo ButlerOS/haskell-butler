@@ -18,6 +18,7 @@ import Butler.App.Clock
 import Butler.App.Desktop
 import Butler.App.FileManager
 import Butler.App.FileViewer
+import Butler.App.JiraClient
 import Butler.App.Launcher
 import Butler.App.LogViewer
 import Butler.App.MineSweeper
@@ -176,6 +177,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , todoManagerApp
             , settingsApp
             , templateApp
+            , jiraClientApp
             ]
                 <> extraApps
 
