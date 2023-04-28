@@ -20,7 +20,6 @@ module Butler.Display.Client (
     recvBinary,
 
     -- * Management thread
-    pingThread,
     sendThread,
 
     -- * Collection of clients
@@ -71,12 +70,6 @@ data DisplayClient = DisplayClient
 
 newClient :: WS.Connection -> Endpoint -> ServerName -> Process -> Session -> STM DisplayClient
 newClient c endpoint server p s = DisplayClient c endpoint server p s <$> newTVar 0 <*> newTVar 0 <*> newTChan
-
--- | An action to keep a client alive.
-pingThread :: DisplayClient -> ProcessIO Void
-pingThread client = forever do
-    sleep 30_000
-    liftIO (WS.sendPing client.conn ("ping" :: ByteString))
 
 -- | An action to send data message. Send ping after 30sec of inactivity.
 sendThread :: DisplayClient -> ProcessIO Void
