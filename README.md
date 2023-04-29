@@ -76,6 +76,12 @@ Start the service with:
 firefox https://localhost:8080
 ```
 
+Recover session from command line (after getting "Permission denied" error):
+
+```ShellSession
+cabal run exe:butler -- run show-recovery $USERNAME
+```
+
 Use the electron client instead of firefox to forward your ssh-agent and enables Ctrl-T and Ctrl-N key code:
 
 ```ShellSession

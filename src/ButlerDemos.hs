@@ -9,6 +9,7 @@ import Butler.App
 import Butler.Core
 import Butler.Display
 import Butler.Lobby
+import Butler.REPL
 import Butler.UnixShell
 
 import Butler.Auth.Invitation
@@ -101,6 +102,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
     let authApp = invitationAuthApp indexHtml
     isolation <- getIsolation
     desktop <- superviseProcess "desktops" $ startDisplay Nothing allXfiles authApp $ \display -> do
+        void $ superviseProcess "repl" (runUnixREPL (adminREPL display.sessions))
         chat <- atomically (newChatServer display.clients)
         lobbyProgram butlerSupervisor (mkAppSet chat butlerSupervisor isolation) chat display
     void $ waitProcess desktop
@@ -204,10 +206,17 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
 run :: ProcessIO _ -> IO ()
 run action = withButlerOS action >>= print
 
+replClient :: [String] -> ProcessIO ()
+replClient xs = withUnixSocket "control.sock" \socket -> do
+    sktSendAll socket (from $ encodeJSON (into @Text <$> xs))
+    res <- sktRecv socket 4096
+    liftIO $ putTextLn $ decodeUtf8 res
+
 main :: IO ()
 main = runMain do
     getArgs >>= \case
         ["vnc"] -> run vncServer
         ["app"] -> run demoApp
         ["dashboard"] -> run demoDashboard
+        "run" : xs -> run $ replClient xs
         _ -> run (demoDesktop [])

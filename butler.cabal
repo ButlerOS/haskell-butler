@@ -87,6 +87,7 @@ library
       Butler.GUI.File
       Butler.Lobby
       Butler.Prelude
+      Butler.REPL
       Butler.Service.Assistant
       Butler.Service.Cursor
       Butler.Service.FileService

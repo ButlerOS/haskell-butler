@@ -6,7 +6,6 @@ import Butler.App
 import Butler.App.PokerPlanner (pokerPlannerApp)
 import Butler.AppSettings
 
-import Control.Monad.Except (runExceptT, throwError)
 import Data.Map.Strict qualified as Map
 import Jira qualified
 import Network.HTTP.Client.TLS (newTlsManager)
