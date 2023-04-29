@@ -132,6 +132,23 @@
           };
         } extra-config);
 
+      # A container with nix that is suitable to use for butler terminal
+      toolbox = pkgs.dockerTools.buildLayeredImage {
+        name = "ghcr.io/butleros/toolbox";
+        tag = "latest";
+        created = "now";
+        contents = [ pkgs.nix ];
+        # To update, run: nix run nixpkgs#nix-prefetch-docker -- -c nix-prefetch-docker --image-name registry.fedoraproject.org/fedora --image-tag 38
+        fromImage = pkgs.dockerTools.pullImage {
+          imageName = "registry.fedoraproject.org/fedora";
+          imageDigest =
+            "sha256:b14af4b4e7abb04e3dd4d7194d9415cedc6f587b6e446581d4ec110f94f9a75f";
+          sha256 = "03ly24zs05kikvf12g9rmw5nsamypi0cvj3aqqs2ygghc5hs7hzy";
+          finalImageName = "registry.fedoraproject.org/fedora";
+          finalImageTag = "38";
+        };
+      };
+
       baseTools = with pkgs; [
         hpack
         cabal-install
@@ -146,6 +163,7 @@
       haskellExtend = haskellExtend;
       packages."x86_64-linux".default = pkg-exe;
 
+      packages."x86_64-linux".toolbox = toolbox;
       packages."x86_64-linux".containerBase = mkContainer "base" [ ];
       packages."x86_64-linux".containerTerm = mkContainer "term" [
         pkgs.coreutils
