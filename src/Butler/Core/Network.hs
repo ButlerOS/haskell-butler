@@ -2,6 +2,7 @@ module Butler.Core.Network (
     WaiApplication,
     webService,
     WebProtocol (..),
+    withUnixSocket,
     unixService,
     ServerName,
 ) where
@@ -46,6 +47,11 @@ getKeys = fst <$> newProcessMemory "tls.key" genKeys
 withSocket :: (Socket -> ProcessIO a) -> ProcessIO a
 withSocket =
     bracket (liftIO $ Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol) (liftIO . Socket.close)
+
+withUnixSocket :: FilePath -> (Socket -> ProcessIO a) -> ProcessIO a
+withUnixSocket fp cb = withSocket \socket -> do
+    liftIO (Socket.connect socket (Socket.SockAddrUnix fp))
+    cb socket
 
 unixService :: FilePath -> (Socket -> ProcessIO ()) -> ProcessIO Void
 unixService fp cb = withSocket \socket ->

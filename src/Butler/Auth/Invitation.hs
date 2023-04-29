@@ -1,6 +1,5 @@
 module Butler.Auth.Invitation (invitationAuthApp) where
 
-import Control.Monad.Except (runExceptT)
 import Data.Time (UTCTime (..), fromGregorian)
 import Lucid
 import Servant

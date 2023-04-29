@@ -125,6 +125,11 @@ module Butler.Prelude (
     getEnv,
     createDirectoryIfMissing,
 
+    -- * mtl
+    Control.Monad.Except.ExceptT,
+    Control.Monad.Except.runExceptT,
+    Control.Monad.Except.throwError,
+
     -- * base extra
     System.Posix.ByteString.RawFilePath,
     GHC.Exts.fromList,
@@ -170,6 +175,7 @@ import Control.Concurrent.STM
 import Control.Exception hiding (Handler)
 import Control.Lens hiding ((.=))
 import Control.Monad
+import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader
 import Data.Aeson
 import Data.Aeson.Lens qualified

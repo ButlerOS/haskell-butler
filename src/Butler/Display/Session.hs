@@ -7,6 +7,7 @@ module Butler.Display.Session (
     deleteSession,
     isEmptySessions,
     lookupSession,
+    lookupSessionByUser,
     checkInvite,
     newSession,
     changeUsername,
@@ -149,6 +150,18 @@ checkInvite sessions inviteID = Map.member inviteID <$> readMemoryVar sessions.i
 
 lookupSession :: Sessions -> SessionID -> STM (Maybe Session)
 lookupSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
+
+lookupSessionByUser :: Sessions -> UserName -> STM [Session]
+lookupSessionByUser sessions username = getSessions [] =<< (Map.elems <$> readTVar sessions.sessions)
+  where
+    getSessions :: [Session] -> [Session] -> STM [Session]
+    getSessions acc [] = pure acc
+    getSessions acc (session : rest) = do
+        sessionUsername <- readTVar session.username
+        let newAcc
+                | sessionUsername == username = session : acc
+                | otherwise = acc
+        getSessions newAcc rest
 
 getSessionFromRecover :: Sessions -> RecoveryID -> STM (Maybe Session)
 getSessionFromRecover sessions uuid = do
