@@ -11,6 +11,7 @@ module Butler.Prelude (
     sktRecv,
     sktSendAll,
     composeFunctions,
+    hoistHtml,
 
     -- * ki
     module Ki.Unlifted,
@@ -176,6 +177,7 @@ import Control.Exception hiding (Handler)
 import Control.Lens hiding ((.=))
 import Control.Monad
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
+import Control.Monad.Morph (hoist)
 import Control.Monad.Reader
 import Data.Aeson
 import Data.Aeson.Lens qualified
@@ -317,3 +319,6 @@ composeFunctions = foldr (>>>) id
 instance Codec.Serialise.Serialise Data.Aeson.Value where
     encode = Codec.CBOR.JSON.encodeValue
     decode = Codec.CBOR.JSON.decodeValue True
+
+hoistHtml :: Monad m => Html a -> HtmlT m a
+hoistHtml = hoist (pure . runIdentity)

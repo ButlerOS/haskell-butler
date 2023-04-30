@@ -61,6 +61,7 @@ module Butler (
     Service (..),
     newAppMemory,
     module Butler.AppID,
+    htmlApp,
 
     -- * GUI toolkit
     wid_,
