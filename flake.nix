@@ -2,8 +2,8 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/90eadd304c6375f926a0970f87b470e765e7f176";
-    # "path:///srv/github.com/podenv/hspkgs";
+      "github:podenv/hspkgs/fe0dabfd8acf96f1b5cff55766de6284517868cf";
+      # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let
@@ -33,24 +33,6 @@
           rev = "26d65d0d9d8b690c1774df7e0841561402bf1047";
           sha256 = "sha256-D0cj3Pdxsvj4MKV2CSL/0qJSog0qIVqv+EeJjP4ZBQI=";
         }) { };
-        # https://github.com/awkward-squad/ki/issues/19
-        ki = let
-          src = pkgs.fetchFromGitHub {
-            owner = "awkward-squad";
-            repo = "ki";
-            rev = "f439a7dda99c2f71fb1d288cccb7a19ac436ce6d";
-            sha256 = "sha256-HTS+0hAExe3wrFgqHx35mMyTZ823AhbXHLlxATx5ExM=";
-          };
-        in hpPrev.callCabal2nix "ki" "${src}/ki" { };
-        # https://github.com/yesodweb/wai/pull/923
-        warp-tls = let
-          src = pkgs.fetchFromGitHub {
-            owner = "TristanCacqueray";
-            repo = "wai";
-            rev = "4bc9365d9cbe0317459d0fd378ee667dc5ad95ee";
-            sha256 = "sha256-IFt8/talF7jRwODMUpNT/N6GEf4zBxL3dOc1y2hSxLc=";
-          };
-        in hpPrev.callCabal2nix "warp-tls" "${src}/warp-tls" { };
         posix-pty = let
           src = pkgs.fetchFromGitHub {
             owner = "TristanCacqueray";

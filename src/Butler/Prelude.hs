@@ -18,7 +18,6 @@ module Butler.Prelude (
     -- * unliftio
     module UnliftIO,
     module UnliftIO.STM,
-    Control.Concurrent.STM.stateTVar,
     Control.Concurrent.STM.check,
 
     -- * PyF
@@ -134,6 +133,7 @@ module Butler.Prelude (
     System.Posix.ByteString.RawFilePath,
     GHC.Exts.fromList,
     bool,
+    fix,
     Data.Foldable.traverse_,
     module Control.Applicative,
     module Control.Monad,
@@ -190,6 +190,7 @@ import Data.Coerce
 import Data.Dynamic
 import Data.Either
 import Data.Foldable qualified
+import Data.Function (fix)
 import Data.Functor.Identity qualified
 import Data.Generics.Labels ()
 import Data.HashMap.Strict qualified
