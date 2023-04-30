@@ -136,18 +136,17 @@ appUI ctx appStateM = do
 settingsPanel :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 settingsPanel appID appStateM = do
     TodoManager{todoSettings} <- lift $ readMemoryVar appStateM
-    let s1 = "setting-show-column-prio"
-        s2 = "setting-show-column-dueDate"
     div_ [class_ "flex flex-row flex-wrap justify-around"] $ do
-        checkbox s1 "Show column 'Prio'" (TriggerName s1) todoSettings.showColumnPrio
-        checkbox s2 "Show column 'DueDate'" (TriggerName s2) todoSettings.showColumnDueDate
+        checkbox "Show column 'Prio'" (TriggerName "setting-show-column-prio") todoSettings.showColumnPrio
+        checkbox "Show column 'DueDate'" (TriggerName "setting-show-column-dueDate") todoSettings.showColumnDueDate
   where
-    checkbox :: Text -> Text -> TriggerName -> Bool -> HtmlT STM ()
-    checkbox cid label triggerName checked = do
+    checkbox :: Text -> TriggerName -> Bool -> HtmlT STM ()
+    checkbox label triggerName checked = do
         div_ $ do
-            withEvent appID triggerName [] $ do
-                input_ $ [type_ "checkbox", id_ cid, name_ cid] <> if checked then [checked_] else mempty
-                label_ [class_ "ml-1", for_ cid] $ toHtml label
+            label_ [class_ "ml-1"] $ do
+                withEvent appID triggerName [] $ do
+                    input_ $ [type_ "checkbox", class_ "mr-1"] <> if checked then [checked_] else mempty
+                toHtml label
 
 inputForm :: AppID -> MemoryVar TodoManager -> HtmlT STM ()
 inputForm appID appStateM = do
