@@ -139,6 +139,7 @@ dependencies:
   - lucid-svg
   - http-types
   - servant-lucid
+  - mmorph
 
   # xstatics
   - xstatic

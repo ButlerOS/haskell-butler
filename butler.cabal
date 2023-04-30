@@ -162,6 +162,7 @@ library
     , migrant-core
     , migrant-sqlite-simple
     , mime-types
+    , mmorph
     , mtl
     , network
     , network-run
@@ -282,6 +283,7 @@ executable butler
     , migrant-core
     , migrant-sqlite-simple
     , mime-types
+    , mmorph
     , mtl
     , network
     , network-run
@@ -412,6 +414,7 @@ test-suite spec
     , migrant-core
     , migrant-sqlite-simple
     , mime-types
+    , mmorph
     , mtl
     , network
     , network-run

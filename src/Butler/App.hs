@@ -386,3 +386,16 @@ delAppMemory :: AppID -> ProcessIO ()
 delAppMemory wid = do
     os <- asks os
     removeStorage os.storage (from wid)
+
+-- | A minimal app to serve html
+htmlApp :: [XStaticFile] -> Html () -> App
+htmlApp xfiles mountUI = (defaultApp "html" serveHtml){xfiles}
+  where
+    serveHtml :: AppContext -> ProcessIO ()
+    serveHtml ctx = do
+        forever do
+            atomically (readPipe ctx.pipe) >>= \case
+                AppDisplay (UserJoined client) -> atomically $ sendHtml client $ hoistHtml do
+                    with div_ [wid_ ctx.wid "w"] do
+                        mountUI
+                _ -> pure ()
