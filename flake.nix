@@ -3,7 +3,7 @@
   inputs = {
     hspkgs.url =
       "github:podenv/hspkgs/fe0dabfd8acf96f1b5cff55766de6284517868cf";
-      # "path:///srv/github.com/podenv/hspkgs";
+    # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let
@@ -189,6 +189,18 @@
         BUTLER_TOOLS = toString butlerTools;
         GST_PLUGIN_PATH =
           "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0/:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/";
+      };
+      devShells."x86_64-linux".demo = pkgs.mkShell {
+        buildInputs = [
+          (hsPkgs.ghcWithPackages (p: [
+            (pkgs.haskell.lib.dontHaddock p.butler)
+            p.markdown-unlit
+            p.rio
+            p.string-qq
+          ]))
+          pkgs.ghcid
+          pkgs.haskell-language-server
+        ];
       };
     };
 }
