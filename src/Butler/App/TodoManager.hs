@@ -2,11 +2,10 @@ module Butler.App.TodoManager (todoManagerApp) where
 
 import Butler
 import Butler.App (withEvent)
-import Butler.Core.Dynamic
+import Butler.Core.Dynamic (getSharedDynamic)
 import Data.Aeson (Value (Number))
 import Data.List (sortBy)
 import Data.Time (defaultTimeLocale, formatTime, parseTimeM)
-import XStatic.Butler (defaultXFiles)
 import XStatic.Remixicon qualified as XStatic
 
 todoManagerApp :: App
@@ -14,7 +13,7 @@ todoManagerApp =
     (defaultApp "TodoManager" startTodoManager)
         { tags = fromList ["Utility"]
         , description = "Manage your tasks"
-        , xfiles = XStatic.remixiconCss : defaultXFiles
+        , xfiles = [XStatic.remixiconCss]
         }
 
 newtype TaskDesc = TaskDesc Text
@@ -75,6 +74,9 @@ data TodoManager = TodoManager
     , todoSettingsShow :: Bool
     }
     deriving (Generic, Serialise)
+
+newTodoManager :: TodoManager
+newTodoManager = TodoManager 0 NoEditingTask [] (TodoSettings True True) False
 
 textToPrio :: Text -> TaskPrio
 textToPrio = \case
@@ -332,21 +334,15 @@ selectTask task@(TodoTask{taskSelected}) =
 newTask :: Text -> TaskPrio -> TaskId -> TaskDueDate -> TodoTask
 newTask content taskPrio taskId = TodoTask taskId TaskNotSelected (TaskDesc content) taskPrio
 
-setSelectedTask :: TodoManager -> TaskId -> TodoManager
-setSelectedTask (TodoManager{..}) taskId' =
-    TodoManager
-        todoTaskIndex
-        todoEditingTask
-        ( map
+setSelectedTask :: TaskId -> TodoManager -> TodoManager
+setSelectedTask taskId' =
+    #todoTasks
+        %~ map
             ( \task@(TodoTask{taskId}) ->
                 if taskId == taskId'
                     then selectTask task
                     else task
             )
-            todoTasks
-        )
-        todoSettings
-        todoSettingsShow
 
 setEditingTask :: TodoManager -> TodoTask -> TodoManager
 setEditingTask todoManager taskToEdit =
@@ -359,9 +355,13 @@ unSetEditingTask todoManager =
 startTodoManager :: AppContext -> ProcessIO ()
 startTodoManager ctx = do
     logInfo "TodoManager started!" []
-    let appState = TodoManager 0 NoEditingTask [] (TodoSettings True True) False
-        memAddr = "todo-manager-" <> showT ctx.wid <> ".bin"
-    appStateM <- getSharedDynamic ctx.shared.dynamics "todo-manager" (snd <$> newProcessMemory (from memAddr) (pure appState))
+    let memAddr = "todo-manager-" <> showT ctx.wid <> ".bin"
+    appStateM <-
+        getSharedDynamic
+            ctx.shared.dynamics
+            "todo-manager"
+            ( snd <$> newProcessMemory (from memAddr) (pure newTodoManager)
+            )
     let mountUI = with div_ [wid_ ctx.wid "w"] $ appUI ctx appStateM
 
     spawnThread_ $ renderOnChange mountUI \newHtml -> do
@@ -399,7 +399,7 @@ startTodoManager ctx = do
                         logInfo "Editing item" ["ev" .= ev]
                         atomically $ modifyMemoryVar appStateM $ \tm -> do
                             case getFirstSelectedTask tm of
-                                Just task@(TodoTask{..}) -> setEditingTask (setSelectedTask tm taskId) task
+                                Just task@(TodoTask{..}) -> setEditingTask (setSelectedTask taskId tm) task
                                 Nothing -> tm
                     "edited-item" -> do
                         logInfo "Edited item" ["ev" .= ev]
@@ -418,7 +418,7 @@ startTodoManager ctx = do
                         case ev.body ^? key "taskID" . _Integer of
                             Just taskId -> do
                                 atomically $ modifyMemoryVar appStateM $ \tm -> do
-                                    setSelectedTask tm $ TaskId $ fromInteger $ toInteger taskId
+                                    setSelectedTask (TaskId $ fromInteger $ toInteger taskId) tm
                             Nothing -> pure ()
                     "show-settings" -> do
                         logInfo "Show settings" ["ev" .= ev]
@@ -445,8 +445,12 @@ startTodoManager ctx = do
                     _ -> logError "Unknown trigger" ["ev" .= ev]
             ev -> logError "Unknown ev" ["ev" .= ev]
 
-parseDueDate :: MonadFail m => String -> m TaskDueDate
+parseDueDate :: String -> ProcessIO TaskDueDate
 parseDueDate taskDueDate = do
-    if null taskDueDate
-        then pure NoDueDate
-        else DueDate <$> parseTimeM False defaultTimeLocale defaultDateFormat taskDueDate
+    res <- runExceptT $ do
+        if null taskDueDate
+            then pure NoDueDate
+            else DueDate <$> parseTimeM False defaultTimeLocale defaultDateFormat taskDueDate
+    pure $ case res of
+        Left _ -> NoDueDate
+        Right d -> d
