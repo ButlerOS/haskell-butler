@@ -127,7 +127,7 @@ startTermApp isolation mkApp ctx = do
     -- Setup env
     let pathEnv = do
             path <- isolation.toolbox
-            pure $ "PATH=" <> path </> "bin:/bin:/sbin"
+            pure $ "PATH=" <> path </> "bin:/bin:/sbin:/butler/home/.nix-profile/bin"
         agentEnv =
             "SSH_AUTH_SOCK=" <> case isolation.runtime of
                 None -> "/tmp/butler-agent.sock"
@@ -167,6 +167,12 @@ startTermApp isolation mkApp ctx = do
                 False -> pure id
         _ -> pure id
 
+    fixSshHome <- do
+        -- the ssh command reads the home path from /etc/passwd, thus we need to make the bwrap home match.
+        -- TODO: resolve real home
+        let realHome = "/home/fedora"
+        pure $ \xs -> "--symlink" : "/butler/home" : realHome : xs
+
     case isolation.runtime of
         None -> pure ()
         _ -> do
@@ -192,7 +198,7 @@ startTermApp isolation mkApp ctx = do
                                 <> ["--bind", baseDir, "/butler", "--chdir", "/butler"]
                                 <> concatMap (\p -> ["--ro-bind", p, p]) (addResolv ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/sys"])
                                 <> fixSshConfig ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
-                                <> baseArgs
+                                <> fixSshHome baseArgs
                  in "bwrap" : bwrapArgs
         mkProc =
             spawnProcess (ProgramName $ showT ctx.wid <> "-pty") do
