@@ -115,11 +115,21 @@
         } extra-config);
 
       # A container with nix that is suitable to use for butler terminal
+      nix-conf = pkgs.writeTextFile {
+        name = "nix.conf";
+        text = ''
+          experimental-features = nix-command flakes
+          sandbox = false
+          build-users-group =
+        '';
+      };
       toolbox = pkgs.dockerTools.buildLayeredImage {
         name = "ghcr.io/butleros/toolbox";
         tag = "latest";
         created = "now";
         contents = [ pkgs.nix ];
+        extraCommands =
+          "mkdir -p etc/nix && ln -s ${nix-conf} etc/nix/nix.conf";
         # To update, run: nix run nixpkgs#nix-prefetch-docker -- -c nix-prefetch-docker --image-name registry.fedoraproject.org/fedora --image-tag 38
         fromImage = pkgs.dockerTools.pullImage {
           imageName = "registry.fedoraproject.org/fedora";
