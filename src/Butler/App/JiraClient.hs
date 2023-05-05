@@ -81,9 +81,10 @@ startJiraClient ctx = do
                     Just project -> pure project
                     Nothing -> throwError "Project is missing"
             searchResult <-
-                liftIO (Jira.searchIssues client 0 $ Jira.JQL ("project = \"" <> project <> "\"")) >>= \case
-                    Right res -> pure res
-                    Left e -> throwError ("Query failed for project " <> project <> ": " <> e)
+                let searchAction = Jira.searchIssues client 0 $ Jira.JQL ("project = \"" <> project <> "\"")
+                 in lift (httpRetry 5 (liftIO searchAction)) >>= \case
+                        Right res -> pure res
+                        Left e -> throwError ("Query failed for project " <> project <> ": " <> e)
             let (errors, stories) = partitionEithers searchResult.issues
             unless (null errors) do
                 lift $ logError "Jira decoding failures" ["errors" .= errors]
@@ -115,7 +116,7 @@ startJiraClient ctx = do
             atomically ((.client) <$> readTVar tState) >>= \case
                 Just client -> do
                     logInfo "Setting score" ["story" .= jid, "score" .= score]
-                    liftIO (Jira.setIssueScore client jid score) >>= \case
+                    httpRetry 5 (liftIO (Jira.setIssueScore client jid score)) >>= \case
                         Just err -> logError "Setting score failed" ["err" .= err, "story" .= jid]
                         Nothing -> pure ()
                 Nothing -> logError "client is not configured" []

@@ -61,6 +61,7 @@ import Butler.Core.Processor
 import Butler.Core.Storage
 import Butler.Prelude
 
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.OneLine (renderObject)
 import Ki.Unlifted qualified as Ki
@@ -72,6 +73,9 @@ newtype ProcessIO a = ProcessIO (ProcessEnv -> IO a)
         , Applicative
         , Monad
         , MonadFail
+        , MonadThrow
+        , MonadCatch
+        , MonadMask
         , MonadIO
         , MonadReader ProcessEnv
         , MonadUnliftIO

@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.1.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -75,6 +75,7 @@ library
       Butler.Core.Pipe
       Butler.Core.Process
       Butler.Core.Processor
+      Butler.Core.Retry
       Butler.Core.Storage
       Butler.Database
       Butler.Display
@@ -141,6 +142,7 @@ library
     , containers
     , directory
     , ebml
+    , exceptions
     , filepath
     , generic-lens
     , hashable
@@ -262,6 +264,7 @@ executable butler
     , containers
     , directory
     , ebml
+    , exceptions
     , filepath
     , generic-lens
     , hashable
@@ -393,6 +396,7 @@ test-suite spec
     , containers
     , directory
     , ebml
+    , exceptions
     , filepath
     , generic-lens
     , hashable
