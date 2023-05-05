@@ -22,7 +22,7 @@ jiraClientApp =
             ]
         }
 
-data Status = Loading | Stories [Jira.JiraIssueInfo]
+data Status = Loading | Stories [Jira.JiraIssue]
 
 data State = State
     { status :: Status
@@ -52,7 +52,7 @@ startJiraClient ctx = do
     tState <- newTVarIO . State Loading =<< getClient
 
     -- UI
-    let renderStories :: [Jira.JiraIssueInfo] -> HtmlT STM ()
+    let renderStories :: [Jira.JiraIssue] -> HtmlT STM ()
         renderStories xs = do
             ul_ do
                 forM_ xs \x -> li_ do
@@ -60,6 +60,8 @@ startJiraClient ctx = do
                     let startPlannerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid, "story" .= jid]]
                     with button_ [class_ $ "mr-1 " <> btnBlueClass, onclick_ startPlannerScript] "vote"
                     span_ (toHtml jid)
+                    ": "
+                    span_ (toHtml x.summary)
             withTrigger_ "click" ctx.wid "refresh" button_ [class_ $ "mt-4 " <> btnGreenClass] "refresh"
 
     let mountUI :: HtmlT STM ()
@@ -72,7 +74,7 @@ startJiraClient ctx = do
                     Loading -> "Loading..."
                     Stories xs -> renderStories xs
 
-    let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssueInfo])
+    let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssue])
         getStories client = runExceptT @Text do
             -- now <- liftIO getCurrentTime
             -- pure [Jira.JiraIssueInfo "test-001" now, Jira.JiraIssueInfo "test-002" now]
@@ -81,7 +83,7 @@ startJiraClient ctx = do
                     Just project -> pure project
                     Nothing -> throwError "Project is missing"
             searchResult <-
-                let searchAction = Jira.searchIssues client 0 $ Jira.JQL ("project = \"" <> project <> "\"")
+                let searchAction = Jira.searchIssues client (Jira.JiraSearchRequest 0 100 $ Jira.JQL ("project = " <> project))
                  in lift (httpRetry 5 (liftIO searchAction)) >>= \case
                         Right res -> pure res
                         Left e -> throwError ("Query failed for project " <> project <> ": " <> e)
