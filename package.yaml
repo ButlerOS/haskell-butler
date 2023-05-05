@@ -120,6 +120,7 @@ dependencies:
   - cborg-json
   - jose
   - retry
+  - exceptions
   - ebml
   - jira-client
 

@@ -34,6 +34,7 @@ module Butler (
 
     -- * Network API
     module Butler.Core.Network,
+    module Butler.Core.Retry,
 
     -- * Storage API
     newProcessMemory,
@@ -90,6 +91,7 @@ import Butler.Core.File
 import Butler.Core.Memory
 import Butler.Core.Network
 import Butler.Core.Pipe
+import Butler.Core.Retry
 import Butler.Core.Storage
 import Butler.Display
 import Butler.Display.Client
