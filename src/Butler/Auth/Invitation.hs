@@ -79,8 +79,8 @@ rootServer sessions mkIndexHtml ar mWorkspace = indexRoute
 
     validClient :: Maybe InviteID -> STM Bool
     validClient = \case
-        Just invite -> checkInvite sessions invite
-        Nothing -> isEmptySessions sessions
+        Just invite | invite /= "" -> checkInvite sessions invite
+        _ -> isEmptySessions sessions
 
 recoveryServer :: Sessions -> JWTSettings -> Maybe Workspace -> ServerT RecoveryAPI ProcessIO
 recoveryServer sessions jwtSettings mWorkspace mRecover = case mRecover of
@@ -114,11 +114,13 @@ loginServer sessions jwtSettings mWorkspace = getSessionRoute
     getSessionRoute form = do
         res <- withMVar sessions.lock \() -> runExceptT @Text do
             lift $ logInfo "Validating form" ["form" .= form]
-            invite <- case form.invite of
-                Just invite -> pure invite
-                Nothing -> throwError "No invite"
-            unlessM (atomically (checkInvite sessions invite)) do
-                throwError "Bad invite"
+            case form.invite of
+                Just invite | invite /= "" -> do
+                    unlessM (atomically (checkInvite sessions invite)) do
+                        throwError "Bad invite"
+                _ -> do
+                    unlessM (atomically (isEmptySessions sessions)) do
+                        throwError "First user already created, invite is required"
             username <- case isValidUserName (coerce form.username) of
                 Just username -> pure username
                 Nothing -> throwError "Bad username"
