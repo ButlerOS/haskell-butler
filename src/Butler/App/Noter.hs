@@ -8,6 +8,8 @@ import Butler.Service.FileService
 
 import XStatic.Ace qualified as XStatic
 
+import Data.ByteString qualified as BS
+import Data.List qualified
 import Data.Text.Lines qualified as Lines
 
 noterApp :: App
@@ -17,9 +19,11 @@ noterApp =
         , description = "Text editor"
         , start = startNoterApp
         , acceptFiles = Just TextContent
-        , xfiles = [XStatic.aceJs]
+        , xfiles = XStatic.aceJs : maybeToList linkExt
         , extraXfiles = XStatic.aceBundle
         }
+  where
+    linkExt = Data.List.find (\xf -> "ext-linking.js" `BS.isInfixOf` xf.xfPath) XStatic.aceBundle
 
 newtype Position = Position (Word, Word)
     deriving newtype (ToJSON, FromJSON, Eq)
@@ -213,7 +217,20 @@ function setupNoterClient(wid) {
   const editor = ace.edit(elt)
 
   editor.setTheme("ace/theme/monokai");
+  editor.session.setMode("ace/mode/markdown");
+  editor.setOptions({
+    enableLinking: true
+  });
   editor.resize()
+  editor.on("linkClick",function(data){
+    const regex = /https?:\/\/[^\s"']+/g;
+    const links = data.token.value.match(regex)
+    const link = links ? links[0] : null;
+    console.log("Clicked on '", data.token.value, "', link: ", link);
+    if (link) {
+      window.open(link, "_blank");
+    }
+  });
 
   let localEvent = false
   editor.addEventListener("change", ev => {
