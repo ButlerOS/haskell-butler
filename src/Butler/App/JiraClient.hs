@@ -55,13 +55,16 @@ startJiraClient ctx = do
     let renderStories :: [Jira.JiraIssue] -> HtmlT STM ()
         renderStories xs = do
             ul_ do
-                forM_ xs \x -> li_ do
+                forM_ xs \x -> with li_ [class_ "flex items-center"] do
                     let jid = into @Text x.name
                     let startPlannerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid, "story" .= jid]]
-                    with button_ [class_ $ "mr-1 " <> btnBlueClass, onclick_ startPlannerScript] "vote"
+                    with button_ [class_ $ btnBlueClass, onclick_ startPlannerScript] "vote"
+                    with span_ [class_ $ "w-[24px] text-right mx-1"] $ case x.score of
+                      Nothing -> "?"
+                      Just score -> toHtml (show @Int $ round score)
                     span_ (toHtml jid)
                     ": "
-                    span_ (toHtml x.summary)
+                    with span_ [class_ "ml-1"] (toHtml x.summary)
             withTrigger_ "click" ctx.wid "refresh" button_ [class_ $ "mt-4 " <> btnGreenClass] "refresh"
 
     let mountUI :: HtmlT STM ()
@@ -77,7 +80,8 @@ startJiraClient ctx = do
     let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssue])
         getStories client = runExceptT @Text do
             -- now <- liftIO getCurrentTime
-            -- pure [Jira.JiraIssueInfo "test-001" now, Jira.JiraIssueInfo "test-002" now]
+            -- pure [Jira.JiraIssue "PROJ" "test-001" "story" now Nothing "desc" Nothing,
+            --      Jira.JiraIssue "PROJ" "test-002" "story" now Nothing "desc" (Just 42)]
             project <-
                 lift getProject >>= \case
                     Just project -> pure project
