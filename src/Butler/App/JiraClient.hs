@@ -52,8 +52,8 @@ startJiraClient ctx = do
     tState <- newTVarIO . State Loading =<< getClient
 
     -- UI
-    let renderStories :: [Jira.JiraIssue] -> HtmlT STM ()
-        renderStories xs = do
+    let renderStories :: Jira.JiraClient -> [Jira.JiraIssue] -> HtmlT STM ()
+        renderStories client xs = do
             ul_ do
                 forM_ xs \x -> with li_ [class_ "flex items-center"] do
                     let jid = into @Text x.name
@@ -62,7 +62,7 @@ startJiraClient ctx = do
                     with span_ [class_ $ "w-[24px] text-right mx-1"] $ case x.score of
                       Nothing -> "?"
                       Just score -> toHtml (show @Int $ round score)
-                    span_ (toHtml jid)
+                    with a_ [href_ (Jira.jiraUrl client x.name), class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
                     ": "
                     with span_ [class_ "ml-1"] (toHtml x.summary)
             withTrigger_ "click" ctx.wid "refresh" button_ [class_ $ "mt-4 " <> btnGreenClass] "refresh"
@@ -73,15 +73,16 @@ startJiraClient ctx = do
             case state.client of
                 Nothing -> do
                     "jira-url or jira-token is missing, set them using the setting app"
-                Just{} -> case state.status of
+                Just client -> case state.status of
                     Loading -> "Loading..."
-                    Stories xs -> renderStories xs
+                    Stories xs -> renderStories client xs
 
     let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssue])
         getStories client = runExceptT @Text do
             -- now <- liftIO getCurrentTime
             -- pure [Jira.JiraIssue "PROJ" "test-001" "story" now Nothing "desc" Nothing,
-            --      Jira.JiraIssue "PROJ" "test-002" "story" now Nothing "desc" (Just 42)]
+            --       Jira.JiraIssue "PROJ" "test-002" "story" now Nothing "desc" (Just 42)]
+
             project <-
                 lift getProject >>= \case
                     Just project -> pure project
