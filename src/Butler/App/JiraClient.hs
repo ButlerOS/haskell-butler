@@ -62,7 +62,7 @@ startJiraClient ctx = do
                     with span_ [class_ "w-[24px] text-right mx-1"] $ case x.score of
                         Nothing -> "?"
                         Just score -> toHtml (show @Int $ round score)
-                    with a_ [href_ (Jira.jiraUrl client x.name), class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
+                    with a_ [href_ (Jira.jiraUrl client x.name), target_ "blank", class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
                     ": "
                     with span_ [class_ "ml-1"] (toHtml x.summary)
             withTrigger_ "click" ctx.wid "refresh" button_ [class_ $ "mt-4 " <> btnGreenClass] "refresh"

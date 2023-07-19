@@ -30,8 +30,8 @@
         jira-client = hpPrev.callCabal2nix "jira-client" (pkgs.fetchFromGitHub {
           owner = "ButlerOS";
           repo = "haskell-jira-client";
-          rev = "036b9c47da1d6904c7540b1bc9f604bba07569b1";
-          sha256 = "sha256-v8zbsPFpLQNEMu5GpUfg4eSL+cp/abH+9ktoOD6OWBU=";
+          rev = "83fa633d4d8dc9560f449570fda32858adb8e036";
+          sha256 = "sha256-YA3RPE38GTL5oIYA+7Twyd2xiLIaiKAWI7mLRvniFEA=";
         }) { };
         posix-pty = let
           src = pkgs.fetchFromGitHub {
