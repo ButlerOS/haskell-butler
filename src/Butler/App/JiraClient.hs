@@ -58,10 +58,10 @@ startJiraClient ctx = do
                 forM_ xs \x -> with li_ [class_ "flex items-center"] do
                     let jid = into @Text x.name
                     let startPlannerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid, "story" .= jid]]
-                    with button_ [class_ $ btnBlueClass, onclick_ startPlannerScript] "vote"
-                    with span_ [class_ $ "w-[24px] text-right mx-1"] $ case x.score of
-                      Nothing -> "?"
-                      Just score -> toHtml (show @Int $ round score)
+                    with button_ [class_ btnBlueClass, onclick_ startPlannerScript] "vote"
+                    with span_ [class_ "w-[24px] text-right mx-1"] $ case x.score of
+                        Nothing -> "?"
+                        Just score -> toHtml (show @Int $ round score)
                     with a_ [href_ (Jira.jiraUrl client x.name), class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
                     ": "
                     with span_ [class_ "ml-1"] (toHtml x.summary)
