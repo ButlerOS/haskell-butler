@@ -22,7 +22,7 @@ log "Linting"
 hlint .
 
 log "Weeder"
-weeder --config ./.weeder.dhall
+weeder --config ./.weeder.toml
 
 log "Check for diff"
 if [ ! -z "$(git status --porcelain)" ]; then
