@@ -60,6 +60,7 @@ library
       Butler.AppSettings
       Butler.Auth
       Butler.Auth.Guest
+      Butler.Auth.OIDC
       Butler.Auth.Invitation
       Butler.Core
       Butler.Core.Buzzer
