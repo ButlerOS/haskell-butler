@@ -140,6 +140,7 @@ library
     , bytestring
     , cborg-json
     , cgroup-rts-threads
+    , cryptohash-sha256
     , containers
     , directory
     , ebml
@@ -169,6 +170,7 @@ library
     , mtl
     , network
     , network-run
+    , oidc-client
     , one-line-aeson-text
     , optparse-applicative
     , posix-pty
