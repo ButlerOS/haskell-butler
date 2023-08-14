@@ -128,9 +128,8 @@ connectRoute display server onClient sockAddr workspaceM channel session connect
             WS.sendClose connection ("see you next time!" :: ByteString)
         _ -> pure ()
 
-data AuthApplication = AuthApplication
+newtype AuthApplication = AuthApplication
     { app :: WaiApplication
-    , getSession :: Maybe SessionID -> ProcessIO (Maybe Session)
     }
 
 data DisplayAddr = DisplayAddr WebProtocol Port
@@ -165,9 +164,12 @@ startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessi
     onClient <- withDisplay display
     env <- ask
     let wsSrv :: ServerName -> ServerT WebSocketAPI ProcessIO
-        wsSrv server = websocketServer authApp.getSession (connectRoute display server onClient)
+        wsSrv server = websocketServer getSession (connectRoute display server onClient)
         wsApp :: ServerName -> WaiApplication
         wsApp server = Servant.serveWithContextT (Proxy @WebSocketAPI) EmptyContext (liftIO . runProcessIO env.os env.process) (wsSrv server)
+        getSession = \case
+            Nothing -> pure Nothing
+            Just sessionID -> atomically $ lookupSession sessions sessionID
 
         glApp server req resp =
             let wsRespHandler wsResp = case HTTP.statusCode (Network.Wai.responseStatus wsResp) of

@@ -66,8 +66,4 @@ guestAuthApp sessions mkIndexHtml = do
     env <- ask
     let authSrv = authServer env.os env.process sessions mkIndexHtml jwtSettings
     let app = Servant.serveWithContextT (Proxy @AuthAPI) cfg id authSrv
-    pure $ AuthApplication app getSession
-  where
-    getSession = \case
-        Nothing -> pure Nothing
-        Just sessionID -> atomically $ lookupSession sessions sessionID
+    pure $ AuthApplication app
