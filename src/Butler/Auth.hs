@@ -6,6 +6,7 @@ import Butler.Display
 import Butler.Frame
 import Butler.Prelude
 import Lucid.XStatic
+import Butler.Auth.OIDC (oIDCAuthApp)
 
 newtype PageTitle = PageTitle Text
     deriving newtype (IsString, ToHtml)
@@ -17,6 +18,11 @@ publicDisplayApp :: PageTitle -> Maybe PageDesc -> DisplayApplication
 publicDisplayApp appTitle appDescM = DisplayApplication auth
   where
     auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles appTitle appDescM
+
+publicOIDCDisplayApp :: PageTitle -> Maybe PageDesc -> DisplayApplication
+publicOIDCDisplayApp appTitle appDescM = DisplayApplication auth
+  where
+    auth xfiles sessions = oIDCAuthApp sessions $ htmlMain xfiles appTitle appDescM
 
 htmlMain :: [XStaticFile] -> PageTitle -> Maybe PageDesc -> Html () -> Html ()
 htmlMain xfiles title descM body = do

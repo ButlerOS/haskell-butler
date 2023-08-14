@@ -56,6 +56,7 @@ import XStatic.Remixicon qualified as XStatic
 import XStatic.SweetAlert2 qualified as XStatic
 import XStatic.Winbox qualified as XStatic
 import XStatic.Xterm qualified as XStatic
+import Butler.Auth (publicOIDCDisplayApp)
 
 -- | Demonstrate running external processes.
 vncServer :: ProcessIO ()
@@ -96,6 +97,10 @@ demoDashboard = serveDashboardApps (publicDisplayApp "Demo dashboard" Nothing) [
 -- | Demonstrate a more complicated apps deployment with a lobby to dispatch client based on the path.
 multiDesktop :: IO ()
 multiDesktop = run (demoDesktop [])
+
+-- | Demonstrate a social login app
+demoSocialAuth :: IO ()
+demoSocialAuth = run $ serveApps (publicOIDCDisplayApp "Demo social login app" Nothing) [clockApp]
 
 demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
