@@ -189,13 +189,15 @@ oIDCAuthApp sessions mkIndexHtml = do
     let jwtSettings = defaultJWTSettings myKey
     let cfg = cookieSettings :. jwtSettings :. EmptyContext
     env <- ask
+    Just client_id <- liftIO $ getEnv "OIDC_ID"
+    Just client_password <- liftIO $ getEnv "OIDC_PASSWORD"
     oidcenv <-
         liftIO . initOIDCEnv $
             OIDCProviderConfig
                 "https://accounts.google.com"
-                "my_client_id"
-                "my_client_secret"
-                "https://localhost:8080"
+                (decodeUtf8 client_id)
+                (decodeUtf8 client_password)
+                "https://localhost:8080/"
                 (Just "email")
                 False
                 "Test"
