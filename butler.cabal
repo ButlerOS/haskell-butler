@@ -141,8 +141,8 @@ library
     , bytestring
     , cborg-json
     , cgroup-rts-threads
-    , cryptohash-sha256
     , containers
+    , cryptohash-sha256
     , directory
     , ebml
     , exceptions
@@ -266,6 +266,7 @@ executable butler
     , cborg-json
     , cgroup-rts-threads
     , containers
+    , cryptohash-sha256
     , directory
     , ebml
     , exceptions
@@ -294,6 +295,7 @@ executable butler
     , mtl
     , network
     , network-run
+    , oidc-client
     , one-line-aeson-text
     , optparse-applicative
     , posix-pty
@@ -399,6 +401,7 @@ test-suite spec
     , cborg-json
     , cgroup-rts-threads
     , containers
+    , cryptohash-sha256
     , directory
     , ebml
     , exceptions
@@ -427,6 +430,7 @@ test-suite spec
     , mtl
     , network
     , network-run
+    , oidc-client
     , one-line-aeson-text
     , optparse-applicative
     , posix-pty
