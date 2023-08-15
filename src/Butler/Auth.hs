@@ -2,11 +2,11 @@
 module Butler.Auth where
 
 import Butler.Auth.Guest
+import Butler.Auth.OIDC (oIDCAuthApp)
 import Butler.Display
 import Butler.Frame
 import Butler.Prelude
 import Lucid.XStatic
-import Butler.Auth.OIDC (oIDCAuthApp)
 
 newtype PageTitle = PageTitle Text
     deriving newtype (IsString, ToHtml)

@@ -47,6 +47,7 @@ import Butler.Service.FileService
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
 
+import Butler.Auth (publicOIDCDisplayApp)
 import Lucid.XStatic
 import XStatic.Butler as XStatic
 import XStatic.Hyperscript qualified as XStatic
@@ -56,7 +57,6 @@ import XStatic.Remixicon qualified as XStatic
 import XStatic.SweetAlert2 qualified as XStatic
 import XStatic.Winbox qualified as XStatic
 import XStatic.Xterm qualified as XStatic
-import Butler.Auth (publicOIDCDisplayApp)
 
 -- | Demonstrate running external processes.
 vncServer :: ProcessIO ()
