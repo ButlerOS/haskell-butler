@@ -50,6 +50,7 @@ library
       Butler.App.RandomCat
       Butler.App.SessionManager
       Butler.App.Settings
+      Butler.App.SocialLogin
       Butler.App.SoundTest
       Butler.App.Tabletop
       Butler.App.Template
