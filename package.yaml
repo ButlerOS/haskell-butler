@@ -123,6 +123,8 @@ dependencies:
   - exceptions
   - ebml
   - jira-client
+  - oidc-client
+  - cryptohash-sha256
 
   # network
   - http-client-tls
