@@ -47,6 +47,7 @@ import Butler.Service.FileService
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
 
+import Butler.App.SocialLogin (socialLoginApp)
 import Butler.Auth (publicOIDCDisplayApp)
 import Lucid.XStatic
 import XStatic.Butler as XStatic
@@ -100,7 +101,7 @@ multiDesktop = run (demoDesktop [])
 
 -- | Demonstrate a social login app
 demoSocialAuth :: IO ()
-demoSocialAuth = run $ serveApps (publicOIDCDisplayApp "Demo social login app" Nothing) [clockApp]
+demoSocialAuth = run $ serveApps (publicOIDCDisplayApp "Demo social login app" Nothing) [socialLoginApp]
 
 demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
