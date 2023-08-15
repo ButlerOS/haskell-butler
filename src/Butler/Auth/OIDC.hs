@@ -35,6 +35,7 @@ type LoginAPI =
             :> QueryParam "code" Text
             :> QueryParam "state" Text
             :> Get '[HTML] AuthResp
+        :<|> "_guest_cb" :> Get '[HTML] AuthResp
 
 type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> (LoginAPI :<|> Capture "workspace" Workspace :> LoginAPI)
 
@@ -116,7 +117,7 @@ mkSessionStore OIDCEnv{sessionStoreStorage} stateM uriM = do
 
 loginServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> OIDCEnv -> Maybe Workspace -> ServerT LoginAPI Servant.Handler
 loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace =
-    indexRoute auth :<|> loginRoute oidcenv :<|> callbackRoute oidcenv
+    indexRoute auth :<|> loginRoute oidcenv :<|> callbackRoute oidcenv :<|> guestCallbackRoute
   where
     callbackRoute :: OIDCEnv -> Maybe Text -> Maybe Text -> Maybe Text -> Servant.Handler AuthResp
     callbackRoute oidcEnv errM codeM stateM = do
@@ -133,13 +134,19 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
                             (manager oidcEnv)
                             (encodeUtf8 oauthState)
                             (encodeUtf8 oauthCode)
-                let provider = SessionProvider "google"
-                session <- liftIO $ runProcessIO os process $ newSession sessions provider (UserName tokens.idToken.sub)
-                liftIO (SAS.acceptLogin cookieSettings jwtSettings session.sessionID) >>= \case
-                    Just r -> do
-                        let page = workspaceUrl mWorkspace
-                        pure $ r (script_ $ "window.location.href = " <> showT page)
-                    Nothing -> error "oops?!"
+                setSession (UserName tokens.idToken.sub) $ SessionProvider "google"
+
+    guestCallbackRoute :: Servant.Handler AuthResp
+    guestCallbackRoute = setSession "guest" localProvider
+
+    setSession :: UserName -> SessionProvider -> Servant.Handler AuthResp
+    setSession username provider = do
+        session <- liftIO $ runProcessIO os process $ newSession sessions provider username
+        liftIO (SAS.acceptLogin cookieSettings jwtSettings session.sessionID) >>= \case
+            Just r -> do
+                let page = workspaceUrl mWorkspace
+                pure $ r (script_ $ "window.location.href = " <> showT page)
+            Nothing -> error "oops?!"
 
     indexRoute :: AuthResult SessionID -> Servant.Handler (Html ())
     indexRoute = \case
@@ -151,7 +158,7 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
                 Nothing -> do
                     liftIO $ runProcessIO os process $ logError "no more auth?" ["id" .= sessionID]
                     pure "Unknown session"
-        _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_login")]}
+        _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_guest_cb")]}
 
     loginRoute :: OIDCEnv -> Servant.Handler NoContent
     loginRoute oidcEnv = do
