@@ -2,7 +2,7 @@
 module Butler.Auth where
 
 import Butler.Auth.Guest
-import Butler.Auth.OIDC (oIDCAuthApp)
+import Butler.Auth.OIDC
 import Butler.Display
 import Butler.Frame
 import Butler.Prelude
@@ -19,10 +19,13 @@ publicDisplayApp appTitle appDescM = DisplayApplication auth
   where
     auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles appTitle appDescM
 
-publicOIDCDisplayApp :: PageTitle -> Maybe PageDesc -> DisplayApplication
-publicOIDCDisplayApp appTitle appDescM = DisplayApplication auth
+publicOIDCDisplayApp :: OIDCClientID -> OIDCClientSecret -> PageTitle -> Maybe PageDesc -> DisplayApplication
+publicOIDCDisplayApp client_id client_password appTitle appDescM = DisplayApplication auth
   where
-    auth xfiles sessions = oIDCAuthApp sessions $ htmlMain xfiles appTitle appDescM
+    auth xfiles sessions =
+        oIDCAuthApp sessions public_url client_id client_password $
+            htmlMain xfiles appTitle appDescM
+    public_url = "https://localhost:8080/"
 
 htmlMain :: [XStaticFile] -> PageTitle -> Maybe PageDesc -> Html () -> Html ()
 htmlMain xfiles title descM body = do

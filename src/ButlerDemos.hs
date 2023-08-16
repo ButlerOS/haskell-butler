@@ -47,8 +47,9 @@ import Butler.Service.FileService
 import Butler.Service.SoundBlaster
 import Butler.Service.SshAgent
 
-import Butler.App.SocialLogin (socialLoginApp)
-import Butler.Auth (publicOIDCDisplayApp)
+import Butler.App.SocialLogin
+import Butler.Auth
+import Butler.Auth.OIDC
 import Lucid.XStatic
 import XStatic.Butler as XStatic
 import XStatic.Hyperscript qualified as XStatic
@@ -101,7 +102,13 @@ multiDesktop = run (demoDesktop [])
 
 -- | Demonstrate a social login app
 demoSocialAuth :: IO ()
-demoSocialAuth = run $ serveApps (publicOIDCDisplayApp "Demo social login app" Nothing) [socialLoginApp]
+demoSocialAuth = do
+    Just client_id <- liftIO $ getEnv "OIDC_ID"
+    Just client_password <- liftIO $ getEnv "OIDC_SECRET"
+    run $
+        serveApps
+            (publicOIDCDisplayApp (OIDCClientID client_id) (OIDCClientSecret client_password) "Demo social login app" Nothing)
+            [socialLoginApp]
 
 demoDesktop :: [App] -> ProcessIO Void
 demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
