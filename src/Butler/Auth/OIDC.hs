@@ -1,4 +1,4 @@
-module Butler.Auth.OIDC (oIDCAuthApp) where
+module Butler.Auth.OIDC (oIDCAuthApp, OIDCClientID (..), OIDCClientSecret (..)) where
 
 import Lucid
 
@@ -44,10 +44,13 @@ authServer os process sessions mkIndexHtml jwtSettings auth oidcenv =
     let loginSrv = loginServer os process sessions mkIndexHtml jwtSettings oidcenv auth
      in loginSrv Nothing :<|> (loginSrv . Just)
 
+newtype OIDCClientID = OIDCClientID ByteString
+newtype OIDCClientSecret = OIDCClientSecret ByteString
+
 data OIDCProviderConfig = OIDCProviderConfig
     { opIssuerURL :: Text
-    , opClientID :: Text
-    , opClientSecret :: Text
+    , opClientID :: OIDCClientID
+    , opClientSecret :: OIDCClientSecret
     , opAppPublicURL :: Text
     , opUserClaim :: Maybe Text
     , opEnforceAuth :: Bool
@@ -67,11 +70,13 @@ initOIDCEnv providerConfig@OIDCProviderConfig{..} = do
     manager <- newTlsManager
     provider <- O.discover opIssuerURL manager
     sessionStoreStorage <- newMVar HM.empty
+    -- TODO ensure '/' before '_cb'
     let redirectUri = encodeUtf8 opAppPublicURL <> "_cb"
-        clientId = encodeUtf8 opClientID
-        clientSecret = encodeUtf8 opClientSecret
         oidc = O.setCredentials clientId clientSecret redirectUri (O.newOIDC provider)
     pure OIDCEnv{..}
+  where
+    OIDCClientID clientId = opClientID
+    OIDCClientSecret clientSecret = opClientSecret
 
 data OIDCState = OIDCState
     { randomT :: Text
@@ -120,8 +125,8 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
     indexRoute auth :<|> loginRoute oidcenv :<|> callbackRoute oidcenv :<|> guestCallbackRoute
   where
     callbackRoute :: OIDCEnv -> Maybe Text -> Maybe Text -> Maybe Text -> Servant.Handler AuthResp
-    callbackRoute oidcEnv errM codeM stateM = do
-        case (errM, codeM, stateM) of
+    callbackRoute oidcEnv mErr mCode mState = do
+        case (mErr, mCode, mState) of
             (Just errorMsg, _, _) -> error $ "Error from remote provider: " <> show errorMsg
             (_, Nothing, _) -> error "No code parameter given"
             (_, _, Nothing) -> error "No state parameter given"
@@ -183,21 +188,19 @@ cookieSettings =
         , cookieExpires = Just (UTCTime (fromGregorian 2030 1 1) 0)
         }
 
-oIDCAuthApp :: Sessions -> (Html () -> Html ()) -> ProcessIO AuthApplication
-oIDCAuthApp sessions mkIndexHtml = do
+oIDCAuthApp :: Sessions -> Text -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
+oIDCAuthApp sessions public_url client_id client_secret mkIndexHtml = do
     JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO generateKey)
     let jwtSettings = defaultJWTSettings myKey
     let cfg = cookieSettings :. jwtSettings :. EmptyContext
     env <- ask
-    Just client_id <- liftIO $ getEnv "OIDC_ID"
-    Just client_password <- liftIO $ getEnv "OIDC_PASSWORD"
     oidcenv <-
         liftIO . initOIDCEnv $
             OIDCProviderConfig
                 "https://accounts.google.com"
-                (decodeUtf8 client_id)
-                (decodeUtf8 client_password)
-                "https://localhost:8080/"
+                client_id
+                client_secret
+                public_url
                 (Just "email")
                 False
                 "Test"
