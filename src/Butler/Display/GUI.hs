@@ -38,7 +38,6 @@ import Data.Text qualified as Text
 import Data.Text.Read qualified as Text
 
 import Butler.Display.Client
-import Butler.Display.Session
 
 -- | Callback when the html change, e.g. on TVar update.
 renderOnChange :: MonadIO m => HtmlT STM () -> (HtmlT STM () -> m ()) -> m Void
@@ -126,15 +125,13 @@ topRightMenu items = do
             traverse_ div_ items
 
 -- | Create the htmx websocket root element
-websocketHtml :: Text -> SessionID -> Html ()
-websocketHtml pathPrefix sessionID = do
-    let wsUrl = pathPrefix <> "ws/htmx" <> queryArgs
+websocketHtml :: Text -> Html ()
+websocketHtml pathPrefix = do
+    let wsUrl = pathPrefix <> "ws/htmx"
     with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
         with div_ [id_ "display-wins", class_ "h-full"] mempty
         -- script to get extra websocket url from javascript
-        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "ws/' + n + '" <> queryArgs <> "';"
-  where
-    queryArgs = "?session=" <> from sessionID
+        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "ws/' + n;"
 
 -- | Display the content in a splash screen
 splashHtml :: Monad m => HtmlT m () -> HtmlT m ()

@@ -23,6 +23,7 @@ import Data.Aeson (decodeStrict')
 import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.List (find)
 import Data.Map.Strict qualified as Map
+import Data.Time (UTCTime (..), fromGregorian)
 import Lucid
 import Lucid.Htmx
 import Network.HTTP.Types.Status qualified as HTTP
@@ -30,6 +31,7 @@ import Network.Socket
 import Network.Wai qualified
 import Network.WebSockets qualified as WS
 import Servant
+import Servant.Auth.Server qualified as SAS
 
 import Butler.App
 import Butler.Core
@@ -154,6 +156,14 @@ displayAddrFromEnv = \case
             <$> (Http <$ "http:" <|> Https Nothing <$ "https:")
             <*> P.decimal
 
+cookieSettings :: SAS.CookieSettings
+cookieSettings =
+    SAS.defaultCookieSettings
+        { SAS.cookieSameSite = SAS.SameSiteStrict
+        , SAS.cookieXsrfSetting = Nothing
+        , SAS.cookieExpires = Just (UTCTime (fromGregorian 2030 1 1) 0)
+        }
+
 startDisplay :: Maybe DisplayAddr -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
 startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessions -> do
     DisplayAddr proto port <- case mAddr of
@@ -163,10 +173,15 @@ startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessi
     authApp <- mkAuthApp sessions
     onClient <- withDisplay display
     env <- ask
-    let wsSrv :: ServerName -> ServerT WebSocketAPI ProcessIO
-        wsSrv server = websocketServer getSession (connectRoute display server onClient)
+
+    JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO SAS.generateKey)
+    let jwtSettings = SAS.defaultJWTSettings myKey
+    let cfg = cookieSettings :. jwtSettings :. EmptyContext
+
+    let wsSrv :: ServerName -> Server WebSocketAPI
+        wsSrv server = websocketServer env getSession (connectRoute display server onClient)
         wsApp :: ServerName -> WaiApplication
-        wsApp server = Servant.serveWithContextT (Proxy @WebSocketAPI) EmptyContext (liftIO . runProcessIO env.os env.process) (wsSrv server)
+        wsApp server = Servant.serveWithContext (Proxy @WebSocketAPI) cfg (wsSrv server)
         getSession = \case
             Nothing -> pure Nothing
             Just sessionID -> atomically $ lookupSession sessions sessionID

@@ -1,6 +1,6 @@
 module Butler.Display.WebSocket (
     WebSocketAPI,
-    OnWSConnect,
+    OnConnect,
     websocketServer,
     ChannelName (..),
     Workspace (..),
@@ -8,10 +8,15 @@ module Butler.Display.WebSocket (
 ) where
 
 import Lucid
+import Network.HTTP.Types.Status qualified as HTTP
 import Network.Socket
+import Network.Wai qualified as Wai
+import Network.Wai.Handler.WebSockets qualified as WaiWS
 import Network.WebSockets qualified as WS
+
 import Servant
-import Servant.API.WebSocket
+import Servant.Auth qualified as SA
+import Servant.Auth.Server qualified as SAS
 
 import Butler.Core
 import Butler.Core.Storage
@@ -40,40 +45,55 @@ workspaceUrl = \case
     Nothing -> "/"
     Just ws -> "/" <> into ws <> "/"
 
-type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
-
-type ClientAPI = ClientWSAPI :<|> (Capture "workspace" Workspace :> ClientWSAPI)
-
-clientServer :: GetSession session -> OnConnect session -> ServerT ClientAPI ProcessIO
-clientServer getSession onConnect = connectRoute Nothing :<|> connectRoute . Just
-  where
-    connectRoute :: Maybe Workspace -> ChannelName -> Maybe Bool -> Maybe SessionID -> WS.Connection -> ProcessIO ()
-    connectRoute workspaceM name (fromMaybe False -> reconnect) mSessionID connection
-        | reconnect = doReload
-        | otherwise = do
-            mSession <- getSession mSessionID
-            case mSession of
-                Nothing -> doReload
-                Just session -> onConnect workspace name session connection
-      where
-        workspace = case workspaceM of
-            Just ws -> ws
-            Nothing -> Workspace ""
-        doReload = liftIO $ WS.sendTextData connection $ renderText do
-            with span_ [id_ "display-ws"] do
-                "<reconnecting...>"
-                script_ "window.location.reload()"
-
 newtype ChannelName = ChannelName Text
     deriving newtype (Eq, Show, Ord, FromHttpApiData, ToJSON, IsString)
 
-type WebSocketAPI = RemoteHost :> ClientAPI
+type WebSocketAPI = RemoteHost :> SA.Auth '[SA.JWT, SA.Cookie] SessionID :> Raw
 
-type OnConnect session = Workspace -> ChannelName -> session -> WS.Connection -> ProcessIO ()
-
-type OnWSConnect session = SockAddr -> OnConnect session
+type OnConnect session = SockAddr -> Workspace -> ChannelName -> session -> WS.Connection -> ProcessIO ()
 
 type GetSession session = Maybe SessionID -> ProcessIO (Maybe session)
 
-websocketServer :: GetSession session -> OnWSConnect session -> ServerT WebSocketAPI ProcessIO
-websocketServer getSession onWSConnect clientAddr = clientServer getSession (onWSConnect clientAddr)
+-- | Look for the "?reconnect=true" argument in the query string
+getReconnectArg :: Wai.Request -> Bool
+getReconnectArg req = case lookup "reconnect" (Wai.queryString req) of
+    Just (Just "true") -> True
+    _ -> False
+
+websocketServer :: ProcessEnv -> GetSession session -> OnConnect session -> Server WebSocketAPI
+websocketServer env getSession onConnect clientAddr auth = Tagged baseApp
+  where
+    baseApp :: Wai.Application
+    baseApp req resp = case Wai.pathInfo req of
+        ["ws", ChannelName -> chan] -> handleWS (Workspace "") chan
+        [Workspace -> ws, "ws", ChannelName -> chan] -> handleWS ws chan
+        _ -> resp404
+      where
+        resp404 = resp $ Wai.responseLBS HTTP.status404 [] mempty
+        handleWS workspace chan = maybe resp404 resp (WaiWS.websocketsApp WS.defaultConnectionOptions wsApp req)
+          where
+            wsApp :: WS.PendingConnection -> IO ()
+            wsApp pendingConnection = do
+                conn <- WS.acceptRequest pendingConnection
+                runProcessIO env.os env.process (doHandleWS (getReconnectArg req) workspace chan conn)
+
+    doHandleWS :: Bool -> Workspace -> ChannelName -> WS.Connection -> ProcessIO ()
+    doHandleWS reconnect workspace chan conn
+        | reconnect = doReload
+        | otherwise = do
+            case auth of
+                SAS.Authenticated sessionID -> do
+                    mSession <- getSession (Just sessionID)
+                    case mSession of
+                        Just session -> onConnect clientAddr workspace chan session conn
+                        Nothing -> do
+                            logError "Unknown websocket session" ["session" .= sessionID]
+                            doReload
+                _ -> do
+                    logError "Unauthenticated websocket connection" []
+                    doReload
+      where
+        doReload = liftIO $ WS.sendTextData conn $ renderText do
+            with span_ [id_ "display-ws"] do
+                "<reconnecting...>"
+                script_ "window.location.reload()"

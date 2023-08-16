@@ -44,7 +44,7 @@ loginServer os process sessions mkIndexHtml jwtSettings auth mWorkspace = indexR
             mSession <- atomically (lookupSession sessions sessionID)
             case mSession of
                 Just _ ->
-                    pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace) sessionID)
+                    pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
                 Nothing -> do
                     liftIO $ runProcessIO os process $ logError "no more auth?" ["id" .= sessionID]
                     pure "Unknown session"
