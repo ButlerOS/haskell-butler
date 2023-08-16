@@ -103,11 +103,11 @@ dependencies:
   - warp-tls
 
   # Servant types
-  - servant-websockets
   - servant
   - servant-server
   - servant-auth
   - servant-auth-server
+  - wai-websockets
 
   # Extra
   - PyF

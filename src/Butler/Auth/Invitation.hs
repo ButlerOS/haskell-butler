@@ -66,7 +66,7 @@ rootServer sessions mkIndexHtml ar mWorkspace = indexRoute
         Authenticated sessionID -> do
             mSession <- atomically (lookupSession sessions sessionID)
             case mSession of
-                Just _ -> pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace) sessionID)
+                Just _ -> pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
                 Nothing -> loginPage
         _OtherAuth -> loginPage
       where

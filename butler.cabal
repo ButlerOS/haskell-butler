@@ -183,7 +183,6 @@ library
     , servant-auth-server
     , servant-lucid
     , servant-server
-    , servant-websockets
     , sqlite-simple
     , stm
     , tasty
@@ -198,6 +197,7 @@ library
     , unordered-containers
     , uuid
     , wai
+    , wai-websockets
     , warp
     , warp-tls
     , websockets
@@ -305,7 +305,6 @@ executable butler
     , servant-auth-server
     , servant-lucid
     , servant-server
-    , servant-websockets
     , sqlite-simple
     , stm
     , tasty
@@ -320,6 +319,7 @@ executable butler
     , unordered-containers
     , uuid
     , wai
+    , wai-websockets
     , warp
     , warp-tls
     , websockets
@@ -437,7 +437,6 @@ test-suite spec
     , servant-auth-server
     , servant-lucid
     , servant-server
-    , servant-websockets
     , sqlite-simple
     , stm
     , tasty
@@ -452,6 +451,7 @@ test-suite spec
     , unordered-containers
     , uuid
     , wai
+    , wai-websockets
     , warp
     , warp-tls
     , websockets
