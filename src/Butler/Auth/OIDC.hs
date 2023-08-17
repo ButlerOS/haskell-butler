@@ -146,12 +146,22 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
 
     setSession :: UserName -> SessionProvider -> Servant.Handler AuthResp
     setSession username provider = do
-        session <- liftIO $ runProcessIO os process $ newSession sessions provider username
-        liftIO (SAS.acceptLogin cookieSettings jwtSettings session.sessionID) >>= \case
-            Just r -> do
-                let page = workspaceUrl mWorkspace
-                pure $ r (script_ $ "window.location.href = " <> showT page)
-            Nothing -> error "oops?!"
+        foundSessions <- atomically $ lookupSessionByUser sessions localProvider "guest"
+        case foundSessions of
+            [foundSession] -> do
+                void $ liftIO $ runProcessIO os process $ changeUsername sessions foundSession provider username
+                liftIO $ setCookiesAndRedirect foundSession
+            [] -> do
+                session <- liftIO $ runProcessIO os process $ newSession sessions provider username
+                liftIO $ setCookiesAndRedirect session
+            _ -> error "oops"
+        where
+            setCookiesAndRedirect session =
+                SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
+                    Just r -> do
+                        let page = workspaceUrl mWorkspace
+                        pure $ r (script_ $ "window.location.href = " <> showT page)
+                    Nothing -> error "oops?!"
 
     indexRoute :: AuthResult SessionID -> Servant.Handler (Html ())
     indexRoute = \case
