@@ -30,7 +30,7 @@ butlerTestCase name action = testCase name do
 newTestClient :: AppSharedContext -> ProcessIO DisplayClient
 newTestClient appSharedContext = do
     sessionID <- SessionID <$> liftIO UUID.nextRandom
-    session <- atomically (Session sessionID <$> newTVar (externalProvider "test") <*> newTVar "tester" <*> newTVar False <*> newTVar Nothing)
+    session <- atomically (Session sessionID <$> newTVar Nothing <*> newTVar "tester" <*> newTVar False <*> newTVar Nothing)
     process <- spawnProcess "test-client" (forever $ sleep 60_000)
     closeRef <- newIORef False
     let
