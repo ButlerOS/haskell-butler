@@ -351,6 +351,7 @@ test-suite spec
       Butler.Core.LoggerTest
       Butler.Core.MemoryTest
       Butler.Core.ProcessorTest
+      Butler.Session
       Paths_butler
   hs-source-dirs:
       test
