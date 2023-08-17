@@ -6,7 +6,6 @@ import Butler.Core.Logger
 import Butler.Core.Network
 import Butler.Display.Session
 import Butler.Prelude
-import Data.Text qualified as Text
 
 newtype REPL = REPL [Command]
 
@@ -23,14 +22,13 @@ recoveryLink sessions = Command "show-recovery" \args -> runExceptT do
         _ -> throwError "usage: show-recovery username"
 
     -- look for user
-    matchingSessions <- atomically (lookupSessionByUser sessions localProvider username)
+    matchingSessions <- atomically (lookupSessionByUser sessions username)
     case matchingSessions of
-        [session] -> do
+        Just session -> do
             -- return recovery
             recoveryID <- lift (getOrCreateRecover sessions session)
             pure $ from recoveryID
-        [] -> throwError "Unknown username"
-        xs -> throwError $ "Too many user: " <> Text.unwords (map (into . (.sessionID)) xs)
+        Nothing -> throwError "Unknown username"
 
 adminREPL :: Sessions -> REPL
 adminREPL sessions = REPL [recoveryLink sessions]

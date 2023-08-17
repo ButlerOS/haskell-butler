@@ -124,9 +124,7 @@ loginServer sessions jwtSettings mWorkspace = getSessionRoute
             username <- case isValidUserName (coerce form.username) of
                 Just username -> pure username
                 Nothing -> throwError "Bad username"
-            unlessM (lift $ isUsernameAvailable sessions localProvider form.username) do
-                throwError "Username already taken"
-            lift $ newSession sessions localProvider username
+            lift $ newSession sessions Nothing username
 
         case res of
             Left err -> do

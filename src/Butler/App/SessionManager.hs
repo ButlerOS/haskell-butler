@@ -166,10 +166,9 @@ startSMApp ctx = do
                                 Nothing -> logError "unknown session" ["id" .= sessionID] >> pure mempty
                                 Just session -> do
                                     oldUsername <- readTVarIO session.username
-                                    provider <- readTVarIO session.provider
                                     when (oldUsername /= username) do
                                         logInfo "Changing username" ["name" .= username, "session" .= session]
-                                        void $ changeUsername display.sessions session provider username
+                                        void $ changeUsername display.sessions session username
                                     atomically $ writeTVar state (Listing display)
                                     refreshUI
                         | otherwise -> logError "Permission denied" ["ev" .= ev]
