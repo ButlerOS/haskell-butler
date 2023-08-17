@@ -23,7 +23,7 @@ recoveryLink sessions = Command "show-recovery" \args -> runExceptT do
         _ -> throwError "usage: show-recovery username"
 
     -- look for user
-    matchingSessions <- atomically (lookupSessionByUser sessions username)
+    matchingSessions <- atomically (lookupSessionByUser sessions localProvider username)
     case matchingSessions of
         [session] -> do
             -- return recovery

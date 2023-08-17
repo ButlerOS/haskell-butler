@@ -17,6 +17,11 @@ module Butler.Display.Session (
     SessionID (..),
     InviteID (..),
 
+    -- * Provider API
+    SessionProvider,
+    localProvider,
+    externalProvider,
+
     -- * Recovery API
     getSessionFromRecover,
     getOrCreateRecover,
@@ -49,6 +54,19 @@ import Butler.Core.Storage
 import Butler.Database
 import Butler.Display.User
 
+-- | Where the session is coming from, e.g. local or external identity provider
+newtype SessionProvider = SessionProvider Text
+    deriving newtype (Eq)
+
+instance From SessionProvider Text where from = coerce
+
+-- | The default provider
+localProvider :: SessionProvider
+localProvider = SessionProvider "local"
+
+externalProvider :: Text -> SessionProvider
+externalProvider = SessionProvider
+
 isValidUserName :: Text -> Maybe UserName
 isValidUserName n
     | Text.null alphaName = Nothing
@@ -58,6 +76,7 @@ isValidUserName n
 
 data Session = Session
     { sessionID :: SessionID
+    , provider :: TVar SessionProvider
     , username :: TVar UserName
     , admin :: TVar Bool
     , recover :: TVar (Maybe RecoveryID)
@@ -113,7 +132,7 @@ instance FromJWT SessionID
 instance ToJWT SessionID
 
 sessionsDB :: DatabaseMigration
-sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover"] doUp doDown
+sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover", "provider"] doUp doDown
   where
     doUp name db = case name of
         "sessions-create" -> dbExecute db "CREATE TABLE sessions (uuid TEXT, username TEXT)" []
@@ -122,17 +141,21 @@ sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover"] doUp doDo
             dbExecute db "UPDATE sessions SET admin = FALSE" []
             dbExecute db "UPDATE sessions SET admin = TRUE WHERE rowid = 1" []
         "recover" -> dbExecute db "ALTER TABLE sessions ADD COLUMN recover TEXT" []
+        "provider" -> do
+            dbExecute db "ALTER TABLE sessions ADD COLUMN provider TEXT" []
+            -- Set existing session to local
+            dbExecute db "UPDATE sessions SET provider = :provider" [":provider" := into @Text localProvider]
         _ -> logError "Unknown migration" ["name" .= show name]
     doDown _ _ = pure ()
 
 -- | TODO: only load active sessions when needed.
 sessionsFromDB :: Database -> ProcessIO [(SessionID, Session)]
-sessionsFromDB db = traverse mkSession =<< dbQuery db "select uuid,username,admin,recover from sessions" []
+sessionsFromDB db = traverse mkSession =<< dbQuery db "select uuid,provider,username,admin,recover from sessions" []
   where
-    mkSession (uuid, username, admin, recoverTxt) = do
+    mkSession (uuid, provider, username, admin, recoverTxt) = do
         let sessionID = SessionID (fromMaybe (error "bad uuid?!") (UUID.fromText uuid))
             recover = RecoveryID . fromMaybe (error "bad uuid!") . UUID.fromText <$> recoverTxt
-        session <- Session sessionID <$> newTVarIO (UserName username) <*> newTVarIO admin <*> newTVarIO recover
+        session <- Session sessionID <$> newTVarIO (SessionProvider provider) <*> newTVarIO (UserName username) <*> newTVarIO admin <*> newTVarIO recover
         pure (sessionID, session)
 
 withSessions :: StorageAddress -> (Sessions -> ProcessIO a) -> ProcessIO a
@@ -151,15 +174,16 @@ checkInvite sessions inviteID = Map.member inviteID <$> readMemoryVar sessions.i
 lookupSession :: Sessions -> SessionID -> STM (Maybe Session)
 lookupSession sessions sessionID = Map.lookup sessionID <$> readTVar sessions.sessions
 
-lookupSessionByUser :: Sessions -> UserName -> STM [Session]
-lookupSessionByUser sessions username = getSessions [] =<< (Map.elems <$> readTVar sessions.sessions)
+lookupSessionByUser :: Sessions -> SessionProvider -> UserName -> STM [Session]
+lookupSessionByUser sessions provider username = getSessions [] =<< (Map.elems <$> readTVar sessions.sessions)
   where
     getSessions :: [Session] -> [Session] -> STM [Session]
     getSessions acc [] = pure acc
     getSessions acc (session : rest) = do
+        sessionProvider <- readTVar session.provider
         sessionUsername <- readTVar session.username
         let newAcc
-                | sessionUsername == username = session : acc
+                | sessionProvider == provider && sessionUsername == username = session : acc
                 | otherwise = acc
         getSessions newAcc rest
 
@@ -188,42 +212,46 @@ deleteRecover sessions session = do
     dbExecute sessions.db "UPDATE sessions SET recover = NULL WHERE uuid = :uuid" [":uuid" := session.sessionID]
 
 addSessionDB :: Sessions -> Session -> ProcessIO ()
-addSessionDB sessions (Session sessionID tUsername tAdmin _) = do
+addSessionDB sessions (Session sessionID tProvider tUsername tAdmin _) = do
+    provider <- readTVarIO tProvider
     username <- readTVarIO tUsername
     admin <- readTVarIO tAdmin
     dbExecute
         sessions.db
-        "INSERT INTO sessions (uuid, username, admin) VALUES (:uuid, :username, :admin)"
-        [":uuid" := sessionID, ":username" := into @Text username, ":admin" := admin]
+        "INSERT INTO sessions (uuid, provider, username, admin) VALUES (:uuid, :provider, :username, :admin)"
+        [":uuid" := sessionID, ":provider" := into @Text provider, ":username" := into @Text username, ":admin" := admin]
 
-isUsernameAvailable :: Sessions -> UserName -> ProcessIO Bool
-isUsernameAvailable sessions username = do
+isUsernameAvailable :: Sessions -> SessionProvider -> UserName -> ProcessIO Bool
+isUsernameAvailable sessions provider username = do
     null @[] @(Only Text)
         <$> dbQuery
             sessions.db
-            "SELECT username from sessions WHERE username = :username"
-            [":username" := into @Text username]
+            "SELECT username from sessions WHERE provider = :provider AND username = :username"
+            [":provider" := into @Text provider, ":username" := into @Text username]
 
-changeUsername :: Sessions -> Session -> UserName -> ProcessIO Bool
-changeUsername _ _ "guest" = pure False
-changeUsername sessions session username = withMVar sessions.lock \() -> do
-    avail <- isUsernameAvailable sessions username
-    when avail doChangeUsername
-    pure avail
+changeUsername :: Sessions -> Session -> SessionProvider -> UserName -> ProcessIO Bool
+changeUsername sessions session provider username
+    | provider == localProvider && username == "guest" = pure False
+    | otherwise = withMVar sessions.lock \() -> do
+        avail <- isUsernameAvailable sessions provider username
+        when avail doChangeUsername
+        pure avail
   where
     doChangeUsername = do
         dbExecute
             sessions.db
-            "UPDATE sessions SET username = :username WHERE uuid = :uuid"
-            [":username" := into @Text username, ":uuid" := into @Text session.sessionID]
-        atomically $ writeTVar session.username username
+            "UPDATE sessions SET username = :username, provider = :provider WHERE uuid = :uuid"
+            [":username" := into @Text username, ":provider" := into @Text provider, ":uuid" := into @Text session.sessionID]
+        atomically do
+            writeTVar session.username username
+            writeTVar session.provider provider
 
-newSession :: Sessions -> UserName -> ProcessIO Session
-newSession sessions username = do
+newSession :: Sessions -> SessionProvider -> UserName -> ProcessIO Session
+newSession sessions provider username = do
     sessionID <- SessionID <$> liftIO UUID.nextRandom
     session <- atomically do
         isAdmin <- isEmptySessions sessions
-        Session sessionID <$> newTVar username <*> newTVar isAdmin <*> newTVar Nothing
+        Session sessionID <$> newTVar provider <*> newTVar username <*> newTVar isAdmin <*> newTVar Nothing
     addSessionDB sessions session
     atomically $ modifyTVar' sessions.sessions (Map.insert session.sessionID session)
     pure session
