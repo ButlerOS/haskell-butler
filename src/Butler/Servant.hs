@@ -15,6 +15,9 @@ module Butler.Servant (
     AuthResp,
     BaseAPI,
     withBaseAPI,
+
+    -- * Helpers
+    throwRedirect,
 ) where
 
 import Butler.Core
@@ -106,3 +109,7 @@ newtype AuthAPI api mode = AuthAPI
 
 withAuthAPI :: (SAS.AuthResult SessionID -> api AsProcessIO) -> AuthAPI api AsProcessIO
 withAuthAPI = AuthAPI
+
+-- | Redirect the user.
+throwRedirect :: Text -> ServantProcessIO a
+throwRedirect path = throwError $ Servant.err303{Servant.errHeaders = [("Location", encodeUtf8 path)]}

@@ -26,7 +26,21 @@ import System.Random (genByteString)
 import System.Random qualified as Random
 import Web.OIDC.Client qualified as O
 
--- Servant named routes, see: https://www.tweag.io/blog/2022-02-24-named-routes/
+-- The API is defined using Servant named routes, see: https://www.tweag.io/blog/2022-02-24-named-routes/
+-- When implementing the API, use 'ServantProcessIO' for the 'mode' type variable.
+
+{- | The login flow goes as follow:
+
+ * 1/ A new user starts with the indexRoute:
+   * if they have a valid cookie, the user is given a websocket url.
+   * otherwise they get redirected to the guestCallbackRoute
+ * 2/ The guestCallbackRoute creates a new session and redirect to 1/
+ * 3/ User can go to the loginRoute and be redirected to external idp.
+ * 4/ On success, the user gets redirected back to the callbackRoute.
+      At that point, the user may or may not have an existing session,
+      And an existing session for this provider may or may not already exist.
+      See the "getProviderSession" method below for the process.
+-}
 data LoginAPI mode = LoginAPI
     { indexRoute :: mode :- Get '[HTML] (Html ())
     , loginRoute :: mode :- "_login" :> Get '[JSON] NoContent
@@ -40,6 +54,29 @@ data LoginAPI mode = LoginAPI
     , guestCallbackRoute :: mode :- "_guest_cb" :> Get '[HTML] AuthResp
     }
     deriving (Generic)
+
+-- | Create or assign the provider session: the butler session attached to an external provider subject.
+getProviderSession :: Sessions -> UserName -> SessionProvider -> Maybe Session -> ProcessIO Session
+getProviderSession sessions username provider mCurrentSession = do
+    let ctx = ["username" .= username, "provider" .= provider]
+        logSession name session = name .= session.sessionID
+    mProviderSession <- atomically (lookupSessionByProvider sessions provider)
+    case (mCurrentSession, mProviderSession) of
+        (Nothing, Nothing) -> do
+            logDebug "Creating a new session" ctx
+            newSession sessions (Just provider) username
+        (Nothing, Just session) -> do
+            logDebug "Assigning the existing provider session" (logSession "provider_session" session : ctx)
+            pure session
+        (Just currentSession, Nothing) -> do
+            logDebug "Promoting the current session to the new provider" (logSession "current_session" currentSession : ctx)
+            changeProvider sessions currentSession provider
+            pure currentSession
+        (Just currentSession, Just session) -> do
+            logDebug "Switching to the existing provider session" (logSession "current_session" currentSession : logSession "provider_session" session : ctx)
+            -- perhaps the session could be marked as disabled?
+            deleteSession sessions currentSession.sessionID
+            pure session
 
 newtype OIDCClientID = OIDCClientID ByteString
 newtype OIDCClientSecret = OIDCClientSecret ByteString
@@ -126,41 +163,33 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
         }
   where
     callbackRoute :: Maybe Text -> Maybe Text -> Maybe Text -> ServantProcessIO AuthResp
-    callbackRoute mErr mCode mState = do
-        case (mErr, mCode, mState) of
-            (Just errorMsg, _, _) -> error $ "Error from remote provider: " <> show errorMsg
-            (_, Nothing, _) -> error "No code parameter given"
-            (_, _, Nothing) -> error "No state parameter given"
-            (_, Just oauthCode, Just oauthState) -> do
-                tokens :: O.Tokens Value <-
-                    liftIO $
-                        O.getValidTokens
-                            (mkSessionStore oidcenv (Just $ encodeUtf8 oauthState) Nothing)
-                            (oidc oidcenv)
-                            (manager oidcenv)
-                            (encodeUtf8 oauthState)
-                            (encodeUtf8 oauthCode)
-                let username = UserName tokens.idToken.sub
-                setSession username $ externalProvider "google" username
+    callbackRoute mErr mCode mState = case (mErr, mCode, mState) of
+        (Just errorMsg, _, _) -> failCallback $ "Error from remote provider: " <> errorMsg
+        (_, Nothing, _) -> failCallback "No code parameter given"
+        (_, _, Nothing) -> failCallback "No state parameter given"
+        (_, Just oauthCode, Just oauthState) -> do
+            tokens :: O.Tokens Value <-
+                liftIO $
+                    O.getValidTokens
+                        (mkSessionStore oidcenv (Just $ encodeUtf8 oauthState) Nothing)
+                        (oidc oidcenv)
+                        (manager oidcenv)
+                        (encodeUtf8 oauthState)
+                        (encodeUtf8 oauthCode)
+            let username = UserName tokens.idToken.sub
+                provider = externalProvider "google" username
+            withSession \mCurrentSession -> do
+                userSession <- lift (getProviderSession sessions username provider mCurrentSession)
+                setCookiesAndRedirect userSession
+      where
+        failCallback :: Text -> ServantProcessIO AuthResp
+        failCallback msg = do
+            lift do logError "bad callback" ["msg" .= msg]
+            logAsGuest
 
     guestCallbackRoute :: ServantProcessIO AuthResp
     guestCallbackRoute = do
         session <- lift $ newSession sessions Nothing "guest"
-        setCookiesAndRedirect session
-
-    setSession :: UserName -> SessionProvider -> ServantProcessIO AuthResp
-    setSession username provider = do
-        let ctx = ["username" .= username, "provider" .= provider]
-        session <-
-            lift $
-                atomically (lookupSessionByProvider sessions provider) >>= \case
-                    Nothing -> do
-                        logInfo "Creating a new session" ctx
-                        newSession sessions (Just provider) username
-                    Just session -> do
-                        logInfo "Setting session provider" ctx
-                        changeProvider sessions session provider
-                        pure session
         setCookiesAndRedirect session
 
     setCookiesAndRedirect session = liftIO do
@@ -170,18 +199,25 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                 pure $ r (script_ $ "window.location.href = " <> showT page)
             Nothing -> error "oops?!"
 
-    indexRoute :: ServantProcessIO (Html ())
-    indexRoute = case auth of
-        Authenticated sessionID -> lift do
-            mSession <- atomically (lookupSession sessions sessionID)
-            case mSession of
-                Just _ ->
-                    pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
+    withSession :: (Maybe Session -> ServantProcessIO a) -> ServantProcessIO a
+    withSession cb = case auth of
+        Authenticated sessionID -> do
+            lift (atomically (lookupSession sessions sessionID)) >>= \case
+                Just session -> cb (Just session)
                 Nothing -> do
-                    logError "unknown session" ["id" .= sessionID]
-                    -- TODO: redirect to guest route
-                    pure "Unknown session"
-        _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_guest_cb")]}
+                    lift $ logError "Unknown session" ["id" .= sessionID]
+                    cb Nothing
+        _ -> do
+            lift $ logError "Invalid sesssion" []
+            cb Nothing
+
+    logAsGuest :: ServantProcessIO a
+    logAsGuest = throwRedirect $ workspaceUrl mWorkspace <> "_guest_cb"
+
+    indexRoute :: ServantProcessIO (Html ())
+    indexRoute = withSession \case
+        Just _session -> pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
+        Nothing -> logAsGuest
 
     loginRoute :: ServantProcessIO NoContent
     loginRoute = do
