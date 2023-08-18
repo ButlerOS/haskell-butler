@@ -137,7 +137,7 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
         { authRoute = \auth ->
             WorkspaceAPI
                 { withoutWorkspace = loginServer auth Nothing
-                , withWorkspace = \ws -> loginServer auth (Just ws)
+                , withWorkspace = loginServer auth . Just
                 }
         }
   where
