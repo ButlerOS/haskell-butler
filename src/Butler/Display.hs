@@ -16,14 +16,9 @@ module Butler.Display (
     serveDashboardApps,
 ) where
 
-import Codec.Serialise.Decoding (decodeBytes)
-import Codec.Serialise.Encoding (encodeBytes)
-import Crypto.JOSE.JWK qualified as JOSE
-import Data.Aeson (decodeStrict')
 import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.List (find)
 import Data.Map.Strict qualified as Map
-import Data.Time (UTCTime (..), fromGregorian)
 import Lucid
 import Lucid.Htmx
 import Network.HTTP.Types.Status qualified as HTTP
@@ -31,7 +26,6 @@ import Network.Socket
 import Network.Wai qualified
 import Network.WebSockets qualified as WS
 import Servant
-import Servant.Auth.Server qualified as SAS
 
 import Butler.App
 import Butler.Core
@@ -44,6 +38,7 @@ import Butler.Display.Client
 import Butler.Display.Session
 import Butler.Display.WebSocket
 import Butler.Prelude
+import Butler.Servant (AuthContext (..), JwkStorage (..), newAuthContext)
 import XStatic.Butler
 
 type OnClient = (Session -> Workspace -> ProcessIO (ProcessEnv, DisplayEvent -> ProcessIO ()))
@@ -81,15 +76,6 @@ dcSplash = do
     with div_ [class_ "absolute top-0 left-0 z-50 bg-slate-200/80 flex h-screen w-screen"] do
         with div_ [class_ "m-auto text-xl"] "Thanks for your time, see you next time!"
         script_ "htmx.addClass(htmx.find('#display-pulse'), 'bg-red-500')"
-
-newtype JwkStorage = JwkStorage JOSE.JWK
-
-instance Serialise JwkStorage where
-    encode (JwkStorage jwk) = encodeBytes (from $ encodeJSON jwk)
-    decode = fmap decodeJWK decodeBytes
-      where
-        decodeJWK :: ByteString -> JwkStorage
-        decodeJWK bs = JwkStorage (fromMaybe (error "bad encoding?!") $ decodeStrict' bs)
 
 connectRoute :: Display -> ServerName -> OnClient -> SockAddr -> Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
 connectRoute display server onClient sockAddr workspaceM channel session connection = do
@@ -156,32 +142,21 @@ displayAddrFromEnv = \case
             <$> (Http <$ "http:" <|> Https Nothing <$ "https:")
             <*> P.decimal
 
-cookieSettings :: SAS.CookieSettings
-cookieSettings =
-    SAS.defaultCookieSettings
-        { SAS.cookieSameSite = SAS.SameSiteStrict
-        , SAS.cookieXsrfSetting = Nothing
-        , SAS.cookieExpires = Just (UTCTime (fromGregorian 2030 1 1) 0)
-        }
-
-startDisplay :: Maybe DisplayAddr -> [XStaticFile] -> (Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
+startDisplay :: Maybe DisplayAddr -> [XStaticFile] -> (AuthContext -> Sessions -> ProcessIO AuthApplication) -> (Display -> ProcessIO OnClient) -> ProcessIO Void
 startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessions -> do
     DisplayAddr proto port <- case mAddr of
         Nothing -> displayAddrFromEnv <$> liftIO (getEnv "BUTLER_ADDR")
         Just addr -> pure addr
     display <- atomically (newDisplay sessions)
-    authApp <- mkAuthApp sessions
+    authContext <- newAuthContext
+    authApp <- mkAuthApp authContext sessions
     onClient <- withDisplay display
     env <- ask
-
-    JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO SAS.generateKey)
-    let jwtSettings = SAS.defaultJWTSettings myKey
-    let cfg = cookieSettings :. jwtSettings :. EmptyContext
 
     let wsSrv :: ServerName -> Server WebSocketAPI
         wsSrv server = websocketServer env getSession (connectRoute display server onClient)
         wsApp :: ServerName -> WaiApplication
-        wsApp server = Servant.serveWithContext (Proxy @WebSocketAPI) cfg (wsSrv server)
+        wsApp server = Servant.serveWithContext (Proxy @WebSocketAPI) authContext.servantContext (wsSrv server)
         getSession = \case
             Nothing -> pure Nothing
             Just sessionID -> atomically $ lookupSession sessions sessionID
@@ -196,7 +171,7 @@ startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessi
 
 newtype DisplayApplication
     = DisplayApplication
-        ( [XStaticFile] -> (Sessions -> ProcessIO AuthApplication)
+        ( [XStaticFile] -> (AuthContext -> Sessions -> ProcessIO AuthApplication)
         )
 
 data SessionApps = SessionApps

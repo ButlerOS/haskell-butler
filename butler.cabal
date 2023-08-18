@@ -91,6 +91,7 @@ library
       Butler.Lobby
       Butler.Prelude
       Butler.REPL
+      Butler.Servant
       Butler.Service.Assistant
       Butler.Service.Cursor
       Butler.Service.FileService
