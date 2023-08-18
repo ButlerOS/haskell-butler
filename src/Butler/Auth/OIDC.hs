@@ -22,27 +22,38 @@ import Servant
 import Servant.Auth as SA
 import Servant.Auth.Server as SAS
 import Servant.HTML.Lucid
+import Servant.Server.Generic (AsServer)
 import System.Random (genByteString)
 import System.Random qualified as Random
 import Web.OIDC.Client qualified as O
 
 type AuthResp = Headers '[Header "Set-Cookie" SetCookie, Header "Set-Cookie" SetCookie] (Html ())
-type LoginAPI =
-    Get '[HTML] (Html ())
-        :<|> "_login" :> Get '[JSON] NoContent
-        :<|> "_cb"
-            :> QueryParam "error" Text
-            :> QueryParam "code" Text
-            :> QueryParam "state" Text
-            :> Get '[HTML] AuthResp
-        :<|> "_guest_cb" :> Get '[HTML] AuthResp
 
-type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> (LoginAPI :<|> Capture "workspace" Workspace :> LoginAPI)
+-- Servant named routes, see: https://www.tweag.io/blog/2022-02-24-named-routes/
+data LoginAPI mode = LoginAPI
+    { indexRoute :: mode :- Get '[HTML] (Html ())
+    , loginRoute :: mode :- "_login" :> Get '[JSON] NoContent
+    , callbackRoute ::
+        mode
+            :- "_cb"
+                :> QueryParam "error" Text
+                :> QueryParam "code" Text
+                :> QueryParam "state" Text
+                :> Get '[HTML] AuthResp
+    , guestCallbackRoute :: mode :- "_guest_cb" :> Get '[HTML] AuthResp
+    }
+    deriving (Generic)
 
-authServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> OIDCEnv -> ServerT AuthAPI Servant.Handler
-authServer os process sessions mkIndexHtml jwtSettings auth oidcenv =
-    let loginSrv = loginServer os process sessions mkIndexHtml jwtSettings oidcenv auth
-     in loginSrv Nothing :<|> (loginSrv . Just)
+data WorkspaceAPI mode = WorkspaceAPI
+    { withoutWorkspace :: mode :- NamedRoutes LoginAPI
+    , withWorkspace :: mode :- Capture "workspace" Workspace :> NamedRoutes LoginAPI
+    }
+    deriving (Generic)
+
+newtype AuthAPI mode = AuthAPI
+    { authRoute :: mode :- Auth '[SA.JWT, SA.Cookie] SessionID :> NamedRoutes WorkspaceAPI
+    }
+    deriving (Generic)
 
 newtype OIDCClientID = OIDCClientID ByteString
 newtype OIDCClientSecret = OIDCClientSecret ByteString
@@ -120,12 +131,27 @@ mkSessionStore OIDCEnv{sessionStoreStorage} stateM uriM = do
         let nonce = HM.lookup state' store
         pure nonce
 
-loginServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> OIDCEnv -> Maybe Workspace -> ServerT LoginAPI Servant.Handler
-loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace =
-    indexRoute auth :<|> loginRoute oidcenv :<|> callbackRoute oidcenv :<|> guestCallbackRoute
+authServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> OIDCEnv -> AuthAPI AsServer
+authServer os process sessions mkIndexHtml jwtSettings oidcenv =
+    AuthAPI
+        { authRoute = \auth ->
+            WorkspaceAPI
+                { withoutWorkspace = loginServer auth Nothing
+                , withWorkspace = \ws -> loginServer auth (Just ws)
+                }
+        }
   where
-    callbackRoute :: OIDCEnv -> Maybe Text -> Maybe Text -> Maybe Text -> Servant.Handler AuthResp
-    callbackRoute oidcEnv mErr mCode mState = do
+    loginServer :: AuthResult SessionID -> Maybe Workspace -> LoginAPI AsServer
+    loginServer auth mWorkspace =
+        LoginAPI
+            { indexRoute = indexRoute mWorkspace auth
+            , loginRoute = loginRoute
+            , callbackRoute = callbackRoute mWorkspace
+            , guestCallbackRoute = guestCallbackRoute mWorkspace
+            }
+
+    callbackRoute :: Maybe Workspace -> Maybe Text -> Maybe Text -> Maybe Text -> Servant.Handler AuthResp
+    callbackRoute mWorkspace mErr mCode mState = do
         case (mErr, mCode, mState) of
             (Just errorMsg, _, _) -> error $ "Error from remote provider: " <> show errorMsg
             (_, Nothing, _) -> error "No code parameter given"
@@ -134,18 +160,18 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
                 tokens :: O.Tokens Value <-
                     liftIO $
                         O.getValidTokens
-                            (mkSessionStore oidcEnv (Just $ encodeUtf8 oauthState) Nothing)
-                            (oidc oidcEnv)
-                            (manager oidcEnv)
+                            (mkSessionStore oidcenv (Just $ encodeUtf8 oauthState) Nothing)
+                            (oidc oidcenv)
+                            (manager oidcenv)
                             (encodeUtf8 oauthState)
                             (encodeUtf8 oauthCode)
-                setSession (UserName tokens.idToken.sub) $ SessionProvider "google"
+                setSession mWorkspace (UserName tokens.idToken.sub) $ SessionProvider "google"
 
-    guestCallbackRoute :: Servant.Handler AuthResp
-    guestCallbackRoute = setSession "guest" localProvider
+    guestCallbackRoute :: Maybe Workspace -> Servant.Handler AuthResp
+    guestCallbackRoute mWorkspace = setSession mWorkspace "guest" localProvider
 
-    setSession :: UserName -> SessionProvider -> Servant.Handler AuthResp
-    setSession username provider = do
+    setSession :: Maybe Workspace -> UserName -> SessionProvider -> Servant.Handler AuthResp
+    setSession mWorkspace username provider = do
         foundSessions <- atomically $ lookupSessionByUser sessions localProvider "guest"
         case foundSessions of
             [foundSession] -> do
@@ -155,16 +181,16 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
                 session <- liftIO $ runProcessIO os process $ newSession sessions provider username
                 liftIO $ setCookiesAndRedirect session
             _ -> error "oops"
-        where
-            setCookiesAndRedirect session =
-                SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
-                    Just r -> do
-                        let page = workspaceUrl mWorkspace
-                        pure $ r (script_ $ "window.location.href = " <> showT page)
-                    Nothing -> error "oops?!"
+      where
+        setCookiesAndRedirect session =
+            SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
+                Just r -> do
+                    let page = workspaceUrl mWorkspace
+                    pure $ r (script_ $ "window.location.href = " <> showT page)
+                Nothing -> error "oops?!"
 
-    indexRoute :: AuthResult SessionID -> Servant.Handler (Html ())
-    indexRoute = \case
+    indexRoute :: Maybe Workspace -> AuthResult SessionID -> Servant.Handler (Html ())
+    indexRoute mWorkspace = \case
         Authenticated sessionID -> do
             mSession <- atomically (lookupSession sessions sessionID)
             case mSession of
@@ -175,8 +201,8 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
                     pure "Unknown session"
         _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_guest_cb")]}
 
-    loginRoute :: OIDCEnv -> Servant.Handler NoContent
-    loginRoute oidcEnv = do
+    loginRoute :: Servant.Handler NoContent
+    loginRoute = do
         redirectLocation <- liftIO genOIDCURL
         throwError $ err303{errHeaders = [("Location", redirectLocation)]}
       where
@@ -184,8 +210,8 @@ loginServer os process sessions mkIndexHtml jwtSettings auth oidcenv mWorkspace 
         genOIDCURL = do
             loc <-
                 O.prepareAuthenticationRequestUrl
-                    (mkSessionStore oidcEnv Nothing Nothing)
-                    oidcEnv.oidc
+                    (mkSessionStore oidcenv Nothing Nothing)
+                    oidcenv.oidc
                     [O.openId]
                     mempty
             pure . B.pack $ show loc
@@ -215,5 +241,5 @@ oIDCAuthApp sessions public_url client_id client_secret mkIndexHtml = do
                 False
                 "Test"
     let authSrv = authServer env.os env.process sessions mkIndexHtml jwtSettings oidcenv
-    let app = Servant.serveWithContextT (Proxy @AuthAPI) cfg id authSrv
+    let app = Servant.serveWithContextT (Proxy @(NamedRoutes AuthAPI)) cfg id authSrv
     pure $ AuthApplication app
