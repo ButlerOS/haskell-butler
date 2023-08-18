@@ -103,11 +103,19 @@ multiDesktop = run (demoDesktop [])
 -- | Demonstrate a social login app
 demoSocialAuth :: IO ()
 demoSocialAuth = do
-    Just client_id <- liftIO $ getEnv "OIDC_ID"
-    Just client_password <- liftIO $ getEnv "OIDC_SECRET"
+    Just clientId <- liftIO $ getEnv "OIDC_ID"
+    Just clientPassword <- liftIO $ getEnv "OIDC_SECRET"
+    mPublicUrl <- liftIO $ getEnv "OIDC_PUBLIC_URL"
+    let publicUrl = fromMaybe "https://localhost:8080" mPublicUrl
     run $
         serveApps
-            (publicOIDCDisplayApp (OIDCClientID client_id) (OIDCClientSecret client_password) "Demo social login app" Nothing)
+            ( publicOIDCDisplayApp
+                (OIDCClientID clientId)
+                (OIDCClientSecret clientPassword)
+                (OIDCPublicURL publicUrl)
+                "Demo social login app"
+                Nothing
+            )
             [socialLoginApp]
 
 demoDesktop :: [App] -> ProcessIO Void
