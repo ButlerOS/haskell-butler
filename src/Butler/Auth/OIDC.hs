@@ -165,29 +165,35 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
                             (manager oidcenv)
                             (encodeUtf8 oauthState)
                             (encodeUtf8 oauthCode)
-                setSession mWorkspace (UserName tokens.idToken.sub) $ SessionProvider "google"
+                let username = UserName tokens.idToken.sub
+                setSession mWorkspace username $ externalProvider "google" username
 
     guestCallbackRoute :: Maybe Workspace -> Servant.Handler AuthResp
-    guestCallbackRoute mWorkspace = setSession mWorkspace "guest" localProvider
+    guestCallbackRoute mWorkspace = liftIO do
+        session <- runProcessIO os process $ newSession sessions Nothing "guest"
+        setCookiesAndRedirect mWorkspace session
 
     setSession :: Maybe Workspace -> UserName -> SessionProvider -> Servant.Handler AuthResp
-    setSession mWorkspace username provider = do
-        foundSessions <- atomically $ lookupSessionByUser sessions localProvider "guest"
-        case foundSessions of
-            [foundSession] -> do
-                void $ liftIO $ runProcessIO os process $ changeUsername sessions foundSession provider username
-                liftIO $ setCookiesAndRedirect foundSession
-            [] -> do
-                session <- liftIO $ runProcessIO os process $ newSession sessions provider username
-                liftIO $ setCookiesAndRedirect session
-            _ -> error "oops"
-      where
-        setCookiesAndRedirect session =
-            SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
-                Just r -> do
-                    let page = workspaceUrl mWorkspace
-                    pure $ r (script_ $ "window.location.href = " <> showT page)
-                Nothing -> error "oops?!"
+    setSession mWorkspace username provider = liftIO do
+        let ctx = ["username" .= username, "provider" .= provider]
+        session <-
+            runProcessIO os process $
+                atomically (lookupSessionByProvider sessions provider) >>= \case
+                    Nothing -> do
+                        logInfo "Creating a new session" ctx
+                        newSession sessions (Just provider) username
+                    Just session -> do
+                        logInfo "Setting session provider" ctx
+                        changeProvider sessions session provider
+                        pure session
+        setCookiesAndRedirect mWorkspace session
+
+    setCookiesAndRedirect mWorkspace session = liftIO do
+        SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
+            Just r -> do
+                let page = workspaceUrl mWorkspace
+                pure $ r (script_ $ "window.location.href = " <> showT page)
+            Nothing -> error "oops?!"
 
     indexRoute :: Maybe Workspace -> AuthResult SessionID -> Servant.Handler (Html ())
     indexRoute mWorkspace = \case
@@ -197,7 +203,8 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
                 Just _ ->
                     pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
                 Nothing -> do
-                    liftIO $ runProcessIO os process $ logError "no more auth?" ["id" .= sessionID]
+                    liftIO $ runProcessIO os process $ logError "unknown session" ["id" .= sessionID]
+                    -- TODO: redirect to guest route
                     pure "Unknown session"
         _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_guest_cb")]}
 

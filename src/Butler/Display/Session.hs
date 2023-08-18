@@ -64,6 +64,7 @@ newtype SessionProvider = SessionProvider Text
     deriving newtype (Eq)
 
 instance From SessionProvider Text where from = coerce
+instance ToJSON SessionProvider where toJSON = String . coerce
 
 -- | The default provider
 localProvider :: SessionProvider
