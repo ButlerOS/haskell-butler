@@ -19,13 +19,12 @@ publicDisplayApp appTitle appDescM = DisplayApplication auth
   where
     auth xfiles authContext sessions = guestAuthApp authContext sessions $ htmlMain xfiles appTitle appDescM
 
-publicOIDCDisplayApp :: OIDCClientID -> OIDCClientSecret -> PageTitle -> Maybe PageDesc -> DisplayApplication
-publicOIDCDisplayApp client_id client_password appTitle appDescM = DisplayApplication auth
+publicOIDCDisplayApp :: OIDCClientID -> OIDCClientSecret -> OIDCPublicURL -> PageTitle -> Maybe PageDesc -> DisplayApplication
+publicOIDCDisplayApp clientId clientPassword publicUrl appTitle appDescM = DisplayApplication auth
   where
     auth xfiles authContext sessions =
-        oIDCAuthApp authContext sessions public_url client_id client_password $
+        oIDCAuthApp authContext sessions publicUrl clientId clientPassword $
             htmlMain xfiles appTitle appDescM
-    public_url = "https://localhost:8080/"
 
 htmlMain :: [XStaticFile] -> PageTitle -> Maybe PageDesc -> Html () -> Html ()
 htmlMain xfiles title descM body = do

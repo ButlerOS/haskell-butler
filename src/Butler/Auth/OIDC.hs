@@ -1,4 +1,4 @@
-module Butler.Auth.OIDC (oIDCAuthApp, OIDCClientID (..), OIDCClientSecret (..)) where
+module Butler.Auth.OIDC (oIDCAuthApp, OIDCClientID (..), OIDCClientSecret (..), OIDCPublicURL (..)) where
 
 import Lucid
 
@@ -16,7 +16,6 @@ import Data.ByteString.Base64 qualified as B64
 import Data.ByteString.Char8 qualified as B
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as HM
-import Data.Text (dropWhileEnd)
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS (newTlsManager)
 import Servant
@@ -80,12 +79,13 @@ getProviderSession sessions username provider mCurrentSession = do
 
 newtype OIDCClientID = OIDCClientID ByteString
 newtype OIDCClientSecret = OIDCClientSecret ByteString
+newtype OIDCPublicURL = OIDCPublicURL ByteString
 
 data OIDCProviderConfig = OIDCProviderConfig
     { opIssuerURL :: Text
     , opClientID :: OIDCClientID
     , opClientSecret :: OIDCClientSecret
-    , opAppPublicURL :: Text
+    , opAppPublicURL :: OIDCPublicURL
     , opUserClaim :: Maybe Text
     , opEnforceAuth :: Bool
     , opName :: Text
@@ -104,12 +104,13 @@ initOIDCEnv providerConfig@OIDCProviderConfig{..} = do
     manager <- newTlsManager
     provider <- O.discover opIssuerURL manager
     sessionStoreStorage <- newMVar HM.empty
-    let redirectUri = encodeUtf8 (dropWhileEnd (== '/') opAppPublicURL) <> "/_cb"
+    let redirectUri = B.dropWhileEnd (== '/') publicUrl <> "/_cb"
         oidc = O.setCredentials clientId clientSecret redirectUri (O.newOIDC provider)
     pure OIDCEnv{..}
   where
     OIDCClientID clientId = opClientID
     OIDCClientSecret clientSecret = opClientSecret
+    OIDCPublicURL publicUrl = opAppPublicURL
 
 data OIDCState = OIDCState
     { randomT :: Text
@@ -234,16 +235,16 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                     mempty
             pure . B.pack $ show loc
 
-oIDCAuthApp :: AuthContext -> Sessions -> Text -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
-oIDCAuthApp authContext sessions public_url client_id client_secret mkIndexHtml = do
+oIDCAuthApp :: AuthContext -> Sessions -> OIDCPublicURL -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
+oIDCAuthApp authContext sessions publicUrl clientId clientSecret mkIndexHtml = do
     env <- ask
     oidcenv <-
         liftIO . initOIDCEnv $
             OIDCProviderConfig
                 "https://accounts.google.com"
-                client_id
-                client_secret
-                public_url
+                clientId
+                clientSecret
+                publicUrl
                 (Just "email")
                 False
                 "Test"
