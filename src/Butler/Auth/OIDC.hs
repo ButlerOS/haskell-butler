@@ -15,6 +15,7 @@ import Data.ByteString.Base64 qualified as B64
 import Data.ByteString.Char8 qualified as B
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as HM
+import Data.Text (dropWhileEnd)
 import Data.Time (UTCTime (..), fromGregorian)
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS (newTlsManager)
@@ -81,8 +82,7 @@ initOIDCEnv providerConfig@OIDCProviderConfig{..} = do
     manager <- newTlsManager
     provider <- O.discover opIssuerURL manager
     sessionStoreStorage <- newMVar HM.empty
-    -- TODO ensure '/' before '_cb'
-    let redirectUri = encodeUtf8 opAppPublicURL <> "_cb"
+    let redirectUri = encodeUtf8 (dropWhileEnd (== '/') opAppPublicURL) <> "/_cb"
         oidc = O.setCredentials clientId clientSecret redirectUri (O.newOIDC provider)
     pure OIDCEnv{..}
   where

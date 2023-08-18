@@ -41,6 +41,6 @@ startSocialLoginApp ctx = do
                 Just "Click to social login" -> do
                     sendsHtml ctx.shared.clients $
                         with div_ [wid_ ctx.wid "w"] do
-                            script_ $ "window.location.href = " <> "\"https://localhost:8080/_login\""
+                            script_ $ "window.location.href = " <> "\"/_login\""
                 _ -> logError "Unknown event" ["ev" .= ev]
             _ -> pure ()
