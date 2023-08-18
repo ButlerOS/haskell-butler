@@ -8,6 +8,7 @@ import Butler.Display.GUI
 import Butler.Display.Session
 import Butler.Display.WebSocket
 import Butler.Prelude
+import Butler.Servant
 
 import Crypto.Hash.SHA256 (hash)
 import Data.Aeson (encode)
@@ -16,19 +17,14 @@ import Data.ByteString.Char8 qualified as B
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict qualified as HM
 import Data.Text (dropWhileEnd)
-import Data.Time (UTCTime (..), fromGregorian)
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS (newTlsManager)
 import Servant
-import Servant.Auth as SA
 import Servant.Auth.Server as SAS
 import Servant.HTML.Lucid
-import Servant.Server.Generic (AsServer)
 import System.Random (genByteString)
 import System.Random qualified as Random
 import Web.OIDC.Client qualified as O
-
-type AuthResp = Headers '[Header "Set-Cookie" SetCookie, Header "Set-Cookie" SetCookie] (Html ())
 
 -- Servant named routes, see: https://www.tweag.io/blog/2022-02-24-named-routes/
 data LoginAPI mode = LoginAPI
@@ -42,17 +38,6 @@ data LoginAPI mode = LoginAPI
                 :> QueryParam "state" Text
                 :> Get '[HTML] AuthResp
     , guestCallbackRoute :: mode :- "_guest_cb" :> Get '[HTML] AuthResp
-    }
-    deriving (Generic)
-
-data WorkspaceAPI mode = WorkspaceAPI
-    { withoutWorkspace :: mode :- NamedRoutes LoginAPI
-    , withWorkspace :: mode :- Capture "workspace" Workspace :> NamedRoutes LoginAPI
-    }
-    deriving (Generic)
-
-newtype AuthAPI mode = AuthAPI
-    { authRoute :: mode :- Auth '[SA.JWT, SA.Cookie] SessionID :> NamedRoutes WorkspaceAPI
     }
     deriving (Generic)
 
@@ -131,27 +116,17 @@ mkSessionStore OIDCEnv{sessionStoreStorage} stateM uriM = do
         let nonce = HM.lookup state' store
         pure nonce
 
-authServer :: OS -> Process -> Sessions -> (Html () -> Html ()) -> JWTSettings -> OIDCEnv -> AuthAPI AsServer
-authServer os process sessions mkIndexHtml jwtSettings oidcenv =
-    AuthAPI
-        { authRoute = \auth ->
-            WorkspaceAPI
-                { withoutWorkspace = loginServer auth Nothing
-                , withWorkspace = loginServer auth . Just
-                }
+loginServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> OIDCEnv -> AuthResult SessionID -> Maybe Workspace -> LoginAPI AsProcessIO
+loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
+    LoginAPI
+        { indexRoute
+        , loginRoute
+        , callbackRoute
+        , guestCallbackRoute
         }
   where
-    loginServer :: AuthResult SessionID -> Maybe Workspace -> LoginAPI AsServer
-    loginServer auth mWorkspace =
-        LoginAPI
-            { indexRoute = indexRoute mWorkspace auth
-            , loginRoute = loginRoute
-            , callbackRoute = callbackRoute mWorkspace
-            , guestCallbackRoute = guestCallbackRoute mWorkspace
-            }
-
-    callbackRoute :: Maybe Workspace -> Maybe Text -> Maybe Text -> Maybe Text -> Servant.Handler AuthResp
-    callbackRoute mWorkspace mErr mCode mState = do
+    callbackRoute :: Maybe Text -> Maybe Text -> Maybe Text -> ServantProcessIO AuthResp
+    callbackRoute mErr mCode mState = do
         case (mErr, mCode, mState) of
             (Just errorMsg, _, _) -> error $ "Error from remote provider: " <> show errorMsg
             (_, Nothing, _) -> error "No code parameter given"
@@ -166,18 +141,18 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
                             (encodeUtf8 oauthState)
                             (encodeUtf8 oauthCode)
                 let username = UserName tokens.idToken.sub
-                setSession mWorkspace username $ externalProvider "google" username
+                setSession username $ externalProvider "google" username
 
-    guestCallbackRoute :: Maybe Workspace -> Servant.Handler AuthResp
-    guestCallbackRoute mWorkspace = liftIO do
-        session <- runProcessIO os process $ newSession sessions Nothing "guest"
-        setCookiesAndRedirect mWorkspace session
+    guestCallbackRoute :: ServantProcessIO AuthResp
+    guestCallbackRoute = do
+        session <- lift $ newSession sessions Nothing "guest"
+        setCookiesAndRedirect session
 
-    setSession :: Maybe Workspace -> UserName -> SessionProvider -> Servant.Handler AuthResp
-    setSession mWorkspace username provider = liftIO do
+    setSession :: UserName -> SessionProvider -> ServantProcessIO AuthResp
+    setSession username provider = do
         let ctx = ["username" .= username, "provider" .= provider]
         session <-
-            runProcessIO os process $
+            lift $
                 atomically (lookupSessionByProvider sessions provider) >>= \case
                     Nothing -> do
                         logInfo "Creating a new session" ctx
@@ -186,29 +161,29 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
                         logInfo "Setting session provider" ctx
                         changeProvider sessions session provider
                         pure session
-        setCookiesAndRedirect mWorkspace session
+        setCookiesAndRedirect session
 
-    setCookiesAndRedirect mWorkspace session = liftIO do
+    setCookiesAndRedirect session = liftIO do
         SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
             Just r -> do
                 let page = workspaceUrl mWorkspace
                 pure $ r (script_ $ "window.location.href = " <> showT page)
             Nothing -> error "oops?!"
 
-    indexRoute :: Maybe Workspace -> AuthResult SessionID -> Servant.Handler (Html ())
-    indexRoute mWorkspace = \case
-        Authenticated sessionID -> do
+    indexRoute :: ServantProcessIO (Html ())
+    indexRoute = case auth of
+        Authenticated sessionID -> lift do
             mSession <- atomically (lookupSession sessions sessionID)
             case mSession of
                 Just _ ->
                     pure $ mkIndexHtml (websocketHtml (workspaceUrl mWorkspace))
                 Nothing -> do
-                    liftIO $ runProcessIO os process $ logError "unknown session" ["id" .= sessionID]
+                    logError "unknown session" ["id" .= sessionID]
                     -- TODO: redirect to guest route
                     pure "Unknown session"
         _ -> throwError $ err303{errHeaders = [("Location", encodeUtf8 (workspaceUrl mWorkspace) <> "_guest_cb")]}
 
-    loginRoute :: Servant.Handler NoContent
+    loginRoute :: ServantProcessIO NoContent
     loginRoute = do
         redirectLocation <- liftIO genOIDCURL
         throwError $ err303{errHeaders = [("Location", redirectLocation)]}
@@ -223,19 +198,8 @@ authServer os process sessions mkIndexHtml jwtSettings oidcenv =
                     mempty
             pure . B.pack $ show loc
 
-cookieSettings :: CookieSettings
-cookieSettings =
-    defaultCookieSettings
-        { cookieSameSite = SameSiteStrict
-        , cookieXsrfSetting = Nothing
-        , cookieExpires = Just (UTCTime (fromGregorian 2030 1 1) 0)
-        }
-
-oIDCAuthApp :: Sessions -> Text -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
-oIDCAuthApp sessions public_url client_id client_secret mkIndexHtml = do
-    JwkStorage myKey <- fst <$> newProcessMemory "display-key.jwk" (JwkStorage <$> liftIO generateKey)
-    let jwtSettings = defaultJWTSettings myKey
-    let cfg = cookieSettings :. jwtSettings :. EmptyContext
+oIDCAuthApp :: AuthContext -> Sessions -> Text -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
+oIDCAuthApp authContext sessions public_url client_id client_secret mkIndexHtml = do
     env <- ask
     oidcenv <-
         liftIO . initOIDCEnv $
@@ -247,6 +211,6 @@ oIDCAuthApp sessions public_url client_id client_secret mkIndexHtml = do
                 (Just "email")
                 False
                 "Test"
-    let authSrv = authServer env.os env.process sessions mkIndexHtml jwtSettings oidcenv
-    let app = Servant.serveWithContextT (Proxy @(NamedRoutes AuthAPI)) cfg id authSrv
+    let srv = loginServer sessions mkIndexHtml authContext.jwtSettings oidcenv
+    let app = Servant.serveWithContextT (Proxy @(BaseAPI LoginAPI)) authContext.servantContext (toServantHandler env) (withBaseAPI srv)
     pure $ AuthApplication app

@@ -17,13 +17,13 @@ newtype PageDesc = PageDesc Text
 publicDisplayApp :: PageTitle -> Maybe PageDesc -> DisplayApplication
 publicDisplayApp appTitle appDescM = DisplayApplication auth
   where
-    auth xfiles sessions = guestAuthApp sessions $ htmlMain xfiles appTitle appDescM
+    auth xfiles authContext sessions = guestAuthApp authContext sessions $ htmlMain xfiles appTitle appDescM
 
 publicOIDCDisplayApp :: OIDCClientID -> OIDCClientSecret -> PageTitle -> Maybe PageDesc -> DisplayApplication
 publicOIDCDisplayApp client_id client_password appTitle appDescM = DisplayApplication auth
   where
-    auth xfiles sessions =
-        oIDCAuthApp sessions public_url client_id client_password $
+    auth xfiles authContext sessions =
+        oIDCAuthApp authContext sessions public_url client_id client_password $
             htmlMain xfiles appTitle appDescM
     public_url = "https://localhost:8080/"
 
