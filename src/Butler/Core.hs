@@ -7,6 +7,7 @@ module Butler.Core (
     ProcessEnv (..),
     ProcessIO,
     runProcessIO,
+    runProcessIOEnv,
     getSelfProcess,
     asProcess,
     runExternalProcess,
@@ -89,7 +90,10 @@ data ProcessEnv = ProcessEnv
     deriving (Generic)
 
 runProcessIO :: OS -> Process -> ProcessIO a -> IO a
-runProcessIO os process (ProcessIO action) = action (ProcessEnv os process)
+runProcessIO os process = runProcessIOEnv (ProcessEnv os process)
+
+runProcessIOEnv :: ProcessEnv -> ProcessIO a -> IO a
+runProcessIOEnv env (ProcessIO action) = action env
 
 getSelfProcess :: ProcessIO Process
 getSelfProcess = asks process
