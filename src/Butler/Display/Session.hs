@@ -70,8 +70,8 @@ instance ToJSON SessionProvider where toJSON = String . coerce
 localProvider :: SessionProvider
 localProvider = SessionProvider "local"
 
-externalProvider :: Text -> UserName -> SessionProvider
-externalProvider providerName (UserName userName) = SessionProvider (mconcat [providerName, ":", userName])
+externalProvider :: Text -> Text -> SessionProvider
+externalProvider providerName uuid = SessionProvider (mconcat [providerName, ":", uuid])
 
 isValidUserName :: Text -> Maybe UserName
 isValidUserName n
