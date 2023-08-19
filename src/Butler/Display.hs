@@ -12,6 +12,10 @@ module Butler.Display (
     DisplayApplication (..),
     module Butler.Display.Client,
 
+    -- * Low-level api for external integration
+    connectRoute,
+    staticClientHandler,
+
     -- * Application environment
     serveApps,
     serveDashboardApps,
