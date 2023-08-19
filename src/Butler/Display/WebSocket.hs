@@ -20,7 +20,6 @@ import Servant.Auth.Server qualified as SAS
 
 import Butler.Core
 import Butler.Core.Storage
-import Butler.Display.Session
 import Butler.Prelude
 
 newtype Workspace = Workspace Text
@@ -48,11 +47,11 @@ workspaceUrl = \case
 newtype ChannelName = ChannelName Text
     deriving newtype (Eq, Show, Ord, FromHttpApiData, ToJSON, IsString)
 
-type WebSocketAPI = RemoteHost :> SA.Auth '[SA.JWT, SA.Cookie] SessionID :> Raw
+type WebSocketAPI auth = RemoteHost :> SA.Auth '[SA.JWT, SA.Cookie] auth :> Raw
 
 type OnConnect session = SockAddr -> Workspace -> ChannelName -> session -> WS.Connection -> ProcessIO ()
 
-type GetSession session = Maybe SessionID -> ProcessIO (Maybe session)
+type GetSession auth session = Maybe auth -> ProcessIO (Maybe session)
 
 -- | Look for the "?reconnect=true" argument in the query string
 getReconnectArg :: Wai.Request -> Bool
@@ -60,7 +59,7 @@ getReconnectArg req = case lookup "reconnect" (Wai.queryString req) of
     Just (Just "true") -> True
     _ -> False
 
-websocketServer :: ProcessEnv -> GetSession session -> OnConnect session -> Server WebSocketAPI
+websocketServer :: ToJSON auth => ProcessEnv -> GetSession auth session -> OnConnect session -> Server (WebSocketAPI auth)
 websocketServer env getSession onConnect clientAddr auth = Tagged baseApp
   where
     baseApp :: Wai.Application

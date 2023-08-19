@@ -153,10 +153,10 @@ startDisplay mAddr xfiles mkAuthApp withDisplay = withSessions "sessions" \sessi
     onClient <- withDisplay display
     env <- ask
 
-    let wsSrv :: ServerName -> Server WebSocketAPI
+    let wsSrv :: ServerName -> Server (WebSocketAPI SessionID)
         wsSrv server = websocketServer env getSession (connectRoute display server onClient)
         wsApp :: ServerName -> WaiApplication
-        wsApp server = Servant.serveWithContext (Proxy @WebSocketAPI) authContext.servantContext (wsSrv server)
+        wsApp server = Servant.serveWithContext (Proxy @(WebSocketAPI SessionID)) authContext.servantContext (wsSrv server)
         getSession = \case
             Nothing -> pure Nothing
             Just sessionID -> atomically $ lookupSession sessions sessionID
