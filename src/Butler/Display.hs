@@ -1,6 +1,7 @@
 -- | This module contains the logic to enable user access through HTTP.
 module Butler.Display (
     Display (..),
+    newDisplay,
     DisplayAddr (..),
     AuthApplication (..),
     OnClient,
