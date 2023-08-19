@@ -177,8 +177,12 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                         (manager oidcenv)
                         (encodeUtf8 oauthState)
                         (encodeUtf8 oauthCode)
-            let username = UserName tokens.idToken.sub
-                provider = externalProvider "google" username
+            -- https://developers.google.com/identity/openid-connect/openid-connect#an-id-tokens-payload
+            let uuid = tokens.idToken.sub
+                mName = tokens.idToken.otherClaims ^? key "name" . _String
+                username = UserName $ fromMaybe uuid mName
+                provider = externalProvider "google" uuid
+            -- lift $ logDebug "ID Token data" ["token" .= show tokens.idToken]
             withSession \mCurrentSession -> do
                 userSession <- lift (getProviderSession sessions username provider mCurrentSession)
                 setCookiesAndRedirect userSession
@@ -231,7 +235,8 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                 O.prepareAuthenticationRequestUrl
                     (mkSessionStore oidcenv Nothing Nothing)
                     oidcenv.oidc
-                    [O.openId]
+                    -- https://developers.google.com/identity/openid-connect/openid-connect#scope-param
+                    [O.openId, O.profile]
                     mempty
             pure . B.pack $ show loc
 
