@@ -76,20 +76,19 @@ websocketServer env getSession onConnect clientAddr auth = Tagged baseApp
                 conn <- WS.acceptRequest pendingConnection
                 runProcessIO env.os env.process (doHandleWS (getReconnectArg req) workspace chan conn)
 
+    mSessionID = case auth of
+        SAS.Authenticated sessionID -> Just sessionID
+        _ -> Nothing
+
     doHandleWS :: Bool -> Workspace -> ChannelName -> WS.Connection -> ProcessIO ()
     doHandleWS reconnect workspace chan conn
         | reconnect = doReload
         | otherwise = do
-            case auth of
-                SAS.Authenticated sessionID -> do
-                    mSession <- getSession (Just sessionID)
-                    case mSession of
-                        Just session -> onConnect clientAddr workspace chan session conn
-                        Nothing -> do
-                            logError "Unknown websocket session" ["session" .= sessionID]
-                            doReload
-                _ -> do
-                    logError "Unauthenticated websocket connection" []
+            mSession <- getSession mSessionID
+            case mSession of
+                Just session -> onConnect clientAddr workspace chan session conn
+                Nothing -> do
+                    logError "Unknown websocket session" ["session" .= mSessionID]
                     doReload
       where
         doReload = liftIO $ WS.sendTextData conn $ renderText do
