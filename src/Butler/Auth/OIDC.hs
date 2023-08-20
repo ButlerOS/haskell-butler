@@ -43,6 +43,7 @@ import Web.OIDC.Client qualified as O
 data LoginAPI mode = LoginAPI
     { indexRoute :: mode :- Get '[HTML] (Html ())
     , loginRoute :: mode :- "_login" :> Get '[JSON] NoContent
+    , logoutRoute :: mode :- "_logout" :> Get '[HTML] AuthResp
     , callbackRoute ::
         mode
             :- "_cb"
@@ -159,6 +160,7 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
     LoginAPI
         { indexRoute
         , loginRoute
+        , logoutRoute
         , callbackRoute
         , guestCallbackRoute
         }
@@ -197,6 +199,7 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
         session <- lift $ newSession sessions Nothing "guest"
         setCookiesAndRedirect session
 
+    setCookiesAndRedirect :: Session -> ServantProcessIO AuthResp
     setCookiesAndRedirect session = liftIO do
         SAS.acceptLogin cookieSettings jwtSettings session.sessionID >>= \case
             Just r -> do
@@ -239,6 +242,10 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                     [O.openId, O.profile]
                     mempty
             pure . B.pack $ show loc
+
+    logoutRoute ::  ServantProcessIO AuthResp
+    logoutRoute = lift . pure . SAS.clearSession cookieSettings $
+            script_ $ "window.location.href = \"_guest_cb\""
 
 oIDCAuthApp :: AuthContext -> Sessions -> OIDCPublicURL -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
 oIDCAuthApp authContext sessions publicUrl clientId clientSecret mkIndexHtml = do
