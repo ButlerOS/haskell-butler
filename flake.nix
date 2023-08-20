@@ -18,6 +18,7 @@
 
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
+        butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
         xstatic-xterm =
           hpPrev.callCabal2nix "xstatic-xterm" "${xstatic-xterm}/xstatic-xterm"
           { };
@@ -142,7 +143,8 @@
       };
 
       baseTools = with pkgs; [
-        hpack
+        hsPkgs.cabal-fmt
+        pkgs.nixfmt
         cabal-install
         hlint
         tasty-discover
@@ -187,7 +189,7 @@
         buildInputs = baseTools;
       };
       devShell."x86_64-linux" = hsPkgs.shellFor {
-        packages = p: [ p.butler ];
+        packages = p: [ p.butler p.butler-desktop ];
         buildInputs = with pkgs;
           [
             sqlite

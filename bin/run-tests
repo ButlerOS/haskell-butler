@@ -5,7 +5,6 @@ log() {
 }
 
 log "Building"
-hpack
 cabal build -O0 --enable-tests --ghc-option=-Werror
 
 log "Testing"
@@ -13,13 +12,15 @@ cabal test -O0 --test-show-details=direct
 cabal check
 
 log "Doctests"
-cabal repl --with-ghc=doctest --ghc-options=-Wno-unused-packages
+cabal repl --with-ghc=doctest --ghc-options=-Wno-unused-packages butler
 
 log "Formatting"
-fourmolu -i src/ app/ test/
+fourmolu -i source/
+cabal-fmt -i *.cabal
+nixfmt flake.nix
 
 log "Linting"
-hlint .
+hlint source/
 
 log "Weeder"
 weeder --config ./.weeder.toml
