@@ -61,7 +61,7 @@ import Butler.Display.User
 
 -- | Where the session is coming from, e.g. local or external identity provider
 newtype SessionProvider = SessionProvider Text
-    deriving newtype (Eq)
+    deriving newtype (Eq, Show)
 
 instance From SessionProvider Text where from = coerce
 instance ToJSON SessionProvider where toJSON = String . coerce
