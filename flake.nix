@@ -2,7 +2,7 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/f6893161b29a8086c7e1232c886a99a5d815ffae";
+      "github:podenv/hspkgs/30b0954150719797ba9fd5e8e1652a03604d823f";
     # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
@@ -143,14 +143,14 @@
       };
 
       baseTools = with pkgs; [
-        hsPkgs.cabal-fmt
-        pkgs.nixfmt
+        cabal-fmt
+        nixfmt
         cabal-install
         hlint
         tasty-discover
         fourmolu
         weeder
-        hsPkgs.doctest
+        doctest
       ];
 
     in {
