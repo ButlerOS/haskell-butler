@@ -6,19 +6,27 @@ import Butler.Display.Session
 appHtml :: Monad m => AppID -> UserName -> HtmlT m ()
 appHtml wid username =
     with div_ [wid_ wid "w", class_ "flex m-auto"] do
-        with div_ [class_ "m-auto flex flex-col items-center justify-center"] do
-            loginButton "Click to social login"
+        with div_ [class_ "m-auto flex flex-col items-center justify-center gap-1"] do
+            loginButton
+            logoutButton
             div_ [] $ toHtml $ "Logged as " <> show username
   where
-    loginButton tz =
+    loginButton  =
         div_
-            [ wid_ wid "social-login-button"
+            [ wid_ wid "login-button"
             , wsSend
             , class_ "bg-slate-200 cursor-pointer pl-1"
             , hxTrigger_ "click"
-            , hxVals_ ("{\"v\": \"" <> tz <> "\"}")
             ]
-            (toHtml tz)
+            "Login with Google"
+    logoutButton  =
+        div_
+            [ wid_ wid "logout-button"
+            , wsSend
+            , class_ "bg-slate-200 cursor-pointer pl-1"
+            , hxTrigger_ "click"
+            ]
+            "Logout"
 
 socialLoginApp :: App
 socialLoginApp =
@@ -37,10 +45,14 @@ startSocialLoginApp ctx = do
                 atomically $ do
                     username <- readTVar client.session.username
                     sendHtml client $ appHtml ctx.wid username
-            AppTrigger ev -> case ev.body ^? key "v" . _String of
-                Just "Click to social login" -> do
+            AppTrigger ev -> case ev.trigger of
+                TriggerName "login-button" -> do
                     sendsHtml ctx.shared.clients $
                         with div_ [wid_ ctx.wid "w"] do
-                            script_ $ "window.location.href = " <> "\"/_login\""
+                            script_ $ "window.location.href = \"/_login\""
+                TriggerName "logout-button" -> do
+                    sendsHtml ctx.shared.clients $
+                        with div_ [wid_ ctx.wid "w"] do
+                            script_ $ "window.location.href = \"/_logout\""
                 _ -> logError "Unknown event" ["ev" .= ev]
             _ -> pure ()
