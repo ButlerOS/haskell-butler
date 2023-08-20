@@ -107,4 +107,6 @@ To work on this project you need a Haskell toolchain: [get-started](https://www.
 
 Run the `./bin/run-tests` script to validate a commit.
 
+Run the test through ghcid with: `./bin/run-ghcid Main.main`.
+
 Setup binary cache with: `nix run nixpkgs/release-22.11#cachix use haskell-platform`.

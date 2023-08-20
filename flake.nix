@@ -2,7 +2,7 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/30b0954150719797ba9fd5e8e1652a03604d823f";
+      "github:podenv/hspkgs/816d9e6d854152c13837daa1e1c89a987ef908df";
     # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
@@ -145,7 +145,7 @@
       baseTools = with pkgs; [
         cabal-fmt
         nixfmt
-        cabal-install
+        cabal-multi-repl # TODO: Switch back to cabal-install when cabal-3.11 is released
         hlint
         tasty-discover
         fourmolu

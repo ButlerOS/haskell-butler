@@ -1,0 +1,3 @@
+#!/bin/sh -e
+
+exec cabal repl --enable-multi-repl lib:butler lib:butler-desktop test:spec $*

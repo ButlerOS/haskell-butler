@@ -1,2 +1,2 @@
 #!/bin/sh
-nix develop --command ghcid --command "cabal repl butler-desktop" -W --test "${1:-ButlerDemos.multiDesktop}"
+nix develop --command ghcid --command "./bin/repl" -W --test "${1:-ButlerDemos.multiDesktop}"
