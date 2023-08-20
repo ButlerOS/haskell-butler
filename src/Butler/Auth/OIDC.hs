@@ -243,9 +243,10 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
                     mempty
             pure . B.pack $ show loc
 
-    logoutRoute ::  ServantProcessIO AuthResp
-    logoutRoute = lift . pure . SAS.clearSession cookieSettings $
-            script_ $ "window.location.href = \"_guest_cb\""
+    logoutRoute :: ServantProcessIO AuthResp
+    logoutRoute =
+        lift . pure . SAS.clearSession cookieSettings $
+            script_ "window.location.href = \"_guest_cb\""
 
 oIDCAuthApp :: AuthContext -> Sessions -> OIDCPublicURL -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
 oIDCAuthApp authContext sessions publicUrl clientId clientSecret mkIndexHtml = do

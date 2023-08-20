@@ -15,7 +15,7 @@ appHtml wid username mProvider =
                     loginButton
                     div_ [] $ toHtml $ "Your are in a guest session and your username is: " <> show username
   where
-    loginButton  =
+    loginButton =
         div_
             [ wid_ wid "login-button"
             , wsSend
@@ -23,7 +23,7 @@ appHtml wid username mProvider =
             , hxTrigger_ "click"
             ]
             "Login with Google"
-    logoutButton  =
+    logoutButton =
         div_
             [ wid_ wid "logout-button"
             , wsSend
@@ -54,10 +54,10 @@ startSocialLoginApp ctx = do
                 TriggerName "login-button" -> do
                     sendsHtml ctx.shared.clients $
                         with div_ [wid_ ctx.wid "w"] do
-                            script_ $ "window.location.href = \"/_login\""
+                            script_ "window.location.href = \"/_login\""
                 TriggerName "logout-button" -> do
                     sendsHtml ctx.shared.clients $
                         with div_ [wid_ ctx.wid "w"] do
-                            script_ $ "window.location.href = \"/_logout\""
+                            script_ "window.location.href = \"/_logout\""
                 _ -> logError "Unknown event" ["ev" .= ev]
             _ -> pure ()
