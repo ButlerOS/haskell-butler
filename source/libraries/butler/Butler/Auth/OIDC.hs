@@ -44,6 +44,7 @@ data LoginAPI mode = LoginAPI
     { indexRoute :: mode :- Get '[HTML] (Html ())
     , loginRoute :: mode :- "_login" :> Get '[JSON] NoContent
     , logoutRoute :: mode :- "_logout" :> Get '[HTML] AuthResp
+    , deleteSessionRoute :: mode :- "_delete" :> Get '[HTML] AuthResp
     , callbackRoute ::
         mode
             :- "_cb"
@@ -161,6 +162,7 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
         { indexRoute
         , loginRoute
         , logoutRoute
+        , deleteSessionRoute
         , callbackRoute
         , guestCallbackRoute
         }
@@ -247,6 +249,13 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
     logoutRoute =
         lift . pure . SAS.clearSession cookieSettings $
             script_ "window.location.href = \"_guest_cb\""
+
+    deleteSessionRoute :: ServantProcessIO AuthResp
+    deleteSessionRoute = do
+        withSession $ \case
+            Just session -> lift $ deleteSession sessions session.sessionID
+            Nothing -> pure ()
+        logoutRoute
 
 oIDCAuthApp :: AuthContext -> Sessions -> OIDCPublicURL -> OIDCClientID -> OIDCClientSecret -> (Html () -> Html ()) -> ProcessIO AuthApplication
 oIDCAuthApp authContext sessions publicUrl clientId clientSecret mkIndexHtml = do
