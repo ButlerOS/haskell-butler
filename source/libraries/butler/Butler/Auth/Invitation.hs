@@ -102,7 +102,7 @@ loginServer sessions mkIndexHtml jwtSettings auth mWorkspace = LoginAPI{indexRou
             username <- case isValidUserName (coerce form.username) of
                 Just username -> pure username
                 Nothing -> throwError "Bad username"
-            lift $ newSession sessions Nothing username
+            lift $ newSession sessions Nothing username Nothing
 
         case res of
             Left err -> do

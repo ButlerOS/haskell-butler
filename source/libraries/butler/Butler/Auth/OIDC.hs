@@ -57,15 +57,15 @@ data LoginAPI mode = LoginAPI
     deriving (Generic)
 
 -- | Create or assign the provider session: the butler session attached to an external provider subject.
-getProviderSession :: Sessions -> UserName -> SessionProvider -> Maybe Session -> ProcessIO Session
-getProviderSession sessions username provider mCurrentSession = do
+getProviderSession :: Sessions -> UserName -> Maybe PictureURL -> SessionProvider -> Maybe Session -> ProcessIO Session
+getProviderSession sessions username mPictureUrl provider mCurrentSession = do
     let ctx = ["username" .= username, "provider" .= provider]
         logSession name session = name .= session.sessionID
     mProviderSession <- atomically (lookupSessionByProvider sessions provider)
     case (mCurrentSession, mProviderSession) of
         (Nothing, Nothing) -> do
             logDebug "Creating a new session" ctx
-            newSession sessions (Just provider) username
+            newSession sessions (Just provider) username mPictureUrl
         (Nothing, Just session) -> do
             logDebug "Assigning the existing provider session" (logSession "provider_session" session : ctx)
             pure session
@@ -184,11 +184,12 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
             -- https://developers.google.com/identity/openid-connect/openid-connect#an-id-tokens-payload
             let uuid = tokens.idToken.sub
                 mName = tokens.idToken.otherClaims ^? key "name" . _String
+                mPictureUrl = PictureURL <$> tokens.idToken.otherClaims ^? key "picture" . _String
                 username = UserName $ fromMaybe uuid mName
                 provider = externalProvider "google" uuid
-            -- lift $ logDebug "ID Token data" ["token" .= show tokens.idToken]
+            lift $ logDebug "ID Token data" ["token" .= show tokens.idToken]
             withSession \mCurrentSession -> do
-                userSession <- lift (getProviderSession sessions username provider mCurrentSession)
+                userSession <- lift (getProviderSession sessions username mPictureUrl provider mCurrentSession)
                 setCookiesAndRedirect userSession
       where
         failCallback :: Text -> ServantProcessIO AuthResp
@@ -198,7 +199,7 @@ loginServer sessions mkIndexHtml jwtSettings oidcenv auth mWorkspace =
 
     guestCallbackRoute :: ServantProcessIO AuthResp
     guestCallbackRoute = do
-        session <- lift $ newSession sessions Nothing "guest"
+        session <- lift $ newSession sessions Nothing "guest" Nothing
         setCookiesAndRedirect session
 
     setCookiesAndRedirect :: Session -> ServantProcessIO AuthResp
