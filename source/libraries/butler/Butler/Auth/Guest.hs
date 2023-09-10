@@ -26,7 +26,7 @@ loginServer sessions mkIndexHtml jwtSettings auth mWorkspace = LoginAPI{indexRou
     -- Create session on _login request
     loginRoute :: ServantProcessIO AuthResp
     loginRoute = lift do
-        session <- newSession sessions Nothing "guest"
+        session <- newSession sessions Nothing "guest" Nothing
         liftIO (SAS.acceptLogin cookieSettings jwtSettings session.sessionID) >>= \case
             Just r -> do
                 let page = workspaceUrl mWorkspace

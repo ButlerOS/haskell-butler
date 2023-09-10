@@ -9,7 +9,7 @@ import Test.Tasty.HUnit
 test_sessions :: TestTree
 test_sessions = butlerTestCase "Butler.Session" do
     withSessions ":memory:" \sessions -> do
-        session <- newSession sessions Nothing "guest"
+        session <- newSession sessions Nothing "guest" Nothing
 
         -- session can change to new username
         session `hasUsername` "guest"
@@ -18,14 +18,14 @@ test_sessions = butlerTestCase "Butler.Session" do
         liftIO $ expectTrue @?= True
 
         -- session can't change to existing username
-        otherSession <- newSession sessions Nothing "guest"
+        otherSession <- newSession sessions Nothing "guest" Nothing
         otherSession `hasUsername` "guest"
         expectFalse <- changeUsername sessions otherSession "alice"
         otherSession `hasUsername` "guest"
         liftIO $ expectFalse @?= False
 
         -- new session gets unique username
-        dupSession <- newSession sessions Nothing "guest"
+        dupSession <- newSession sessions Nothing "guest" Nothing
         dupSession `hasUsername` "guest_1"
 
         -- session can change to new provider

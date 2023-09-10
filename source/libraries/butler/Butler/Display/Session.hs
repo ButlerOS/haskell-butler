@@ -3,6 +3,7 @@ module Butler.Display.Session (
     SessionID (..),
     Session (..),
     UserName (..),
+    PictureURL (..),
     newSession,
     deleteSession,
     changeUsername,
@@ -66,6 +67,10 @@ newtype SessionProvider = SessionProvider Text
 instance From SessionProvider Text where from = coerce
 instance ToJSON SessionProvider where toJSON = String . coerce
 
+newtype PictureURL = PictureURL Text deriving newtype (IsString, Show)
+instance From PictureURL Text where
+    from (PictureURL n) = n
+
 -- | The default provider
 localProvider :: SessionProvider
 localProvider = SessionProvider "local"
@@ -88,8 +93,9 @@ data Session = Session
     -- ^ The external identity provider, it should be unique per user, in the form of: "$idp-name:$idp-subject".
     , username :: TVar UserName
     -- ^ The username is similar to the login ($USER). This should only be changed through the 'changeUsername' function.
-    -- TODO: prevent external update by removing the field from the exported declarations.
-    , admin :: TVar Bool
+    , picture :: TVar (Maybe PictureURL)
+    , -- TODO: prevent external update by removing the field from the exported declarations.
+      admin :: TVar Bool
     -- ^ Is the user an admin?
     , recover :: TVar (Maybe RecoveryID)
     -- ^ The 'RecoveryID' is a generated password to recover the session.
@@ -133,6 +139,9 @@ newtype RecoveryID = RecoveryID UUID
 instance ToField RecoveryID where toField = SQLText . from
 instance From RecoveryID Text where from (RecoveryID uuid) = UUID.toText uuid
 
+instance ToField PictureURL where
+    toField (PictureURL pictureUrlTxt) = SQLText pictureUrlTxt
+
 instance ToField SessionID where
     toField = SQLText . from
 
@@ -146,7 +155,7 @@ instance FromJWT SessionID
 instance ToJWT SessionID
 
 sessionsDB :: DatabaseMigration
-sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover", "provider"] doUp doDown
+sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover", "provider", "picture-url"] doUp doDown
   where
     doUp name db = case name of
         "sessions-create" -> dbExecute db "CREATE TABLE sessions (uuid TEXT, username TEXT)" []
@@ -159,21 +168,24 @@ sessionsDB = DatabaseMigration ["sessions-create", "admin", "recover", "provider
             dbExecute db "ALTER TABLE sessions ADD COLUMN provider TEXT" []
             -- Set existing session to local
             dbExecute db "UPDATE sessions SET provider = :provider" [":provider" := into @Text localProvider]
+        "picture-url" -> do
+            dbExecute db "ALTER TABLE sessions ADD COLUMN picture_url TEXT" []
         _ -> logError "Unknown migration" ["name" .= show name]
     doDown _ _ = pure ()
 
 -- | TODO: only load active sessions when needed.
 sessionsFromDB :: Database -> ProcessIO [(SessionID, Session)]
-sessionsFromDB db = traverse mkSession =<< dbQuery db "select uuid,provider,username,admin,recover from sessions" []
+sessionsFromDB db = traverse mkSession =<< dbQuery db "select uuid,provider,username,picture_url,admin,recover from sessions" []
   where
-    mkSession (uuid, providerTxt, username, admin, recoverTxt) = do
+    mkSession (uuid, providerTxt, username, pictureUrlTxt, admin, recoverTxt) = do
         let sessionID = SessionID (fromMaybe (error "bad uuid?!") (UUID.fromText uuid))
             recover = RecoveryID . fromMaybe (error "bad uuid!") . UUID.fromText <$> recoverTxt
+            mPictureUrl = PictureURL <$> pictureUrlTxt
             -- "local" is a reserved provider name.
             provider
                 | providerTxt == "local" = Nothing
                 | otherwise = Just (SessionProvider providerTxt)
-        session <- Session sessionID <$> newTVarIO provider <*> newTVarIO (UserName username) <*> newTVarIO admin <*> newTVarIO recover
+        session <- Session sessionID <$> newTVarIO provider <*> newTVarIO (UserName username) <*> newTVarIO mPictureUrl <*> newTVarIO admin <*> newTVarIO recover
         pure (sessionID, session)
 
 -- | Initialize a new Sessions database.
@@ -235,14 +247,20 @@ deleteRecover sessions session = do
     dbExecute sessions.db "UPDATE sessions SET recover = NULL WHERE uuid = :uuid" [":uuid" := session.sessionID]
 
 addSessionDB :: Sessions -> Session -> ProcessIO ()
-addSessionDB sessions (Session sessionID tProvider tUsername tAdmin _) = do
+addSessionDB sessions (Session sessionID tProvider tUsername tPictureUrl tAdmin _) = do
     provider <- fromMaybe localProvider <$> readTVarIO tProvider
     username <- readTVarIO tUsername
+    pictureUrl <- readTVarIO tPictureUrl
     admin <- readTVarIO tAdmin
     dbExecute
         sessions.db
-        "INSERT INTO sessions (uuid, provider, username, admin) VALUES (:uuid, :provider, :username, :admin)"
-        [":uuid" := sessionID, ":provider" := into @Text provider, ":username" := into @Text username, ":admin" := admin]
+        "INSERT INTO sessions (uuid, provider, username, picture_url, admin) VALUES (:uuid, :provider, :username, :picture_url, :admin)"
+        [ ":uuid" := sessionID
+        , ":provider" := into @Text provider
+        , ":username" := into @Text username
+        , ":picture_url" := pictureUrl
+        , ":admin" := admin
+        ]
 
 isUsernameAvailable :: Sessions -> UserName -> ProcessIO Bool
 isUsernameAvailable sessions username = do
@@ -287,8 +305,8 @@ changeUsername sessions session username = withMVar sessions.lock \() -> do
         atomically do
             writeTVar session.username username
 
-newSession :: Sessions -> Maybe SessionProvider -> UserName -> ProcessIO Session
-newSession sessions provider username = withMVar sessions.lock \() -> do
+newSession :: Sessions -> Maybe SessionProvider -> UserName -> Maybe PictureURL -> ProcessIO Session
+newSession sessions provider username pictureUrl = withMVar sessions.lock \() -> do
     sessionID <- SessionID <$> liftIO UUID.nextRandom
 
     let tryCreateSession [] = error "Run out of username?!"
@@ -298,7 +316,12 @@ newSession sessions provider username = withMVar sessions.lock \() -> do
                 True -> do
                     session <- atomically do
                         isAdmin <- isEmptySessions sessions
-                        Session sessionID <$> newTVar provider <*> newTVar user <*> newTVar isAdmin <*> newTVar Nothing
+                        Session sessionID
+                            <$> newTVar provider
+                            <*> newTVar user
+                            <*> newTVar pictureUrl
+                            <*> newTVar isAdmin
+                            <*> newTVar Nothing
                     addSessionDB sessions session
                     atomically $ modifyTVar' sessions.sessions (Map.insert session.sessionID session)
                     pure session

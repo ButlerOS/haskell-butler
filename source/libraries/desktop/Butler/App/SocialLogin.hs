@@ -9,8 +9,8 @@ newtype APPState = APPState Text deriving (Generic)
 
 instance Serialise APPState
 
-appHtml :: Monad m => AppID -> UserName -> Maybe SessionProvider -> Text -> HtmlT m ()
-appHtml wid username mProvider secretText =
+appHtml :: Monad m => AppID -> UserName -> Maybe SessionProvider -> Maybe PictureURL -> Text -> HtmlT m ()
+appHtml wid username mProvider mPictureUrl secretText =
     div_ [wid_ wid "w", class_ "flex m-auto"] do
         div_ [class_ "m-auto flex flex-col items-center justify-center gap-1"] do
             case mProvider of
@@ -21,6 +21,10 @@ appHtml wid username mProvider secretText =
                     loginButton
                     div_ [] $ toHtml $ "Your are in a guest session and your username is: " <> show username
             deleteAccountButton
+            case mPictureUrl of
+                Just (PictureURL pictureUrlTxt) -> do
+                    img_ [src_ pictureUrlTxt]
+                Nothing -> pure ()
             div_ [] "Your secret text is stored in your session. You can update it and see that it is persited by session."
             div_ [class_ "flex flex-row gap-2"] do
                 withEvent wid "setSecret" [] $ do
@@ -84,8 +88,9 @@ startSocialLoginApp ctx = do
                 atomically $ do
                     username <- readTVar client.session.username
                     mProvider <- readTVar client.session.provider
+                    mPictureUrl <- readTVar client.session.picture
                     APPState secretText <- readMemoryVar state
-                    sendHtml client $ appHtml ctx.wid username mProvider secretText
+                    sendHtml client $ appHtml ctx.wid username mProvider mPictureUrl secretText
             AppTrigger ev -> case ev.trigger of
                 TriggerName "login-button" -> redirectTo "/_login"
                 TriggerName "logout-button" -> redirectTo "/_logout"
