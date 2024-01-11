@@ -90,7 +90,7 @@ loginServer sessions mkIndexHtml jwtSettings auth mWorkspace = LoginAPI{indexRou
 
     loginRoute :: LoginForm -> ServantProcessIO AuthResp
     loginRoute form = lift do
-        res <- withMVar sessions.lock \() -> runExceptT @Text $ do
+        res <- runExceptT @Text $ do
             lift $ logInfo "Validating form" ["form" .= form]
             case form.invite of
                 Just invite | invite /= "" -> do
