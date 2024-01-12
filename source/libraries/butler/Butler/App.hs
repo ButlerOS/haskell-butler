@@ -338,6 +338,11 @@ sendTriggerScript wid name attrs =
   where
     obj = encodeJSON (object attrs)
 
+onChangeTrigger :: AppID -> Text -> _
+onChangeTrigger wid name =
+    onchange_ $
+        "sendTrigger(" <> showT wid <> ", \"" <> name <> "\", {value: this.value})"
+
 startAppScript :: App -> [Pair] -> Text
 startAppScript app args = sendTriggerScript shellAppID "start-app" (["name" .= app.name] <> args)
 
