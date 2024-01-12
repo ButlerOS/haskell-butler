@@ -6,3 +6,4 @@
 # Invalid hint for record field id: https://github.com/ndmitchell/hlint/issues/1383
 - ignore: {name: "Redundant id"}
 - ignore: {name: "Redundant <$>"}
+- ignore: {name: "Avoid lambda using `infix`"}
