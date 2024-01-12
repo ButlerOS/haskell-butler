@@ -100,6 +100,8 @@ module Butler.Prelude (
     -- * time
     Data.Time.Clock.UTCTime,
     Data.Time.Clock.getCurrentTime,
+    Data.Time.Format.Human.humanReadableTime,
+    Data.Time.Format.Human.humanReadableTime',
 
     -- * network
     Network.Socket.Socket,
@@ -214,6 +216,7 @@ import Data.Text.IO qualified
 import Data.Text.Lines
 import Data.Text.Rope
 import Data.Time.Clock qualified
+import Data.Time.Format.Human qualified
 import Data.UUID qualified
 import Data.Void
 import Data.Word
