@@ -88,8 +88,8 @@ startJiraClient ctx = do
                     mkOption "All"
                     forM_ (nub $ sort $ map (\issue -> issue.issueType) stories) mkOption
 
-    let renderStories :: Jira.JiraClient -> [Jira.JiraIssue] -> HtmlT STM ()
-        renderStories client stories = do
+    let renderStories :: UTCTime -> Jira.JiraClient -> [Jira.JiraIssue] -> HtmlT STM ()
+        renderStories now client stories = do
             ul_ do
                 forM_ stories \x -> with li_ [class_ "flex items-center"] do
                     let jid = into @Text x.name
@@ -99,6 +99,7 @@ startJiraClient ctx = do
                         Nothing -> "?"
                         Just score -> toHtml (show @Int $ round score)
                     with a_ [href_ (Jira.jiraUrl client x.name), target_ "blank", class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
+                    with span_ [class_ "ml-1 text-sm"] (toHtml (humanReadableTime' now x.updated))
                     ": "
                     with span_ [class_ "ml-1"] (toHtml x.summary)
             withTrigger_ "click" ctx.wid "refresh" button_ [class_ $ "mt-4 " <> btnGreenClass] "refresh"
@@ -108,8 +109,8 @@ startJiraClient ctx = do
                 . (if ctrls.byName then sortOn (\issue -> issue.name) else id)
                 . (maybe id (\expectedType -> filter (\issue -> issue.issueType == expectedType)) ctrls.typeFilter)
 
-    let mountUI :: HtmlT STM ()
-        mountUI = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
+    let mountUI :: UTCTime -> HtmlT STM ()
+        mountUI now = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
             state <- lift (readTVar tState)
             case state.client of
                 Nothing -> do
@@ -119,7 +120,7 @@ startJiraClient ctx = do
                     Stories stories -> with div_ [class_ "flex flex-col"] do
                         ctrls <- controls <$> lift (readTVar tState)
                         renderControls stories ctrls
-                        renderStories client (applyControls ctrls stories)
+                        renderStories now client (applyControls ctrls stories)
 
     let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssue])
         getStories client = runExceptT @Text do
@@ -152,7 +153,8 @@ startJiraClient ctx = do
             Just client -> do
                 atomically $ modifyTVar' tState $ #status .~ Loading
                 logInfo "Loading stories..." []
-                sendsHtml ctx.shared.clients mountUI
+                now <- liftIO getCurrentTime
+                sendsHtml ctx.shared.clients (mountUI now)
                 eStories <- getStories client
                 newStatus <- case eStories of
                     Left err -> do
@@ -160,7 +162,7 @@ startJiraClient ctx = do
                         pure Loading
                     Right stories -> pure (Stories stories)
                 atomically $ modifyTVar' tState $ #status .~ newStatus
-                sendsHtml ctx.shared.clients mountUI
+                sendsHtml ctx.shared.clients (mountUI now)
                 void $ tryTakeMVar baton
             Nothing -> pure ()
 
@@ -179,14 +181,16 @@ startJiraClient ctx = do
 
     -- Handle events
     forever do
-        atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
+        aev <- atomically (readPipe ctx.pipe)
+        now <- liftIO getCurrentTime
+        case aev of
+            AppDisplay (UserJoined client) -> atomically $ sendHtml client (mountUI now)
             AppSettingChanged{} ->
                 getClient >>= \case
                     Just{} -> do
                         client <- getClient
                         atomically $ modifyTVar' tState (#client .~ client)
-                        sendsHtml ctx.shared.clients mountUI
+                        sendsHtml ctx.shared.clients (mountUI now)
                     Nothing -> pure ()
             AppTrigger ev -> do
                 case ev.trigger of
@@ -199,17 +203,14 @@ startJiraClient ctx = do
                             res -> logError "Unknown result" ["ev" .= ev, "res" .= res]
                     "no-points" -> do
                         atomically $ modifyTVar' tState (#controls . #noPoints %~ not)
-                        sendsHtml ctx.shared.clients mountUI
                     "by-name" -> do
                         atomically $ modifyTVar' tState (#controls . #byName %~ not)
-                        sendsHtml ctx.shared.clients mountUI
                     "filter" -> do
                         case ev.body ^? key "value" . _String of
                             Just v -> do
                                 let f = if v == "All" then Nothing else Just v
                                 atomically $ modifyTVar' tState (#controls . #typeFilter .~ f)
-                                sendsHtml ctx.shared.clients mountUI
                             Nothing -> logError "Unknown filter" ["ev" .= ev]
                     _ -> logError "Unknown trigger" ["ev" .= ev]
-                sendsHtml ctx.shared.clients mountUI
+                sendsHtml ctx.shared.clients (mountUI now)
             ev -> logError "Unknown ev" ["ev" .= ev]

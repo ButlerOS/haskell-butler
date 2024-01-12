@@ -113,6 +113,7 @@ library
     , ebml
     , exceptions
     , filepath
+    , friendly-time
     , generic-lens
     , hashable
     , http-api-data
