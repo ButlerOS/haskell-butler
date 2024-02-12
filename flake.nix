@@ -66,6 +66,7 @@
         paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap pkgs.tini ];
       };
 
+      container-name = "ghcr.io/butleros/haskell-butler";
       mkContainer = name: extra-pkgs:
         let
           # Container user info
@@ -102,10 +103,10 @@
             extraCommands =
               "${createPasswd} && ${fixCABundle} && ${rwHome} && ${linuxFHS}";
           };
-        in pkgs.dockerTools.buildLayeredImage (pkgs.lib.recursiveUpdate {
-          name = "ghcr.io/butleros/haskell-butler";
+        in pkgs.dockerTools.streamLayeredImage (pkgs.lib.recursiveUpdate {
+          name = container-name;
           contents = [ pkg-exe pkgs.openssl butlerTools ] ++ extra-pkgs;
-          tag = "${name}-latest";
+          tag = "${name}latest";
           created = "now";
           config.Entrypoint = [ "butler" ];
           config.WorkingDir = "/${home}";
@@ -114,6 +115,29 @@
               "https://github.com/ButlerOS/haskell-butler";
           };
         } extra-config);
+
+      container = mkContainer "" [
+        pkgs.coreutils
+        pkgs.cacert
+        pkgs.bashInteractive
+        pkgs.tmux
+        pkgs.curl
+      ];
+
+      publish-container-release = pkgs.writeShellScriptBin "butler-release" ''
+        set -e
+        export PATH=$PATH:${pkgs.gzip}/bin:${pkgs.skopeo}/bin
+        IMAGE="docker://${container-name}"
+
+        echo "Logging to registry..."
+        echo $GH_TOKEN | skopeo login --username $GH_USERNAME --password-stdin ghcr.io
+
+        echo "Building and publishing the image..."
+        ${container} | gzip --fast | skopeo copy docker-archive:/dev/stdin $IMAGE:${pkg-exe.version}
+
+        echo "Tagging latest"
+        skopeo copy $IMAGE:${pkg-exe.version} $IMAGE:latest
+      '';
 
       # A container with nix that is suitable to use for butler terminal
       nix-conf = pkgs.writeTextFile {
@@ -124,7 +148,7 @@
           build-users-group =
         '';
       };
-      toolbox = pkgs.dockerTools.buildLayeredImage {
+      toolbox = pkgs.dockerTools.streamLayeredImage {
         name = "ghcr.io/butleros/toolbox";
         tag = "latest";
         created = "now";
@@ -156,6 +180,11 @@
     in {
       haskellExtend = haskellExtend;
       packages."x86_64-linux".default = pkg-exe;
+      packages."x86_64-linux".container = container;
+      apps."x86_64-linux".publish-container-release = {
+        type = "app";
+        script = publish-container-release;
+      };
 
       packages."x86_64-linux".toolbox = toolbox;
       packages."x86_64-linux".containerBase = mkContainer "base" [ ];

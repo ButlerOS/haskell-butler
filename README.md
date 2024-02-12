@@ -91,13 +91,13 @@ nix run --impure .#electron https://localhost:8080
 Start the service with the pre-built container usage:
 
 ```ShellSession
-podman run -p 8080:8080 -v butler-data:/var/lib/butler --rm ghcr.io/butleros/haskell-butler:term-latest
+podman run -p 8080:8080 -v butler-data:/var/lib/butler --rm ghcr.io/butleros/haskell-butler:latest
 ```
 
 Desktop workspace can be isolated using bubblewrap:
 
 ```ShellSession
-podman run --privileged --env BUTLER_ISOLATION=bwrap -p 8080:8080 -v butler-data:/var/lib/butler --rm ghcr.io/butleros/haskell-butler:term-latest
+podman run --privileged --env BUTLER_ISOLATION=bwrap -p 8080:8080 -v butler-data:/var/lib/butler --rm ghcr.io/butleros/haskell-butler:latest
 ```
 
 ## Contribute
