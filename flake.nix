@@ -183,7 +183,7 @@
       packages."x86_64-linux".container = container;
       apps."x86_64-linux".publish-container-release = {
         type = "app";
-        script = publish-container-release;
+        program = "${publish-container-release}/bin/butler-release";
       };
 
       packages."x86_64-linux".toolbox = toolbox;
