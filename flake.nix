@@ -2,7 +2,7 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/286d957e295f231de917921e4b9cfb835db0b6d9";
+      "github:podenv/hspkgs/4750e01093a76c15eef7aa43bab8cd6e285c3fac";
     # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
@@ -43,6 +43,17 @@
           };
         in pkgs.haskell.lib.dontCheck
         (hpPrev.callCabal2nix "posix-pty" src { });
+
+        lucid-svg = pkgs.haskell.lib.dontCheck
+          (pkgs.haskell.lib.overrideCabal hpPrev.lucid-svg { broken = false; });
+        one-line-aeson-text = pkgs.haskell.lib.dontCheck
+          (pkgs.haskell.lib.overrideCabal hpPrev.one-line-aeson-text {
+            broken = false;
+          });
+        servant-auth-server = pkgs.haskell.lib.dontCheck
+          (pkgs.haskell.lib.overrideCabal hpPrev.servant-auth-server {
+            broken = false;
+          });
       };
       hsPkgs = pkgs.hspkgs.extend haskellExtend;
 
@@ -169,7 +180,7 @@
       baseTools = with pkgs; [
         cabal-fmt
         nixfmt
-        cabal-multi-repl # TODO: Switch back to cabal-install when cabal-3.11 is released
+        cabal-install
         hlint
         tasty-discover
         fourmolu
