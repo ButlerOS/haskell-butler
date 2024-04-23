@@ -87,7 +87,7 @@ lobbyProgram bs appSet chat display = do
                     when (isNothing owner && isNothing mDesktopStatus) do
                         atomically $ modifyMemoryVar dm.desktopsList (name :)
 
-                    desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance "desktop-ui"
+                    desktop <- fromMaybe (error "Desktop call failed") <$> appCall shellInstance "desktop-ui" Null
 
                     let desktopInstance = DesktopInstance owner desktop (shared.processEnv, shellHandler bs owner desktop shared)
                     atomically $ broadcast dm.update ()
@@ -117,7 +117,7 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
                     -- Request permission
                     ownerButler <- getSessionButler shared.display butlerSupervisor owner
                     tmReply <- newEmptyTMVarIO
-                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client (SyncEvent "desktop-access-request" tmReply)))
+                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client (SyncEvent "desktop-access-request" Null tmReply)))
                     -- Wait for result...
                     atomically (fromDynamic <$> takeTMVar tmReply) >>= \case
                         Just True -> do
@@ -269,7 +269,7 @@ handleLobbyEvents dm chat client trigger ev = case ev ^? key "ws" . _String of
             "delete-ws" -> modifyMVar_ dm.desktops $ \wss -> case Map.lookup ws wss of
                 Just desktopStatus -> do
                     case desktopStatus of
-                        DesktopRunning desktopInstance -> void $ killProcess (fst $ desktopInstance.onClient).process.pid
+                        DesktopRunning desktopInstance -> void $ killProcess (fst desktopInstance.onClient).process.pid
                         DesktopOffline -> pure ()
                     let newWss = Map.delete ws wss
                     atomically $ sendHtml client (lobbyWsListHtml newWss client)

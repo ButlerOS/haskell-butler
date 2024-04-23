@@ -67,16 +67,17 @@ newtype SyncName = SyncName Text
 
 data SyncEvent = SyncEvent
     { name :: SyncName
+    , body :: Value
     , reply :: TMVar Dynamic
     }
 
 instance ToJSON SyncEvent where toJSON se = object ["name" .= se.name]
 
-appCall :: Typeable a => AppInstance -> SyncName -> ProcessIO (Maybe a)
-appCall appInstance name = do
+appCall :: Typeable a => AppInstance -> SyncName -> Value -> ProcessIO (Maybe a)
+appCall appInstance name body = do
     mvReply <- newEmptyTMVarIO
-    writePipe appInstance.pipe (AppSync (SyncEvent name mvReply))
-    res <- atomically =<< waitTransaction 100 (takeTMVar mvReply)
+    writePipe appInstance.pipe (AppSync (SyncEvent name body mvReply))
+    res <- atomically =<< waitTransaction 1000 (takeTMVar mvReply)
     pure $ case res of
         WaitTimeout -> Nothing
         WaitCompleted dyn -> fromDynamic dyn

@@ -107,7 +107,7 @@ startJiraClient ctx = do
     let applyControls ctrls =
             (if ctrls.noPoints then filter (\issue -> isNothing issue.score) else id)
                 . (if ctrls.byName then sortOn (\issue -> issue.name) else id)
-                . (maybe id (\expectedType -> filter (\issue -> issue.issueType == expectedType)) ctrls.typeFilter)
+                . maybe id (\expectedType -> filter (\issue -> issue.issueType == expectedType)) ctrls.typeFilter
 
     let mountUI :: UTCTime -> HtmlT STM ()
         mountUI now = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
