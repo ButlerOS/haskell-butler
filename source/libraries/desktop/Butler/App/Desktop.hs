@@ -106,9 +106,11 @@ startDesktopApp services ctx = do
                 case value ^? key "wid" . _JSON of
                     Just wid -> handleWinSwap wm ctx wid name argv mEvent
                     Nothing -> createNewWindow name argv mEvent
-            Nothing -> logError "missing name" ["ev" .= value]
+            Nothing -> do
+                logError "missing name" ["ev" .= value]
+                pure Nothing
 
-        createNewWindow :: ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO ()
+        createNewWindow :: ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO (Maybe AppInstance)
         createNewWindow name argv mEvent = do
             (wid, win) <- atomically do
                 wid <- nextAppID ctx.shared.appIDCounter =<< getApps ctx.shared.apps
@@ -124,6 +126,7 @@ startDesktopApp services ctx = do
                 forM_ mEvent $ writePipe guiApp.pipe
                 clients <- atomically (getClients ctx.shared.clients)
                 forM_ clients \client -> writePipe guiApp.pipe (AppDisplay $ UserJoined client)
+            pure mGuiApp
 
         renderNewWindow wid win = do
             sendsHtml ctx.shared.clients do
@@ -152,7 +155,7 @@ startDesktopApp services ctx = do
                             -- Close event are not performed client side and we to trigger the handler manually
                             sendBinary client (from ev.rawBuffer)
                         delAppMemory wid
-                        sendsHtml (ctx.shared.clients) do
+                        sendsHtml ctx.shared.clients do
                             with span_ [wid_ wid "bar", hxSwapOob_ "delete"] mempty
                             with span_ [wid_ wid "tray", hxSwapOob_ "delete"] mempty
                         logInfo "Delete win" ["wid" .= wid]
@@ -206,10 +209,14 @@ startDesktopApp services ctx = do
                     _ -> logError "invalid win event" ["buf" .= LBSLog de.buffer]
                 Nothing -> logError "unknown win event" ["buf" .= LBSLog de.buffer]
             AppTrigger ev -> case ev.trigger of
-                "wm-start" -> createNewWindow "launcher" Nothing Nothing
-                "start-app" -> handleNewApp ev.body
+                "wm-start" -> void $ createNewWindow "launcher" Nothing Nothing
+                "start-app" -> void $ handleNewApp ev.body
                 _otherwise -> logError "Unknown ev" ["ev" .= ev]
             AppSync ev -> case ev.name of
+                "start-app" -> do
+                    mApp <- handleNewApp ev.body
+                    forM_ mApp \app -> do
+                        atomically . putTMVar ev.reply . toDyn $ app
                 "desktop-ui" -> atomically . putTMVar ev.reply . toDyn $ desktop
                 _ -> logError "Unknown en" ["ev" .= ev]
             AppSettingChanged setting prev new -> case setting of
@@ -300,7 +307,7 @@ welcomeWin appSet wid = do
         with div_ [class_ "m-2"] do
             appSetHtml wid appSet
 
-handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO ()
+handleWinSwap :: WindowManager -> AppContext -> AppID -> ProgramName -> Maybe Value -> Maybe AppEvent -> ProcessIO (Maybe AppInstance)
 handleWinSwap wm ctx wid appName argv mEvent = do
     atomically do
         Map.lookup wid <$> getApps ctx.shared.apps >>= \case
@@ -311,6 +318,7 @@ handleWinSwap wm ctx wid appName argv mEvent = do
     case mGuiApp of
         Just guiApp -> swapWindow guiApp
         Nothing -> logInfo "unknown win-swap prog" ["v" .= appName]
+    pure mGuiApp
   where
     swapWindow :: AppInstance -> ProcessIO ()
     swapWindow guiApp = do
