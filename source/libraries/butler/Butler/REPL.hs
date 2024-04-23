@@ -6,6 +6,8 @@ import Butler.Core.Logger
 import Butler.Core.Network
 import Butler.Display.Session
 import Butler.Prelude
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
 
 newtype REPL = REPL [Command]
 
@@ -27,11 +29,24 @@ recoveryLink sessions = Command "show-recovery" \args -> runExceptT do
         Just session -> do
             -- return recovery
             recoveryID <- lift (getOrCreateRecover sessions session)
-            pure $ from recoveryID
+            pure $ "_recovery?recover=" <> from recoveryID
         Nothing -> throwError "Unknown username"
 
+listSessions :: Sessions -> Command
+listSessions sessions = Command "list-sessions" \args -> runExceptT do
+    -- decode args
+    case args of
+        [] -> pure ()
+        _ -> throwError "usage: list-sessions"
+
+    xs <- Map.elems <$> lift (readTVarIO sessions.sessions)
+    olines <- atomically $ forM xs \session -> do
+        from <$> readTVar session.username
+
+    pure $ Text.unlines olines
+
 adminREPL :: Sessions -> REPL
-adminREPL sessions = REPL [recoveryLink sessions]
+adminREPL sessions = REPL [recoveryLink sessions, listSessions sessions]
 
 runUnixREPL :: REPL -> ProcessIO Void
 runUnixREPL (REPL commands) = do
