@@ -416,8 +416,8 @@ data ContentType
 allContentTypeExtensions :: [(ContentType, [RawFilePath])]
 allContentTypeExtensions =
     [ (ImageContent, ["png", "jpg", "jpeg", "gif"])
-    , (VideoContent, ["webm", "mkv", "avi"])
-    , (TextContent, ["txt", "md", "hs"])
+    , (VideoContent, ["webm", "mkv", "avi", "mp4"])
+    , (TextContent, ["txt", "md", "hs", "js", "py"])
     , (PdfContent, ["pdf"])
     , (ArchiveContent, ["zip", "tar"])
     ]

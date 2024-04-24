@@ -12,6 +12,9 @@ import Data.ByteString qualified as BS
 import Data.List qualified
 import Data.Text.Lines qualified as Lines
 
+import Butler.App
+import Data.Map.Strict qualified as Map
+
 noterApp :: App
 noterApp =
     (defaultApp "noter" startNoterApp)
@@ -78,6 +81,60 @@ startNoterApp ctx = do
 
     editors <- atomically newClientsData
 
+    -- Return the current file name extension
+    let editingExt state = case state.status of
+            NewFile -> mempty
+            EditingFile _ file -> BS.takeWhileEnd (/= 46) file.name
+
+    -- Handle the connection to a REPL
+    (tmREPLBuffer :: TVar (Maybe (MVar LByteString))) <- newTVarIO Nothing
+    (tmREPLBaton :: MVar ()) <- newEmptyMVar
+    let initREPL :: AppInstance -> ProcessIO ()
+        initREPL appInstance = do
+            logInfo "Initializing REPL" []
+            ext <- editingExt <$> readTVarIO tState
+            let
+                cmd :: [Text]
+                cmd
+                    | ext == "js" = ["node"]
+                    | ext == "hs" = ["ghci"]
+                    | ext == "py" = ["python3"]
+                    | otherwise = ["node"]
+            replBuffer <- fromMaybe (error "bad buffer?") <$> appCall appInstance "start-repl" (toJSON cmd)
+            atomically $ writeTVar tmREPLBuffer (Just replBuffer)
+            doUpdateREPL
+
+        debounceUpdateREPL = forever do
+            takeMVar tmREPLBaton
+            sleep 200
+            whenM (isEmptyMVar tmREPLBaton) do
+                doUpdateREPL
+
+        doUpdateREPL :: ProcessIO ()
+        doUpdateREPL =
+            readTVarIO tmREPLBuffer >>= \case
+                Nothing -> logError "Sending buffer failed: Not connected to the REPL" []
+                Just replBuffer -> do
+                    content <- from . encodeUtf8 . Lines.toText . (.content) <$> readTVarIO tState
+                    putMVar replBuffer content
+
+        updateREPL :: ProcessIO ()
+        updateREPL = void $ tryPutMVar tmREPLBaton ()
+
+    spawnThread_ debounceUpdateREPL
+
+    -- restore the REPL
+    (mREPLAppId :: Maybe AppID, memREPLAppId) <- newAppMemory ctx.wid "noter-repl" Nothing
+    forM_ mREPLAppId \replAppId -> do
+        mApp <-
+            atomically =<< waitTransaction 500 do
+                Map.lookup replAppId <$> getApps ctx.shared.apps >>= \case
+                    Nothing -> retrySTM
+                    Just a -> pure a
+        case mApp of
+            WaitTimeout -> logError "Couldn't find REPL app instance" ["id" .= replAppId]
+            WaitCompleted app -> initREPL app
+
     let updateContent :: Lines.TextLines -> NoterState -> NoterState
         updateContent newContent = (#content .~ newContent) . (#dirty .~ True)
 
@@ -99,13 +156,21 @@ startNoterApp ctx = do
 
     let mountUI = do
             state <- lift (readTVar tState)
+            let extension = editingExt state
             with div_ [wid_ ctx.wid "w", class_ "w-full h-full flex flex-col"] do
                 with div_ [class_ "flex flex-row"] do
                     withTrigger_ "click" ctx.wid "refresh" i_ [class_ "ri-refresh-line cursor-pointer mx-1"] mempty
                     fileNameForm state
+                    when (extension `elem` ["js", "hs", "py"]) do
+                        withTrigger_ "click" ctx.wid "start-repl" i_ [] "R"
                     editorList
                 with div_ [wid_ ctx.wid "txt", class_ "absolute bottom-0 top-10 left-0 right-0"] (toHtmlRaw (Lines.toText state.content))
-                script_ (noterClient ctx.wid)
+                let mode
+                        | extension == "js" = "ace/mode/javascript"
+                        | extension == "py" = "ace/mode/python"
+                        | extension == "hs" = "ace/mode/haskell"
+                        | otherwise = "ace/mode/markdown"
+                script_ (noterClient mode ctx.wid)
 
     let handleEditorAction rawBuffer client action = case action of
             Insert pos txt -> do
@@ -121,6 +186,7 @@ startNoterApp ctx = do
                             | otherwise = Just newState
                      in
                         (Just dirtyChanged, newState)
+                updateREPL
                 case mDirty of
                     Just dirtyChanged -> do
                         sendsBinaryButSelf client ctx.shared.clients rawBuffer
@@ -140,6 +206,7 @@ startNoterApp ctx = do
                             | otherwise = Just newState
                      in
                         (Just dirtyChanged, newState)
+                updateREPL
                 case mDirty of
                     Just dirtyChanged -> do
                         sendsBinaryButSelf client ctx.shared.clients rawBuffer
@@ -167,9 +234,11 @@ startNoterApp ctx = do
                 atomically $ delClientsData editors client
                 sendsHtml ctx.shared.clients editorList
             AppTrigger ev -> case ev.trigger of
-                "refresh" -> atomically do
-                    content <- (.content) <$> readTVar tState
-                    sendBinary ev.client (encodeMessage (from ctx.wid) (encodeJSON $ object ["text" .= Lines.toText content]))
+                "refresh" -> do
+                    atomically do
+                        content <- (.content) <$> readTVar tState
+                        sendBinary ev.client (encodeMessage (from ctx.wid) (encodeJSON $ object ["text" .= Lines.toText content]))
+                    updateREPL
                 "save-file" -> do
                     state <- readTVarIO tState
                     case state.status of
@@ -195,6 +264,15 @@ startNoterApp ctx = do
                                 sendsHtml ctx.shared.clients (fileNameForm newState)
                             Nothing -> logError "Documents is not a directory" []
                     Nothing -> logError "Invalid new-file" ["ev" .= ev]
+                "start-repl" -> do
+                    mShellApp <- Map.lookup shellAppID <$> atomically (getApps ctx.shared.apps)
+                    forM_ mShellApp \shellApp -> do
+                        mInstance <- appCall shellApp "start-app" (object ["name" .= ("termREPL" :: Text)])
+                        logInfo "Registering REPL" ["wid" .= ((.wid) <$> mInstance)]
+                        forM_ mInstance \(appInstance :: AppInstance) -> do
+                            initREPL appInstance
+                            atomically do
+                                modifyMemoryVar memREPLAppId (const $ Just appInstance.wid)
                 _ -> logError "Unknown ev" ["ev" .= ev]
             AppData ev -> case decodeJSON @EditorAction (from ev.buffer) of
                 Just action -> handleEditorAction (from ev.rawBuffer) ev.client action
@@ -209,15 +287,16 @@ startNoterApp ctx = do
             _ -> pure ()
 
 -- See https://ace.c9.io/#nav=howto and https://ajaxorg.github.io/ace-api-docs/classes/Ace.EditSession.html
-noterClient :: AppID -> Text
-noterClient wid =
+noterClient :: Text -> AppID -> Text
+noterClient mode wid =
     [raw|
-function setupNoterClient(wid) {
+function setupNoterClient(mode, wid) {
   const elt = document.getElementById(withWID(wid, "txt"))
   const editor = ace.edit(elt)
 
   editor.setTheme("ace/theme/monokai");
-  editor.session.setMode("ace/mode/markdown");
+  // TODO: set this through server event when file name change
+  editor.session.setMode(mode);
   editor.setOptions({
     enableLinking: true
   });
@@ -325,4 +404,4 @@ function setupNoterClient(wid) {
   }
 }
 |]
-        <> ("\nsetupNoterClient(" <> showT wid <> ");")
+        <> ("\nsetupNoterClient(" <> showT mode <> ", " <> showT wid <> ");")

@@ -74,7 +74,7 @@
 
       butlerTools = pkgs.symlinkJoin {
         name = "butler-tools";
-        paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap pkgs.tini ];
+        paths = [ pkgs.tmux pkgs.nix pkgs.bubblewrap pkgs.tini pkgs.nodejs ];
       };
 
       container-name = "ghcr.io/butleros/haskell-butler";
