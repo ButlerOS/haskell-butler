@@ -180,6 +180,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , desktopApp (services butlerSupervisor isolation)
             , logViewerApp
             , termApp isolation
+            , replApp isolation
             , emacsApp isolation
             , soundTestApp
             , mumblerApp

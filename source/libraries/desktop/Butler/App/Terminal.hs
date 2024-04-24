@@ -1,5 +1,6 @@
-module Butler.App.Terminal (termApp, TermApp (..), startTermApp) where
+module Butler.App.Terminal (termApp, replApp, TermApp (..), startTermApp) where
 
+import Data.ByteString qualified as BS
 import Data.List qualified
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -9,10 +10,12 @@ import System.Posix.Files qualified
 import System.Posix.Pty qualified as Pty
 
 import Butler
+import Butler.App
 import Butler.Frame
 import Butler.UnixShell
 import XStatic.Xterm qualified as XStatic
 
+import System.Posix.Pty (TerminalMode (EnableEcho), TerminalState (..), getTerminalAttributes, setTerminalAttributes, withoutMode)
 import System.Process (cleanupProcess)
 import System.Process.Typed qualified
 
@@ -50,11 +53,14 @@ renderTray wid server = do
 
 termApp :: Isolation -> App
 termApp isolation =
-    (defaultApp "term" (startTermApp isolation tmuxTermApp))
+    (defaultApp "term" (startTermApp isolation (Just tmuxTermApp)))
         { tags = fromList ["Development"]
         , description = "XTerm"
         , xfiles = XStatic.xtermWebGLAddonJs : XStatic.xtermWebGLAddonJsMap : XStatic.xtermFitAddonJs : XStatic.xtermFitAddonJsMap : XStatic.xterm
         }
+
+replApp :: Isolation -> App
+replApp isolation = defaultApp "termREPL" (startTermApp isolation Nothing)
 
 data TermApp = TermApp
     { backgroundCommand :: Maybe [String]
@@ -87,8 +93,8 @@ writeIfNeeded fp content = liftIO do
             createDirectoryIfMissing True (takeDirectory fp)
             Text.writeFile fp content
 
-startTermApp :: Isolation -> (Isolation -> String -> TermApp) -> AppContext -> ProcessIO ()
-startTermApp isolation mkApp ctx = do
+startTermApp :: Isolation -> Maybe (Isolation -> String -> TermApp) -> AppContext -> ProcessIO ()
+startTermApp isolation mMkApp ctx = do
     let clients = ctx.shared.clients
         wid = ctx.wid
     server <- atomically newXtermServer
@@ -98,11 +104,24 @@ startTermApp isolation mkApp ctx = do
             renderApp wid server
             renderTray wid server
 
+    (vInput :: MVar LByteString) <- newEmptyMVar
+    vApp <- newEmptyMVar
     spawnThread_ $ forever do
         ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppDisplay _ -> sendHtmlOnConnect draw ev
             AppData de -> atomically $ writeTChan server.inputChan (from de.buffer)
+            AppSync es -> do
+                -- Purge existing app definition
+                void $ tryTakeMVar vApp
+                case fromJSON es.body of
+                    Success args -> do
+                        let
+                            mkApp :: Isolation -> String -> TermApp
+                            mkApp _ _ = TermApp Nothing args
+                        putMVar vApp mkApp
+                    e -> logError "Bad args" ["err" .= show e]
+                atomically (putTMVar es.reply (toDyn vInput))
             AppTrigger de ->
                 case (de.body ^? key "cols" . _Integer, de.body ^? key "rows" . _Integer) of
                     (Just (unsafeFrom -> cols), Just (unsafeFrom -> rows)) -> do
@@ -113,6 +132,11 @@ startTermApp isolation mkApp ctx = do
                             with (script_ resizeScript) [wid_ wid "script"]
                     _ -> logError "invalid dim" ["ev" .= de]
             _ -> logError "Unexpected event" ["ev" .= ev]
+
+    mkApp <- case mMkApp of
+        Nothing -> takeMVar vApp
+        Just v -> pure v
+    let replMode = isNothing mMkApp
 
     -- prep directory tree
     baseDir <- from . decodeUtf8 <$> getPath "rootfs"
@@ -200,23 +224,28 @@ startTermApp isolation mkApp ctx = do
                                 <> fixSshConfig ["--proc", "/proc", "--dev", "/dev", "--perms", "01777", "--tmpfs", "/tmp", "--tmpfs", "/dev/shm", "--tmpfs", "/run/user"]
                                 <> fixSshHome baseArgs
                  in "bwrap" : bwrapArgs
-        mkProc =
+        attachArgs = env <> mkArgs True tApp.attachCommand
+        mkProc clearScreen =
             spawnProcess (ProgramName $ showT ctx.wid <> "-pty") do
                 forM_ tApp.backgroundCommand \bgCommand -> do
                     let procSpec = System.Process.Typed.proc "env" (env <> mkArgs False bgCommand)
                     logDebug "spawning" ["prog" .= show procSpec]
                     void $ System.Process.Typed.runProcess procSpec
                 dim <- fromMaybe (80, 25) <$> readTVarIO server.dimension
-                let attachArgs = env <> mkArgs True tApp.attachCommand
-                logDebug "attaching" ["args" .= attachArgs]
+                unless replMode do
+                    logDebug "attaching" ["args" .= attachArgs]
                 (pty, phandle) <- liftIO do
                     Pty.spawnWithPty Nothing True "env" attachArgs dim
-                handleProc dim pty `finally` do
+                when replMode $ liftIO do
+                    -- Disable echo in REPL mode
+                    termAttrs <- liftIO (getTerminalAttributes pty)
+                    setTerminalAttributes pty (withoutMode termAttrs EnableEcho) Immediately
+                handleProc clearScreen dim pty `finally` do
                     liftIO do
                         Pty.closePty pty
                         cleanupProcess (Nothing, Nothing, Nothing, phandle)
 
-        handleProc startDim pty = do
+        handleProc clearScreen startDim pty = do
             -- control handler
             spawnThread_ do
                 let handleDimChange dim = do
@@ -238,17 +267,34 @@ startTermApp isolation mkApp ctx = do
                 liftIO (Pty.writePty pty inputData)
 
             -- shell reader thread
-            forever do
-                outputData <- liftIO do
-                    Pty.threadWaitReadPty pty
-                    Pty.readPty pty
-                sendsBinary clients (encodeMessage (from wid) (from outputData))
+            handleProcOutput clearScreen pty
+
+        handleProcOutput clearScreen pty = do
+            when clearScreen do
+                sleep 80
+            outputData <- liftIO do
+                Pty.threadWaitReadPty pty
+                Pty.readPty pty
+            let buffer
+                    | clearScreen = "\x1b[2J\x1b[H" <> from outputData
+                    | otherwise = from outputData
+            sendsBinary clients (encodeMessage (from wid) buffer)
+            handleProcOutput False pty
 
     let welcomeMessage = "\rConnected!"
     statusMsg <- newTVarIO welcomeMessage
 
-    let supervisor = do
-            ptyProcess <- mkProc
+    let
+        doWaitREPL ptyProcess = do
+            logInfo "Waiting for vInput" []
+            input <- from @LByteString <$> takeMVar vInput
+            atomically $ writeTChan server.inputChan input
+            unless ("\n" `BS.isSuffixOf` input) do
+                atomically $ writeTChan server.inputChan "\n"
+            void $ readMVar vInput
+            void $ atomically $ stopProcess ptyProcess
+            void $ waitProcess ptyProcess
+        doWaitProcess ptyProcess = do
             res <- waitProcess ptyProcess
             logError "pty stopped" ["res" .= res]
             now <- getTime
@@ -260,9 +306,12 @@ startTermApp isolation mkApp ctx = do
                     inputData <- atomically $ readTChan server.inputChan
                     unless (inputData == "r") waitForR
             waitForR
-            supervisor
 
-    supervisor
+    forever do
+        ptyProcess <- mkProc replMode
+        if replMode
+            then doWaitREPL ptyProcess
+            else doWaitProcess ptyProcess
 
 termClient :: AppID -> Maybe (Int, Int) -> Text
 termClient wid mDim =

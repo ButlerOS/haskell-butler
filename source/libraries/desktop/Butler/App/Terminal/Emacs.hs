@@ -6,7 +6,7 @@ import Butler.UnixShell
 
 emacsApp :: Isolation -> App
 emacsApp isolation =
-    (defaultApp "emacs" (startTermApp isolation (const . const emacsTermApp)))
+    (defaultApp "emacs" (startTermApp isolation (Just $ const . const emacsTermApp)))
         { tags = fromList ["Development"]
         , description = "IDE"
         }
