@@ -1,5 +1,9 @@
 # Changelog
 
-## 0.0.1.0
+## 0.2
+
+- Add REPL button to Noter
+
+## 1.0
 
 - Initial release
