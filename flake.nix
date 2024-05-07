@@ -9,18 +9,21 @@
     let
       pkgs = hspkgs.pkgs;
 
-      xstatic-xterm = pkgs.fetchFromGitHub {
+      xstatic = pkgs.fetchFromGitHub {
         owner = "TristanCacqueray";
         repo = "haskell-xstatic";
-        rev = "e5815a99bf329f54144a6a7f6a499a68beec2b23";
-        sha256 = "sha256-VNyOKa9rMKi8KV8ez4xvAm1G8QtKJHXTOTgejZR4xFQ=";
+        rev = "5c84c9106b0c0fe0e25fcd7d74da05046d84bbad";
+        sha256 = "sha256-fhh+L3RvcVUbsxT2M1K1xJmKGyxpexvFaW2sRZmZrd4=";
       };
 
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
         butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
+        xstatic-ace =
+          hpPrev.callCabal2nix "xstatic-ace" "${xstatic}/xstatic-ace"
+          { };
         xstatic-xterm =
-          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic-xterm}/xstatic-xterm"
+          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic}/xstatic-xterm"
           { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
