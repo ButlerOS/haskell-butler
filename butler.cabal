@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               butler
-version:            0.2
+version:            0.2.1
 synopsis:           At your service.
 description:        At your service..
 category:           Development
