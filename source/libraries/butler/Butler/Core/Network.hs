@@ -54,12 +54,15 @@ withUnixSocket fp cb = withSocket \socket -> do
     cb socket
 
 unixService :: FilePath -> (Socket -> ProcessIO ()) -> ProcessIO Void
-unixService fp cb = withSocket \socket ->
-    bracket_ (liftIO $ Socket.bind socket (Socket.SockAddrUnix fp)) (ignoringExceptions (liftIO $ removeFile fp)) do
+unixService fp cb = withSocket \socket -> do
+    cleanup
+    bracket_ (liftIO $ Socket.bind socket (Socket.SockAddrUnix fp)) cleanup do
         liftIO $ Socket.listen socket 5
         forever do
             (client, _) <- liftIO $ Socket.accept socket
             cb client
+  where
+    cleanup = ignoringExceptions (liftIO $ removeFile fp)
 
 -- | The fqdn:port the client connected to. Use this to render absolute url.
 newtype ServerName = ServerName Text
