@@ -20,11 +20,9 @@
         butler = hpPrev.callCabal2nix "butler" self { };
         butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
         xstatic-ace =
-          hpPrev.callCabal2nix "xstatic-ace" "${xstatic}/xstatic-ace"
-          { };
+          hpPrev.callCabal2nix "xstatic-ace" "${xstatic}/xstatic-ace" { };
         xstatic-xterm =
-          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic}/xstatic-xterm"
-          { };
+          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic}/xstatic-xterm" { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
           repo = "haskell-ebml";
