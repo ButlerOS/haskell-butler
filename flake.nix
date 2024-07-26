@@ -9,6 +9,13 @@
     let
       pkgs = hspkgs.pkgs;
 
+      jira-src = pkgs.fetchFromGitHub {
+        owner = "ButlerOS";
+        repo = "haskell-jira-client";
+        rev = "d772b15525d3c4cd0f08a84d2bb10b028aff7858";
+        sha256 = "sha256-NQqDNcCiUib+YhjK6sodDErmUOHHs4jzV6Qq5ENpFGQ=";
+      };
+
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
         butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
@@ -18,12 +25,8 @@
           rev = "4196b6be0d469bc8b7252dbf58c6e15b8146aa43";
           sha256 = "sha256-OnOfzsAZvp26nah+KkhbBUAz6BwQaOuM1dc+f6/65ak=";
         }) { };
-        jira-client = hpPrev.callCabal2nix "jira-client" (pkgs.fetchFromGitHub {
-          owner = "ButlerOS";
-          repo = "haskell-jira-client";
-          rev = "d772b15525d3c4cd0f08a84d2bb10b028aff7858";
-          sha256 = "sha256-NQqDNcCiUib+YhjK6sodDErmUOHHs4jzV6Qq5ENpFGQ=";
-        }) { };
+        jira-client = hpPrev.callCabal2nix "jira-client" jira-src { };
+        md2jira = hpPrev.callCabal2nix "jira-client" "${jira-src}/md2jira" { };
         posix-pty = let
           src = pkgs.fetchFromGitHub {
             owner = "TristanCacqueray";

@@ -182,6 +182,7 @@ library butler-desktop
     Butler.App.JiraClient
     Butler.App.Launcher
     Butler.App.LogViewer
+    Butler.App.MD2Jira
     Butler.App.MineSweeper
     Butler.App.Mumbler
     Butler.App.Noter
@@ -218,6 +219,7 @@ library butler-desktop
     , containers
     , directory
     , ebml
+    , fast-myers-diff
     , filepath
     , http-client
     , http-client-tls
@@ -227,6 +229,7 @@ library butler-desktop
     , lucid-htmx
     , lucid-svg
     , lucid-xstatic
+    , md2jira
     , network
     , network-run
     , ot

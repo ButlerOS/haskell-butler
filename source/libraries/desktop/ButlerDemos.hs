@@ -22,6 +22,7 @@ import Butler.App.FileViewer
 import Butler.App.JiraClient
 import Butler.App.Launcher
 import Butler.App.LogViewer
+import Butler.App.MD2Jira
 import Butler.App.MineSweeper
 import Butler.App.Mumbler
 import Butler.App.NoVnc
@@ -202,6 +203,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , settingsApp
             , templateApp
             , jiraClientApp
+            , md2jiraApp
             ]
                 <> extraApps
 
