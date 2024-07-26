@@ -2,27 +2,16 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/4750e01093a76c15eef7aa43bab8cd6e285c3fac";
-    # "path:///srv/github.com/podenv/hspkgs";
+      "github:podenv/hspkgs/7dca9f9db5941b1b47f92b66736ee073751d05c2";
+    #  "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let
       pkgs = hspkgs.pkgs;
 
-      xstatic = pkgs.fetchFromGitHub {
-        owner = "TristanCacqueray";
-        repo = "haskell-xstatic";
-        rev = "5c84c9106b0c0fe0e25fcd7d74da05046d84bbad";
-        sha256 = "sha256-fhh+L3RvcVUbsxT2M1K1xJmKGyxpexvFaW2sRZmZrd4=";
-      };
-
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
         butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
-        xstatic-ace =
-          hpPrev.callCabal2nix "xstatic-ace" "${xstatic}/xstatic-ace" { };
-        xstatic-xterm =
-          hpPrev.callCabal2nix "xstatic-xterm" "${xstatic}/xstatic-xterm" { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
           repo = "haskell-ebml";
@@ -32,8 +21,8 @@
         jira-client = hpPrev.callCabal2nix "jira-client" (pkgs.fetchFromGitHub {
           owner = "ButlerOS";
           repo = "haskell-jira-client";
-          rev = "83fa633d4d8dc9560f449570fda32858adb8e036";
-          sha256 = "sha256-YA3RPE38GTL5oIYA+7Twyd2xiLIaiKAWI7mLRvniFEA=";
+          rev = "d772b15525d3c4cd0f08a84d2bb10b028aff7858";
+          sha256 = "sha256-NQqDNcCiUib+YhjK6sodDErmUOHHs4jzV6Qq5ENpFGQ=";
         }) { };
         posix-pty = let
           src = pkgs.fetchFromGitHub {
