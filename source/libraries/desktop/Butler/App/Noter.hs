@@ -172,6 +172,8 @@ startNoterApp ctx = do
                     fileNameForm state
                     when (extension `elem` ["js", "hs", "py"]) do
                         withTrigger_ "click" ctx.wid "start-repl" i_ [] "R"
+                    when (extension == "md") do
+                        withTrigger_ "click" ctx.wid "start-md2jira" i_ [] "R"
                     editorList
                 with div_ [id_ "toolbar", class_ "hidden"] do
                     pure ()
@@ -227,6 +229,15 @@ startNoterApp ctx = do
                 cid = editor.clientID
             pure NewClient{cid, name, color}
 
+    let handleREPLEvent appName = do
+            mShellApp <- Map.lookup shellAppID <$> atomically (getApps ctx.shared.apps)
+            forM_ mShellApp \shellApp -> do
+                mInstance <- appCall shellApp "start-app" (object ["name" .= (appName :: Text)])
+                logInfo "Registering REPL" ["wid" .= ((.wid) <$> mInstance)]
+                forM_ mInstance \(appInstance :: AppInstance) -> do
+                    initREPL appInstance
+                    atomically do
+                        modifyMemoryVar memREPLAppId (const $ Just appInstance.wid)
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> do
@@ -286,15 +297,8 @@ startNoterApp ctx = do
                                 sendsHtml ctx.shared.clients (fileNameForm newState)
                             Nothing -> logError "Documents is not a directory" []
                     Nothing -> logError "Invalid new-file" ["ev" .= ev]
-                "start-repl" -> do
-                    mShellApp <- Map.lookup shellAppID <$> atomically (getApps ctx.shared.apps)
-                    forM_ mShellApp \shellApp -> do
-                        mInstance <- appCall shellApp "start-app" (object ["name" .= ("termREPL" :: Text)])
-                        logInfo "Registering REPL" ["wid" .= ((.wid) <$> mInstance)]
-                        forM_ mInstance \(appInstance :: AppInstance) -> do
-                            initREPL appInstance
-                            atomically do
-                                modifyMemoryVar memREPLAppId (const $ Just appInstance.wid)
+                "start-repl" -> handleREPLEvent "termREPL"
+                "start-md2jira" -> handleREPLEvent "md2jira"
                 _ -> logError "Unknown ev" ["ev" .= ev]
             AppData ev -> case decodeJSON @ServerRequest (from ev.buffer) of
                 Just action -> handleEditorAction ev.client action
