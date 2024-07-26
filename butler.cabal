@@ -229,6 +229,7 @@ library butler-desktop
     , lucid-xstatic
     , network
     , network-run
+    , ot
     , posix-pty
     , process
     , qrcode-core
@@ -242,11 +243,13 @@ library butler-desktop
     , unix
     , unliftio
     , uuid
-    , xstatic-ace
     , xstatic-hyperscript
     , xstatic-novnc
+    , xstatic-otjs
     , xstatic-pcm-player
     , xstatic-pdfjs
+    , xstatic-quill
+    , xstatic-quill-cursors
     , xstatic-remixicon
     , xstatic-sweetalert2
     , xstatic-winbox

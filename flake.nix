@@ -33,7 +33,12 @@
           };
         in pkgs.haskell.lib.dontCheck
         (hpPrev.callCabal2nix "posix-pty" src { });
-
+        ot = hpPrev.callCabal2nix "ot" (pkgs.fetchFromGitHub {
+          owner = "TristanCacqueray";
+          repo = "ot.hs";
+          rev = "daa7dc081389dab4f567b5b75121743c0a67c93a";
+          sha256 = "sha256-wBsMnXPjKAiKBgXI84NEb6fgvTBGey7+Wp+C3IpvY/c=";
+        }) { };
         lucid-svg = pkgs.haskell.lib.dontCheck
           (pkgs.haskell.lib.overrideCabal hpPrev.lucid-svg { broken = false; });
         one-line-aeson-text = pkgs.haskell.lib.dontCheck

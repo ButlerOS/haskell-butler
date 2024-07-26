@@ -112,13 +112,17 @@ assertReceivedJSON client attrs = do
 
 data FakeEvent
     = FakeTrigger DisplayClient TriggerName [Pair]
+    | FakeValue DisplayClient Value
     | FakeData DisplayClient [Pair]
 
 sendEvent :: AppInstance -> FakeEvent -> ProcessIO ()
 sendEvent appInstance = \case
     FakeTrigger client trigger attrs ->
         writePipe appInstance.pipe $ AppTrigger (GuiEvent client trigger (object attrs))
-    FakeData client attrs ->
-        let buf = encodeJSON (object attrs)
+    FakeValue client v -> sendValue client v
+    FakeData client attrs -> sendValue client (object attrs)
+  where
+    sendValue client v = do
+        let buf = encodeJSON v
             rawBuf = encodeMessage 0 buf
          in writePipe appInstance.pipe $ AppData (DataEvent client (from buf) (from rawBuf))
