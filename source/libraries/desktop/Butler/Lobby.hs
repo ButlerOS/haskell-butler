@@ -117,7 +117,8 @@ shellHandler butlerSupervisor mOwner desktop shared event = case event of
                     -- Request permission
                     ownerButler <- getSessionButler shared.display butlerSupervisor owner
                     tmReply <- newEmptyTMVarIO
-                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client (SyncEvent "desktop-access-request" Null tmReply)))
+                    let syncEvent = SyncEvent "desktop-access-request" (toDyn Null) tmReply
+                    writePipe ownerButler.pipe (ButlerSync (ButlerSyncEvent client syncEvent))
                     -- Wait for result...
                     atomically (fromDynamic <$> takeTMVar tmReply) >>= \case
                         Just True -> do

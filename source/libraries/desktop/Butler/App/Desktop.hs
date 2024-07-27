@@ -214,7 +214,7 @@ startDesktopApp services ctx = do
                 _otherwise -> logError "Unknown ev" ["ev" .= ev]
             AppSync ev -> case ev.name of
                 "start-app" -> do
-                    mApp <- handleNewApp ev.body
+                    mApp <- handleNewApp (fromDyn ev.message Null)
                     forM_ mApp \app -> do
                         atomically . putTMVar ev.reply . toDyn $ app
                 "desktop-ui" -> atomically . putTMVar ev.reply . toDyn $ desktop

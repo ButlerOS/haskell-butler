@@ -104,24 +104,26 @@ startTermApp isolation mMkApp ctx = do
             renderApp wid server
             renderTray wid server
 
-    (vInput :: MVar LByteString) <- newEmptyMVar
+    (vInput :: MVar ByteString) <- newEmptyMVar
     vApp <- newEmptyMVar
     spawnThread_ $ forever do
         ev <- atomically (readPipe ctx.pipe)
         case ev of
             AppDisplay _ -> sendHtmlOnConnect draw ev
             AppData de -> atomically $ writeTChan server.inputChan (from de.buffer)
-            AppSync es -> do
-                -- Purge existing app definition
-                void $ tryTakeMVar vApp
-                case fromJSON es.body of
-                    Success args -> do
-                        let
-                            mkApp :: Isolation -> String -> TermApp
-                            mkApp _ _ = TermApp Nothing args
-                        putMVar vApp mkApp
-                    e -> logError "Bad args" ["err" .= show e]
-                atomically (putTMVar es.reply (toDyn vInput))
+            AppSync es -> case es.name of
+                "start-repl" | Just args <- fromDynamic @[String] es.message -> do
+                    -- Purge existing app definition
+                    void $ tryTakeMVar vApp
+                    let
+                        mkApp :: Isolation -> String -> TermApp
+                        mkApp _ _ = TermApp Nothing args
+                    putMVar vApp mkApp
+                    logInfo "Acknowledge the start-repl event" []
+                    atomically (putTMVar es.reply (toDyn ()))
+                "new-doc" | Just args <- fromDynamic @Text es.message -> do
+                    putMVar vInput $ encodeUtf8 args
+                _ -> logError "Bad dynamics" ["action" .= es.name]
             AppTrigger de ->
                 case (de.body ^? key "cols" . _Integer, de.body ^? key "rows" . _Integer) of
                     (Just (unsafeFrom -> cols), Just (unsafeFrom -> rows)) -> do
@@ -287,11 +289,13 @@ startTermApp isolation mMkApp ctx = do
     let
         doWaitREPL ptyProcess = do
             logInfo "Waiting for vInput" []
-            input <- from @LByteString <$> takeMVar vInput
+            input <- takeMVar vInput
             atomically $ writeTChan server.inputChan input
             unless ("\n" `BS.isSuffixOf` input) do
                 atomically $ writeTChan server.inputChan "\n"
+            -- Wait for a new input, but keep it in the MVar for the next loop
             void $ readMVar vInput
+            -- A new input arrived, restart the process
             void $ atomically $ stopProcess ptyProcess
             void $ waitProcess ptyProcess
         doWaitProcess ptyProcess = do
