@@ -10,7 +10,6 @@ md2jiraApp = defaultApp "md2jira" startMd2Jira
 
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
-    (vInput :: MVar LByteString) <- newEmptyMVar
     (vData :: TVar (Either String [Epic])) <- newTVarIO (Left "no data...")
 
     let
@@ -44,13 +43,14 @@ startMd2Jira ctx = do
                         br_ []
                         pre_ $ toHtml $ printer xs
 
-    spawnThread_ $ forever do
-        input <- decodeUtf8 . from <$> takeMVar vInput
-        atomically $ writeTVar vData $ parse input
-        sendsHtml ctx.shared.clients mountUI
-
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
-            AppSync es -> atomically (putTMVar es.reply (toDyn vInput))
+            AppSync es -> case es.name of
+                "start-repl" -> do
+                    atomically (putTMVar es.reply (toDyn ()))
+                "new-doc" | Just doc <- fromDynamic @Text es.message -> do
+                    atomically $ writeTVar vData $ parse doc
+                    sendsHtml ctx.shared.clients mountUI
+                _ -> logError "Bad document" ["action" .= es.name]
             _ -> pure ()

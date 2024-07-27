@@ -1,6 +1,7 @@
 module Butler.App.Noter (noterApp) where
 
 import Butler
+import Butler.Core (writePipe)
 import Butler.Core.NatMap qualified as NM
 import Butler.Display.Session
 import Butler.Display.User
@@ -100,22 +101,25 @@ startNoterApp ctx = do
             EditingFile _ file -> BS.takeWhileEnd (/= 46) file.name
 
     -- Handle the connection to a REPL
-    (tmREPLBuffer :: TVar (Maybe (MVar LByteString))) <- newTVarIO Nothing
+    (tmREPLApp :: TVar (Maybe AppInstance)) <- newTVarIO Nothing
     (tmREPLBaton :: MVar ()) <- newEmptyMVar
     let initREPL :: AppInstance -> ProcessIO ()
         initREPL appInstance = do
             ext <- editingExt <$> readTVarIO tState
             let
-                cmd :: [Text]
-                cmd
+                commandArgs :: [String]
+                commandArgs
                     | ext == "js" = ["node"]
                     | ext == "hs" = ["ghci"]
                     | ext == "py" = ["python3"]
                     | otherwise = ["node"]
-            logInfo "Initializing REPL" ["ext" .= decodeUtf8 ext, "cmd" .= cmd]
-            replBuffer <- fromMaybe (error "bad buffer?") <$> appCall appInstance "start-repl" (toJSON cmd)
-            atomically $ writeTVar tmREPLBuffer (Just replBuffer)
-            doUpdateREPL
+
+            logInfo "Initializing REPL" ["ext" .= decodeUtf8 ext, "cmd" .= commandArgs]
+            appCall appInstance "start-repl" commandArgs >>= \case
+                Just () -> do
+                    atomically $ writeTVar tmREPLApp (Just appInstance)
+                    doUpdateREPL
+                Nothing -> logError "Didn't received repl acknowledgement" []
 
         debounceUpdateREPL = forever do
             takeMVar tmREPLBaton
@@ -125,11 +129,12 @@ startNoterApp ctx = do
 
         doUpdateREPL :: ProcessIO ()
         doUpdateREPL =
-            readTVarIO tmREPLBuffer >>= \case
+            readTVarIO tmREPLApp >>= \case
                 Nothing -> pure ()
-                Just replBuffer -> do
-                    body <- from . encodeUtf8 . snd <$> atomically getContentRev
-                    putMVar replBuffer body
+                Just replApp -> do
+                    mvReply <- newEmptyTMVarIO
+                    body <- toDyn . snd <$> atomically getContentRev
+                    writePipe replApp.pipe (AppSync (SyncEvent "new-doc" body mvReply))
 
         updateREPL :: ProcessIO ()
         updateREPL = void $ tryPutMVar tmREPLBaton ()
