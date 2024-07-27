@@ -210,6 +210,7 @@ library butler-desktop
     Butler.Service.SoundBlaster
     Butler.Service.SshAgent
     ButlerDemos
+    OT
 
   build-depends:
     , aeson

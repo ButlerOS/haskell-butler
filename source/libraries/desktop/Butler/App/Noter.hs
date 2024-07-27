@@ -115,7 +115,7 @@ startNoterApp ctx = do
                     | otherwise = ["node"]
 
             logInfo "Initializing REPL" ["ext" .= decodeUtf8 ext, "cmd" .= commandArgs]
-            appCall appInstance "start-repl" commandArgs >>= \case
+            appCall appInstance "start-repl" (ctx, commandArgs) >>= \case
                 Just () -> do
                     atomically $ writeTVar tmREPLApp (Just appInstance)
                     doUpdateREPL
@@ -133,7 +133,7 @@ startNoterApp ctx = do
                 Nothing -> pure ()
                 Just replApp -> do
                     mvReply <- newEmptyTMVarIO
-                    body <- toDyn . snd <$> atomically getContentRev
+                    body <- toDyn <$> atomically getContentRev
                     writePipe replApp.pipe (AppSync (SyncEvent "new-doc" body mvReply))
 
         updateREPL :: ProcessIO ()
@@ -186,6 +186,22 @@ startNoterApp ctx = do
                 with div_ [wid_ ctx.wid "editor", class_ ""] do
                     pure ()
                 script_ (noterClient ctx.wid)
+
+    let
+        -- update coming from md2jira
+        handleAppUpdate rev op = do
+            logInfo "System update..." ["op" .= op]
+            state <- readTVarIO tState
+            case OT.applyOperation state.content rev op () of
+                Left err -> logError "Fail to apply system op" ["rev" .= rev, "op" .= op, "err" .= err]
+                Right (newOp, _newOTCursors, newServerState) -> do
+                    let newState = state{content = newServerState, dirty = True}
+                    atomically $ writeTVar tState newState
+                    let OT.ServerState newRev _newDoc _op = newServerState
+                    let msg = encodeMessage (from ctx.wid) $ encodeJSON $ ApplyOp (newRev, newOp)
+                    sendsBinary ctx.shared.clients msg
+                    unless state.dirty do
+                        sendsHtml ctx.shared.clients (fileNameForm newState)
 
     cursors <- atomically newClientsData
     let handleEditorAction client request = case request of
@@ -308,6 +324,10 @@ startNoterApp ctx = do
             AppData ev -> case decodeJSON @ServerRequest (from ev.buffer) of
                 Just action -> handleEditorAction ev.client action
                 Nothing -> logError "Unknown action" ["ev" .= ev]
+            AppSync ev -> case ev.name of
+                "update-doc" | Just (rev, ops) <- fromDynamic @(OT.Revision, OT.TextOperation) ev.message -> do
+                    handleAppUpdate rev ops
+                _ -> logError "Bad sync" ["action" .= ev.name]
             AppFile dir (Just file) -> do
                 content <- decodeUtf8 <$> readFileBS dir file
                 atomically do
