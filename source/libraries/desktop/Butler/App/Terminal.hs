@@ -1,5 +1,6 @@
 module Butler.App.Terminal (termApp, replApp, TermApp (..), startTermApp) where
 
+import Control.OperationalTransformation.Server (Revision)
 import Data.ByteString qualified as BS
 import Data.List qualified
 import Data.Text qualified as Text
@@ -112,7 +113,7 @@ startTermApp isolation mMkApp ctx = do
             AppDisplay _ -> sendHtmlOnConnect draw ev
             AppData de -> atomically $ writeTChan server.inputChan (from de.buffer)
             AppSync es -> case es.name of
-                "start-repl" | Just args <- fromDynamic @[String] es.message -> do
+                "start-repl" | Just (_, args) <- fromDynamic @(AppContext, [String]) es.message -> do
                     -- Purge existing app definition
                     void $ tryTakeMVar vApp
                     let
@@ -121,8 +122,8 @@ startTermApp isolation mMkApp ctx = do
                     putMVar vApp mkApp
                     logInfo "Acknowledge the start-repl event" []
                     atomically (putTMVar es.reply (toDyn ()))
-                "new-doc" | Just args <- fromDynamic @Text es.message -> do
-                    putMVar vInput $ encodeUtf8 args
+                "new-doc" | Just (_, doc) <- fromDynamic @(Revision, Text) es.message -> do
+                    putMVar vInput $ encodeUtf8 doc
                 _ -> logError "Bad dynamics" ["action" .= es.name]
             AppTrigger de ->
                 case (de.body ^? key "cols" . _Integer, de.body ^? key "rows" . _Integer) of
