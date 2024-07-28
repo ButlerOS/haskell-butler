@@ -327,6 +327,7 @@ startNoterApp ctx = do
             AppSync ev -> case ev.name of
                 "update-doc" | Just (rev, ops) <- fromDynamic @(OT.Revision, OT.TextOperation) ev.message -> do
                     handleAppUpdate rev ops
+                    updateREPL
                 _ -> logError "Bad sync" ["action" .= ev.name]
             AppFile dir (Just file) -> do
                 content <- decodeUtf8 <$> readFileBS dir file
