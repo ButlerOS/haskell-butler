@@ -1,4 +1,4 @@
-module Butler.App.JiraClient (jiraClientApp) where
+module Butler.App.JiraClient (jiraClientApp, JiraSetting (..), getJiraSetting) where
 
 import Butler
 
@@ -38,30 +38,30 @@ defaultControls = Controls False False Nothing
 data State = State
     { status :: Status
     , controls :: Controls
-    , client :: Maybe Jira.JiraClient
+    , setting :: Maybe JiraSetting
     }
     deriving (Generic)
+
+data JiraSetting = JiraSetting
+    { project :: Text
+    , client :: Jira.JiraClient
+    }
+
+getJiraSetting :: AppSharedContext -> ProcessIO (Maybe JiraSetting)
+getJiraSetting shared = do
+    appSettings <- getAppSettings shared "jira-client"
+    case (Map.lookup "jira-url" appSettings, Map.lookup "jira-token" appSettings, Map.lookup "jira-project" appSettings) of
+        (Just (into @Text -> url), Just (into @ByteString -> token), Just (into @Text -> project))
+            | url /= mempty && token /= mempty && project /= mempty ->
+                Just . JiraSetting project . Jira.newJiraClient url Nothing token <$> newTlsManager
+        _ -> pure Nothing
 
 startJiraClient :: AppContext -> ProcessIO ()
 startJiraClient ctx = do
     -- Setup state
     logInfo "JiraClient started!" []
 
-    let getClient :: ProcessIO (Maybe Jira.JiraClient)
-        getClient = do
-            appSettings <- getAppSettings ctx.shared "jira-client"
-            case (Map.lookup "jira-url" appSettings, Map.lookup "jira-token" appSettings) of
-                (Just (into @Text -> url), Just (into @ByteString -> token))
-                    | url /= mempty && token /= mempty ->
-                        Just . Jira.newJiraClient url Nothing token <$> newTlsManager
-                _ -> pure Nothing
-
-        getProject :: ProcessIO (Maybe Text)
-        getProject = do
-            appSettings <- getAppSettings ctx.shared "jira-client"
-            pure (into @Text <$> Map.lookup "jira-project" appSettings)
-
-    tState <- newTVarIO . State Loading defaultControls =<< getClient
+    tState <- newTVarIO . State Loading defaultControls =<< getJiraSetting ctx.shared
 
     -- UI
     let renderControls :: [Jira.JiraIssue] -> Controls -> HtmlT STM ()
@@ -88,7 +88,7 @@ startJiraClient ctx = do
                     mkOption "All"
                     forM_ (nub $ sort $ map (\issue -> issue.issueType) stories) mkOption
 
-    let renderStories :: UTCTime -> Jira.JiraClient -> [Jira.JiraIssue] -> HtmlT STM ()
+    let renderStories :: UTCTime -> JiraSetting -> [Jira.JiraIssue] -> HtmlT STM ()
         renderStories now client stories = do
             ul_ do
                 forM_ stories \x -> with li_ [class_ "flex items-center"] do
@@ -98,7 +98,7 @@ startJiraClient ctx = do
                     with span_ [class_ "w-[24px] text-right mx-1"] $ case x.score of
                         Nothing -> "?"
                         Just score -> toHtml (show @Int $ round score)
-                    with a_ [href_ (Jira.jiraUrl client x.name), target_ "blank", class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
+                    with a_ [href_ (Jira.jiraUrl client.client x.name), target_ "blank", class_ "cursor-pointer hover:font-bold text-blue-600"] (toHtml jid)
                     with span_ [class_ "ml-1 text-sm"] (toHtml (humanReadableTime' now x.updated))
                     ": "
                     with span_ [class_ "ml-1"] (toHtml x.summary)
@@ -112,33 +112,29 @@ startJiraClient ctx = do
     let mountUI :: UTCTime -> HtmlT STM ()
         mountUI now = with div_ [wid_ ctx.wid "w", class_ "flex flex-col"] do
             state <- lift (readTVar tState)
-            case state.client of
+            case state.setting of
                 Nothing -> do
                     "jira-url or jira-token is missing, set them using the setting app"
-                Just client -> case state.status of
+                Just setting -> case state.status of
                     Loading -> "Loading..."
                     Stories stories -> with div_ [class_ "flex flex-col"] do
                         ctrls <- controls <$> lift (readTVar tState)
                         renderControls stories ctrls
-                        renderStories now client (applyControls ctrls stories)
+                        renderStories now setting (applyControls ctrls stories)
 
-    let getStories :: Jira.JiraClient -> ProcessIO (Either Text [Jira.JiraIssue])
-        getStories client = runExceptT @Text do
+    let getStories :: JiraSetting -> ProcessIO (Either Text [Jira.JiraIssue])
+        getStories setting = runExceptT @Text do
             -- now <- liftIO getCurrentTime
             -- pure
             --     [ Jira.JiraIssue "PROJ" "test-001" "story" now Nothing "desc" Nothing
             --     , Jira.JiraIssue "PROJ" "test-002" "epic" now Nothing "desc" (Just 42)
             --     ]
 
-            project <-
-                lift getProject >>= \case
-                    Just project -> pure project
-                    Nothing -> throwError "Project is missing"
             searchResult <-
-                let searchAction = Jira.searchIssues client (Jira.JiraSearchRequest 0 100 $ Jira.JQL ("project = " <> project))
+                let searchAction = Jira.searchIssues setting.client (Jira.JiraSearchRequest 0 100 $ Jira.JQL ("project = " <> setting.project))
                  in lift (httpRetry 5 (liftIO searchAction)) >>= \case
                         Right res -> pure res
-                        Left e -> throwError ("Query failed for project " <> project <> ": " <> e)
+                        Left e -> throwError ("Query failed for project " <> setting.project <> ": " <> e)
             let (errors, stories) = partitionEithers searchResult.issues
             unless (null errors) do
                 lift $ logError "Jira decoding failures" ["errors" .= errors]
@@ -149,13 +145,13 @@ startJiraClient ctx = do
     let loadStories = tryPutMVar baton ()
     spawnThread_ $ forever do
         takeMVar baton
-        atomically ((.client) <$> readTVar tState) >>= \case
-            Just client -> do
+        atomically ((.setting) <$> readTVar tState) >>= \case
+            Just setting -> do
                 atomically $ modifyTVar' tState $ #status .~ Loading
                 logInfo "Loading stories..." []
                 now <- liftIO getCurrentTime
                 sendsHtml ctx.shared.clients (mountUI now)
-                eStories <- getStories client
+                eStories <- getStories setting
                 newStatus <- case eStories of
                     Left err -> do
                         logError "getStories failed" ["err" .= err]
@@ -168,15 +164,15 @@ startJiraClient ctx = do
 
     let setScore :: Jira.JiraID -> Float -> ProcessIO ()
         setScore jid score = do
-            atomically ((.client) <$> readTVar tState) >>= \case
-                Just client -> do
+            atomically ((.setting) <$> readTVar tState) >>= \case
+                Just setting -> do
                     logInfo "Setting score" ["story" .= jid, "score" .= score]
-                    httpRetry 5 (liftIO (Jira.setIssueScore client jid score)) >>= \case
+                    httpRetry 5 (liftIO (Jira.setIssueScore setting.client jid score)) >>= \case
                         Just err -> logError "Setting score failed" ["err" .= err, "story" .= jid]
                         Nothing -> pure ()
                 Nothing -> logError "client is not configured" []
 
-    mClient <- atomically ((.client) <$> readTVar tState)
+    mClient <- atomically ((.setting) <$> readTVar tState)
     forM_ mClient (const loadStories)
 
     -- Handle events
@@ -186,10 +182,9 @@ startJiraClient ctx = do
         case aev of
             AppDisplay (UserJoined client) -> atomically $ sendHtml client (mountUI now)
             AppSettingChanged{} ->
-                getClient >>= \case
-                    Just{} -> do
-                        client <- getClient
-                        atomically $ modifyTVar' tState (#client .~ client)
+                getJiraSetting ctx.shared >>= \case
+                    Just client -> do
+                        atomically $ modifyTVar' tState (#setting ?~ client)
                         sendsHtml ctx.shared.clients (mountUI now)
                     Nothing -> pure ()
             AppTrigger ev -> do

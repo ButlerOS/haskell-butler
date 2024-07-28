@@ -2,11 +2,12 @@ module Butler.App.MD2Jira (md2jiraApp) where
 
 import Butler
 import Butler.App
+import Butler.App.JiraClient (JiraSetting (..), getJiraSetting)
 import Butler.Core (writePipe)
 import Butler.Core.NatMap qualified as NM
 import Control.OperationalTransformation.Server (Revision)
 import Data.List (find)
-import Jira (IssueData (..))
+import Jira (IssueData (..), jiraUrl)
 import MD2Jira
 import OT qualified
 
@@ -79,7 +80,11 @@ updateItemState nmEpic epics = goEpic [] epics =<< NM.elems nmEpic
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     (vData :: TVar (Either String AppState)) <- newTVarIO (Left "no data...")
+    vCache <- newTVarIO mempty
     nmState <- atomically NM.newNatMap
+
+    -- TODO: handle reload when setting changes...
+    mSetting <- getJiraSetting ctx.shared
 
     let
         -- Create stable id for dom
@@ -90,15 +95,15 @@ startMd2Jira ctx = do
         expandButton :: ItemState a b -> [Pair] -> HtmlT STM ()
         expandButton itemState attrs =
             let trig = withTrigger "click" ctx.wid "toggle-expand" attrs
-                expandIcon = case itemState.isExpanded of
-                    True -> "▼"
-                    False -> "▶"
+                expandIcon = if itemState.isExpanded then "▼" else "▶"
              in trig i_ [class_ "cursor-pointer mr-1"] expandIcon
 
         -- Render JiraID link
         renderJira jiraID =
-            -- TODO: set the href
-            with a_ [class_ "float-right cursor-pointer"] (toHtml $ into @Text jiraID)
+            let addLink = case mSetting of
+                    Nothing -> id
+                    Just setting -> (href_ (Jira.jiraUrl setting.client jiraID) :)
+             in with a_ (addLink [class_ "float-right cursor-pointer"]) (toHtml $ into @Text jiraID)
 
         -- Render a story
         renderStory :: Natural -> StoryState -> HtmlT STM ()
@@ -130,7 +135,9 @@ startMd2Jira ctx = do
                 lift (readTVar vData) >>= \case
                     Left err -> div_ $ toHtml $ "Oops: " <> into @Text err
                     Right state -> do
-                        withTrigger_ "click" ctx.wid "sync" button_ [class_ ("float-right " <> btnBlueClass)] "SYNC"
+                        case mSetting of
+                            Just{} -> withTrigger_ "click" ctx.wid "sync" button_ [class_ ("float-right " <> btnBlueClass)] "PUSH"
+                            Nothing -> with button_ [class_ "float-right", disabled_ "", alt_ "Missing jira settings"] "missing jira-url, check the setting app"
                         div_ do
                             let section = with h1_ [class_ "font-bold bg-slate-300"]
                             {-
@@ -172,6 +179,13 @@ startMd2Jira ctx = do
 
     -- Keep track of the Noter app to send update
     vNoterCtx <- newTVarIO Nothing
+    let updateNoter noterCtx state newEpics = do
+            mvReply <- newEmptyTMVarIO
+            let newDoc = printer newEpics
+            let ops = OT.updateDoc state.doc newDoc
+            let msg = toDyn (state.rev, ops)
+            writePipe noterCtx.pipe (AppSync (SyncEvent "update-doc" msg mvReply))
+
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
@@ -201,16 +215,18 @@ startMd2Jira ctx = do
                             readTVarIO vData >>= \case
                                 Left err -> logError "Can't sync error" ["err" .= err]
                                 Right state -> do
-                                    mvReply <- newEmptyTMVarIO
                                     let epics = map (.issue) $ map fst state.epics
-                                    -- TODO: call eval to inject JiraID!
-                                    newEpics <- pure epics
-
-                                    -- Generate and send text operation to noter
-                                    let newDoc = printer newEpics
-                                    let ops = OT.updateDoc state.doc newDoc
-                                    let msg = toDyn (state.rev, ops)
-                                    writePipe noterCtx.pipe (AppSync (SyncEvent "update-doc" msg mvReply))
+                                    case mSetting of
+                                        Nothing -> pure ()
+                                        Just setting -> do
+                                            cache <- readTVarIO vCache
+                                            (newEpics, newCache, errors) <- liftIO do
+                                                eval setting.client setting.project epics cache
+                                            atomically $ writeTVar vCache newCache
+                                            unless (null errors) do
+                                                logError "md2jira eval errors!" ["errors" .= errors]
+                                            -- Generate and send text operation to noter
+                                            updateNoter noterCtx state newEpics
                 "toggle-expand" | Just epicID <- ev.body ^? key "epic" . _JSON -> do
                     -- Update the view
                     atomically (NM.lookup nmState epicID) >>= \case
