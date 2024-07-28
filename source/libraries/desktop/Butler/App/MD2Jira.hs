@@ -6,7 +6,7 @@ import Butler.App.JiraClient (JiraSetting (..), getJiraSetting)
 import Butler.Core (writePipe)
 import Butler.Core.NatMap qualified as NM
 import Control.OperationalTransformation.Server (Revision)
-import Data.List (find)
+import Data.List (sortOn)
 import Jira (IssueData (..), jiraUrl)
 import MD2Jira
 import OT qualified
@@ -17,6 +17,7 @@ md2jiraApp = defaultApp "md2jira" startMd2Jira
 -- | The internal viewing state for epics and stories, see 'updateItemState'
 data ItemState issue child = ItemState
     { itemID :: Natural
+    , position :: Pos
     , issue :: issue
     , title :: Text
     , isExpanded :: Bool
@@ -24,13 +25,16 @@ data ItemState issue child = ItemState
     }
 
 type EpicState = ItemState Epic StoryState
-type StoryState = ItemState Story ()
+type StoryState = ItemState Story TaskState
+type TaskState = ItemState Task ()
 
 data AppState = AppState
     { doc :: Text
     , rev :: Revision
-    , epics :: [(EpicState, [StoryState])]
     }
+
+newtype Pos = Pos Natural
+    deriving newtype (Eq, Ord, Num)
 
 findItem :: Text -> [ItemState a b] -> (Maybe (ItemState a b), [ItemState a b])
 findItem title = go []
@@ -40,48 +44,90 @@ findItem title = go []
         | item.title == title = (Just item, reverse acc <> rest)
         | otherwise = go (item : acc) rest
 
--- | Based on the current state and the md2jira parser output, this return updated ItemState for rendering purpose.
-updateItemState :: NM.NatMap EpicState -> [Epic] -> STM [(EpicState, [StoryState])]
-updateItemState nmEpic epics = goEpic [] epics =<< NM.elems nmEpic
+getChilds :: NM.NatMap (ItemState a b) -> STM [ItemState a b]
+getChilds nm = sortOn (.position) <$> NM.elems nm
+
+getTasks :: NM.NatMap EpicState -> STM [(EpicState, StoryState, TaskState)]
+getTasks nmEpic = reverse <$> (foldM goEpic [] =<< NM.elems nmEpic)
   where
-    goEpic :: [(EpicState, [StoryState])] -> [Epic] -> [EpicState] -> STM [(EpicState, [StoryState])]
-    goEpic acc [] leftOver = do
+    goEpic acc epic = foldM (goStory epic) acc =<< NM.elems epic.childs
+    goStory epic acc story = foldM (goTask epic story) acc =<< NM.elems story.childs
+    goTask epic story acc task = pure ((epic, story, task) : acc)
+
+getEpics :: NM.NatMap EpicState -> STM [Epic]
+getEpics nmEpic = reverse <$> (foldM goEpic [] =<< NM.elems nmEpic)
+  where
+    goEpic acc epic = do
+        stories <- reverse <$> (foldM goStory [] =<< NM.elems epic.childs)
+        pure (epic.issue{stories} : acc)
+    goStory acc story = do
+        tasks <- reverse <$> (foldM goTask [] =<< NM.elems story.childs)
+        pure (story.issue{tasks} : acc)
+    goTask acc task = pure (task.issue : acc)
+
+-- | Based on the current state and the md2jira parser output, this return updated ItemState for rendering purpose.
+updateItemState :: NM.NatMap EpicState -> [Epic] -> STM ()
+updateItemState nmEpic epics = goEpic 0 epics =<< NM.elems nmEpic
+  where
+    goEpic :: Pos -> [Epic] -> [EpicState] -> STM ()
+    goEpic _ [] leftOver = do
         -- Remove deleted story. NM ensure the id always increase
         traverse_ (\is -> NM.delete nmEpic is.itemID) leftOver
-        pure $ reverse acc
-    goEpic acc (epic : epics') items = do
+    goEpic position (epic : epics') items = do
         let (mItem, leftOver) = findItem epic.info.summary items
         epicState <- case mItem of
-            Nothing -> NM.addWithKey nmEpic (newEpic epic)
-            Just item -> pure $ item{issue = epic}
-        storiesState <- goStory epicState.childs [] epic.stories =<< NM.elems epicState.childs
-        goEpic ((epicState, storiesState) : acc) epics' leftOver
+            Nothing -> NM.addWithKey nmEpic (newEpic position epic)
+            Just item -> update nmEpic position epic item
+        goStory epicState.childs 0 epic.stories =<< NM.elems epicState.childs
+        goEpic (position + 1) epics' leftOver
 
-    goStory :: NM.NatMap StoryState -> [StoryState] -> [Story] -> [StoryState] -> STM [StoryState]
-    goStory nmStory acc [] leftOver = do
+    goStory :: NM.NatMap StoryState -> Pos -> [Story] -> [StoryState] -> STM ()
+    goStory nmStory _ [] leftOver = do
         traverse_ (\is -> NM.delete nmStory is.itemID) leftOver
-        pure $ reverse acc
-    goStory nmStory acc (story : stories) items = do
+    goStory nmStory position (story : stories) items = do
         let (mItem, leftOver) = findItem story.info.summary items
         storyState <- case mItem of
-            Nothing -> NM.addWithKey nmStory (newStory story)
-            Just item -> pure $ item{issue = story}
-        goStory nmStory (storyState : acc) stories leftOver
+            Nothing -> NM.addWithKey nmStory (newStory position story)
+            Just item -> update nmStory position story item
+        goTask storyState.childs 0 story.tasks =<< NM.elems storyState.childs
+        goStory nmStory (position + 1) stories leftOver
 
-    newEpic :: Epic -> Natural -> STM EpicState
-    newEpic epic = newItemState epic.info.summary epic
+    goTask :: NM.NatMap TaskState -> Pos -> [Task] -> [TaskState] -> STM ()
+    goTask nmTask _ [] leftOver = do
+        traverse_ (\is -> NM.delete nmTask is.itemID) leftOver
+    goTask nmTask position (task : tasks) items = do
+        let (mItem, leftOver) = findItem task.info.summary items
+        _ <- case mItem of
+            Nothing -> NM.addWithKey nmTask (newTask position task)
+            Just item -> update nmTask position task item
+        goTask nmTask (position + 1) tasks leftOver
 
-    newStory :: Story -> Natural -> STM StoryState
-    newStory story = newItemState story.info.summary story
+    update :: NM.NatMap (ItemState issue child) -> Pos -> issue -> ItemState issue child -> STM (ItemState issue child)
+    update nm position issue item = do
+        let newItem = item{position, issue}
+        NM.insert nm item.itemID newItem
+        pure newItem
 
-    newItemState :: Text -> issue -> Natural -> STM (ItemState issue child)
-    newItemState title issue itemID = ItemState itemID issue title True <$> NM.newNatMap
+    newEpic :: Pos -> Epic -> Natural -> STM EpicState
+    newEpic pos epic = newItemState pos epic.info.summary epic
+
+    newStory :: Pos -> Story -> Natural -> STM StoryState
+    newStory pos story = newItemState pos story.info.summary story
+
+    newTask :: Pos -> Task -> Natural -> STM TaskState
+    newTask pos task = newItemState pos task.info.summary task
+
+    newItemState :: Pos -> Text -> issue -> Natural -> STM (ItemState issue child)
+    newItemState pos title issue itemID = ItemState itemID pos issue title True <$> NM.newNatMap
 
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     (vData :: TVar (Either String AppState)) <- newTVarIO (Left "no data...")
     vCache <- newTVarIO mempty
     nmState <- atomically NM.newNatMap
+
+    -- Keep track of the Noter app to send update
+    vNoterCtx <- newTVarIO Nothing
 
     -- TODO: handle reload when setting changes...
     mSetting <- getJiraSetting ctx.shared
@@ -90,13 +136,23 @@ startMd2Jira ctx = do
         -- Create stable id for dom
         epicID_ itemID = wid_ ctx.wid ("e-" <> showT itemID)
         storyID_ parentID itemID = wid_ ctx.wid ("e-" <> showT parentID <> "-" <> showT itemID)
+        taskID_ (i1, i2) i3 = wid_ ctx.wid ("e-" <> showT i1 <> "-" <> showT i2 <> "-" <> showT i3)
 
         -- Render the expand button trigger
         expandButton :: ItemState a b -> [Pair] -> HtmlT STM ()
         expandButton itemState attrs =
-            let trig = withTrigger "click" ctx.wid "toggle-expand" attrs
+            let trig = withTrigger "click" ctx.wid "toggle" attrs
                 expandIcon = if itemState.isExpanded then "▼" else "▶"
              in trig i_ [class_ "cursor-pointer mr-1"] expandIcon
+
+        renderTaskStatus :: (Natural, Natural) -> Natural -> Bool -> TaskStatus -> HtmlT STM ()
+        renderTaskStatus (e, s) t reset status =
+            let trig = withTrigger "click" ctx.wid "toggle" ["epic" .= e, "story" .= s, "task" .= t, "reset" .= reset]
+                icon = case status of
+                    Done -> "[x]"
+                    InProgress -> "[.]"
+                    _ -> "[ ]"
+             in trig i_ [class_ "cursor-pointer mr-1"] icon
 
         -- Render JiraID link
         renderJira jiraID =
@@ -104,6 +160,14 @@ startMd2Jira ctx = do
                     Nothing -> id
                     Just setting -> (href_ (Jira.jiraUrl setting.client jiraID) :)
              in with a_ (addLink [class_ "float-right cursor-pointer"]) (toHtml $ into @Text jiraID)
+
+        -- Render task
+        renderTask :: (Natural, Natural) -> Bool -> TaskState -> HtmlT STM ()
+        renderTask parentID reset task = with div_ [taskID_ parentID task.itemID, class_ "mb-2 bg-slate-150"] do
+            h3_ do
+                renderTaskStatus parentID task.itemID reset task.issue.status
+                toHtml task.issue.info.summary
+                pre_ $ toHtml $ task.issue.info.description
 
         -- Render a story
         renderStory :: Natural -> StoryState -> HtmlT STM ()
@@ -115,10 +179,10 @@ startMd2Jira ctx = do
             when story.isExpanded do
                 with div_ [class_ "ml-4"] do
                     pre_ $ toHtml $ story.issue.info.description
-
+                    mapM_ (renderTask (parentID, story.itemID) True) =<< lift (getChilds story.childs)
         -- Render a epic
-        renderEpic :: (EpicState, [StoryState]) -> HtmlT STM ()
-        renderEpic (epic, stories) = with div_ [epicID_ epic.itemID, class_ "border-b-4 border-indigo-500 pb-2 mb-2"] do
+        renderEpic :: EpicState -> HtmlT STM ()
+        renderEpic epic = with div_ [epicID_ epic.itemID, class_ "border-b-4 border-indigo-500 pb-2 mb-2"] do
             forM_ epic.issue.mJira renderJira
 
             with h1_ [class_ "font-semibold"] do
@@ -127,28 +191,43 @@ startMd2Jira ctx = do
             when epic.isExpanded do
                 with div_ [class_ "ml-4"] do
                     pre_ $ toHtml $ epic.issue.info.description
-                    mapM_ (renderStory epic.itemID) stories
+                    mapM_ (renderStory epic.itemID) =<< lift (getChilds epic.childs)
+
+        section = with h1_ [class_ "font-bold bg-slate-300"]
+
+        renderTaskLists :: HtmlT STM ()
+        renderTaskLists = with div_ [wid_ ctx.wid "tasks"] do
+            tasks <- lift $ getTasks nmState
+            let queued = filter (\(_, _, t) -> t.issue.status == InProgress) tasks
+            unless (null queued) do
+                section "Queue"
+                forM_ queued \(epic, story, task) -> do
+                    forM_ story.issue.mJira renderJira
+                    renderTask (epic.itemID, story.itemID) False task
+
+            let completed = filter (\(_, _, t) -> t.issue.status == Done) tasks
+            unless (null completed) do
+                section "Completed"
+                forM_ completed \(_, story, task) -> do
+                    forM_ story.issue.mJira renderJira
+                    div_ do
+                        "- [x] "
+                        toHtml task.issue.info.summary
+                        pre_ $ toHtml $ task.issue.info.description
 
         -- Create the UI
         mountUI = do
             with div_ [wid_ ctx.wid "w", class_ "my-1 mx-2"] do
                 lift (readTVar vData) >>= \case
                     Left err -> div_ $ toHtml $ "Oops: " <> into @Text err
-                    Right state -> do
+                    Right{} -> do
                         case mSetting of
                             Just{} -> withTrigger_ "click" ctx.wid "sync" button_ [class_ ("float-right " <> btnBlueClass)] "PUSH"
                             Nothing -> with button_ [class_ "float-right", disabled_ "", alt_ "Missing jira settings"] "missing jira-url, check the setting app"
                         div_ do
-                            let section = with h1_ [class_ "font-bold bg-slate-300"]
-                            {-
-                            section "Queue"
-                            div_ "Task 1"
-                            div_ "Task 2"
-                            section "Completed"
-                            div_ "Task 3"
-                            -}
+                            renderTaskLists
                             section "BackLog"
-                            mapM_ renderEpic state.epics
+                            mapM_ renderEpic =<< lift (getChilds nmState)
 
         -- Toggle a story expand state
         toggleStory epicState storyState = do
@@ -160,26 +239,36 @@ startMd2Jira ctx = do
         -- Toggle an epic expand state
         toggleEpic epicState = do
             let newState = epicState{isExpanded = not epicState.isExpanded}
-            mStories <-
-                if epicState.isExpanded
-                    then -- To collapse an epic, we don't need the list of story
-                        pure $ Just []
-                    else -- To expand an epic, retrieve the list of story
+            atomically $ NM.insert nmState epicState.itemID newState
+            sendsHtml ctx.shared.clients $ renderEpic newState
 
-                        readTVarIO vData >>= \case
-                            Left{} -> pure Nothing
-                            Right state -> case find (\(es, _) -> es.itemID == epicState.itemID) state.epics of
-                                Nothing -> pure Nothing
-                                Just (_, stories) -> pure $ Just stories
-            case mStories of
-                Nothing -> logError "Couldn't find epic" ["id" .= epicState.itemID, "title" .= epicState.title]
-                Just stories -> do
-                    atomically $ NM.insert nmState epicState.itemID newState
-                    sendsHtml ctx.shared.clients $ renderEpic (newState, stories)
+        toggleTask epicState storyState taskState reset = withNoter \noterCtx -> withData \state -> do
+            let newStatus = case taskState.issue.status of
+                    Todo -> InProgress
+                    Done -> Todo
+                    InProgress -> case reset of
+                        Just True -> Todo
+                        _ -> Done
+                newTask = taskState.issue{MD2Jira.status = newStatus}
+                newState = taskState{issue = newTask}
+            atomically $ NM.insert storyState.childs taskState.itemID newState
+            -- update noter
+            updateNoter noterCtx state =<< atomically (getEpics nmState)
+            -- TODO: update Noter!
+            sendsHtml ctx.shared.clients do
+                renderTaskLists
+                renderTask (epicState.itemID, storyState.itemID) True newState
 
-    -- Keep track of the Noter app to send update
-    vNoterCtx <- newTVarIO Nothing
-    let updateNoter noterCtx state newEpics = do
+        withNoter cb =
+            readTVarIO vNoterCtx >>= \case
+                Nothing -> logError "No Noter Application for syncing..." []
+                Just noterCtx -> cb noterCtx
+        withData cb =
+            readTVarIO vData >>= \case
+                Left err -> logError "Can't sync error" ["err" .= err]
+                Right s -> cb s
+
+        updateNoter noterCtx state newEpics = do
             mvReply <- newEmptyTMVarIO
             let newDoc = printer newEpics
             let ops = OT.updateDoc state.doc newDoc
@@ -201,41 +290,41 @@ startMd2Jira ctx = do
                         writeTVar vData =<< case parse doc of
                             Left err -> pure (Left err)
                             Right epics' -> do
-                                epics <- updateItemState nmState epics'
-                                pure (Right (AppState{rev, doc, epics}))
+                                updateItemState nmState epics'
+                                pure (Right (AppState{rev, doc}))
                     -- update the UI
                     sendsHtml ctx.shared.clients mountUI
                 _ -> logError "Bad sync" ["action" .= es.name]
             AppTrigger ev -> case ev.trigger of
                 "sync" ->
                     -- Push the document to JIRA
-                    readTVarIO vNoterCtx >>= \case
-                        Nothing -> logError "No Noter Application for syncing..." []
-                        Just noterCtx ->
-                            readTVarIO vData >>= \case
-                                Left err -> logError "Can't sync error" ["err" .= err]
-                                Right state -> do
-                                    let epics = map (.issue) $ map fst state.epics
-                                    case mSetting of
-                                        Nothing -> pure ()
-                                        Just setting -> do
-                                            cache <- readTVarIO vCache
-                                            (newEpics, newCache, errors) <- liftIO do
-                                                eval setting.client setting.project epics cache
-                                            atomically $ writeTVar vCache newCache
-                                            unless (null errors) do
-                                                logError "md2jira eval errors!" ["errors" .= errors]
-                                            -- Generate and send text operation to noter
-                                            updateNoter noterCtx state newEpics
-                "toggle-expand" | Just epicID <- ev.body ^? key "epic" . _JSON -> do
+                    withNoter \noterCtx -> withData \state -> do
+                        case mSetting of
+                            Nothing -> pure ()
+                            Just setting -> do
+                                epics <- atomically $ getEpics nmState
+                                cache <- readTVarIO vCache
+                                (newEpics, newCache, errors) <- liftIO do
+                                    eval setting.client setting.project epics cache
+                                atomically $ writeTVar vCache newCache
+                                unless (null errors) do
+                                    logError "md2jira eval errors!" ["errors" .= errors]
+                                -- Generate and send text operation to noter
+                                updateNoter noterCtx state newEpics
+                "toggle" | Just epicID <- ev.body ^? key "epic" . _JSON -> do
                     -- Update the view
                     atomically (NM.lookup nmState epicID) >>= \case
                         Nothing -> logError "Unknown epic" ["ev" .= ev]
                         Just epicState -> case ev.body ^? key "story" . _JSON of
                             Just storyID ->
                                 atomically (NM.lookup epicState.childs storyID) >>= \case
+                                    Just storyState -> case ev.body ^? key "task" . _JSON of
+                                        Nothing -> toggleStory epicState storyState
+                                        Just taskID ->
+                                            atomically (NM.lookup storyState.childs taskID) >>= \case
+                                                Just taskState -> toggleTask epicState storyState taskState (ev.body ^? key "reset" . _JSON)
+                                                Nothing -> logError "Unknown task" ["ev" .= ev]
                                     Nothing -> logError "Unknown story" ["ev" .= ev]
-                                    Just storyState -> toggleStory epicState storyState
                             Nothing -> toggleEpic epicState
                 _ -> logError "Unknown ev" ["ev" .= ev]
             _ -> pure ()

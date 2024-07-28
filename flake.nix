@@ -1,20 +1,16 @@
 {
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
+    jira.url =
+      "github:ButlerOS/haskell-jira-client/a6f5a5cf23119a2023ff8adfa71d43216f881e62";
+    jira.flake = false;
     hspkgs.url =
       "github:podenv/hspkgs/7dca9f9db5941b1b47f92b66736ee073751d05c2";
     #  "path:///srv/github.com/podenv/hspkgs";
   };
-  outputs = { self, hspkgs }:
+  outputs = { self, jira, hspkgs }:
     let
       pkgs = hspkgs.pkgs;
-
-      jira-src = pkgs.fetchFromGitHub {
-        owner = "ButlerOS";
-        repo = "haskell-jira-client";
-        rev = "d772b15525d3c4cd0f08a84d2bb10b028aff7858";
-        sha256 = "sha256-NQqDNcCiUib+YhjK6sodDErmUOHHs4jzV6Qq5ENpFGQ=";
-      };
 
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
@@ -25,8 +21,8 @@
           rev = "4196b6be0d469bc8b7252dbf58c6e15b8146aa43";
           sha256 = "sha256-OnOfzsAZvp26nah+KkhbBUAz6BwQaOuM1dc+f6/65ak=";
         }) { };
-        jira-client = hpPrev.callCabal2nix "jira-client" jira-src { };
-        md2jira = hpPrev.callCabal2nix "jira-client" "${jira-src}/md2jira" { };
+        jira-client = hpPrev.callCabal2nix "jira-client" jira { };
+        md2jira = hpPrev.callCabal2nix "jira-client" "${jira}/md2jira" { };
         posix-pty = let
           src = pkgs.fetchFromGitHub {
             owner = "TristanCacqueray";

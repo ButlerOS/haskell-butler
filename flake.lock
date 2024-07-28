@@ -19,6 +19,23 @@
         "type": "github"
       }
     },
+    "jira": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1722218709,
+        "narHash": "sha256-9KNn/Rvq468OHKKaVdhWZJ6pzaQi4zcXgCix5PlU9Nw=",
+        "owner": "ButlerOS",
+        "repo": "haskell-jira-client",
+        "rev": "a6f5a5cf23119a2023ff8adfa71d43216f881e62",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ButlerOS",
+        "repo": "haskell-jira-client",
+        "rev": "a6f5a5cf23119a2023ff8adfa71d43216f881e62",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1721952842,
@@ -37,7 +54,8 @@
     },
     "root": {
       "inputs": {
-        "hspkgs": "hspkgs"
+        "hspkgs": "hspkgs",
+        "jira": "jira"
       }
     }
   },
