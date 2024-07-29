@@ -303,9 +303,12 @@ startMd2Jira ctx = do
                             Nothing -> pure ()
                             Just setting -> do
                                 epics <- atomically $ getEpics nmState
+                                logInfo "Syncing epics" ["epics" .= show epics]
                                 cache <- readTVarIO vCache
-                                (newEpics, newCache, errors) <- liftIO do
-                                    eval setting.client setting.project epics cache
+
+                                (newEpics, newCache, errors) <- withRunInIO \run -> do
+                                    let logger msg = run $ logInfo msg []
+                                    eval logger setting.client setting.project epics cache
                                 atomically $ writeTVar vCache newCache
                                 unless (null errors) do
                                     logError "md2jira eval errors!" ["errors" .= errors]
