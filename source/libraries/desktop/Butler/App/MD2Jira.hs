@@ -158,7 +158,7 @@ startMd2Jira ctx = do
         renderJira jiraID =
             let addLink = case mSetting of
                     Nothing -> id
-                    Just setting -> (href_ (Jira.jiraUrl setting.client jiraID) :)
+                    Just setting -> mappend [href_ (Jira.jiraUrl setting.client jiraID), target_ "blank"]
              in with a_ (addLink [class_ "float-right cursor-pointer"]) (toHtml $ into @Text jiraID)
 
         -- Render task
@@ -269,11 +269,12 @@ startMd2Jira ctx = do
                 Right s -> cb s
 
         updateNoter noterCtx state newEpics = do
-            mvReply <- newEmptyTMVarIO
-            let newDoc = printer newEpics
-            let ops = OT.updateDoc state.doc newDoc
-            let msg = toDyn (state.rev, ops)
-            writePipe noterCtx.pipe (AppSync (SyncEvent "update-doc" msg mvReply))
+            case OT.updateDoc state.doc (printer newEpics) of
+                Nothing -> pure ()
+                Just ops -> do
+                    mvReply <- newEmptyTMVarIO
+                    let msg = toDyn (state.rev, ops)
+                    writePipe noterCtx.pipe (AppSync (SyncEvent "update-doc" msg mvReply))
 
     forever do
         atomically (readPipe ctx.pipe) >>= \case

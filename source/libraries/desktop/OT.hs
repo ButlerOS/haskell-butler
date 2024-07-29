@@ -11,8 +11,10 @@ Use this after re-rendering the document to update the clients.
 >>> updateDoc "# epic\n..." "# JID epic"
 TextOperation [Retain 1,Insert " JID",Retain 5,Delete 4]
 -}
-updateDoc :: T.Text -> T.Text -> OT.TextOperation
-updateDoc source dest = OT.TextOperation ops
+updateDoc :: T.Text -> T.Text -> Maybe OT.TextOperation
+updateDoc source dest = case ops of
+  [OT.Retain{}] -> Nothing
+  _ -> Just (OT.TextOperation ops)
   where
     ops = mkOp [] $ D.getStringDiff (T.unpack source) (T.unpack dest)
     mkOp acc [] = reverse acc
