@@ -74,7 +74,7 @@ startMd2Jira ctx = do
         renderTaskStatus status = with i_ [class_ "mr-1"] $
             case status of
                 Done -> "[x]"
-                InProgress -> "[.]"
+                InProgress{assigned} -> "[" <> toHtml assigned <> "]"
                 Todo -> "[ ]"
 
         -- Render JiraID link
@@ -128,7 +128,10 @@ startMd2Jira ctx = do
         renderTaskLists :: [Epic] -> HtmlT STM ()
         renderTaskLists epics = with div_ [wid_ ctx.wid "tasks"] do
             let tasks = getTasks epics
-            let queued = filter (\(_, t) -> t.status == InProgress) tasks
+            let isInprogress = \case
+                    InProgress{} -> True
+                    _ -> False
+            let queued = filter (\(_, t) -> isInprogress t.status) tasks
             unless (null queued) do
                 section "Queue"
                 forM_ queued \(story, task) -> do
