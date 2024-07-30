@@ -1,4 +1,4 @@
-module Butler.App.JiraClient (jiraClientApp, JiraSetting (..), getJiraSetting) where
+module Butler.App.JiraClient (jiraClientApp, JiraSetting (..), getJiraSetting, setScore) where
 
 import Butler
 
@@ -55,6 +55,15 @@ getJiraSetting shared = do
             | url /= mempty && token /= mempty && project /= mempty ->
                 Just . JiraSetting project . Jira.newJiraClient url Nothing token <$> newTlsManager
         _ -> pure Nothing
+
+setScore :: JiraSetting -> Jira.JiraID -> Float -> ProcessIO Bool
+setScore setting jid score = do
+    logInfo "Setting score" ["story" .= jid, "score" .= score]
+    httpRetry 5 (liftIO (Jira.setIssueScore setting.client jid score)) >>= \case
+        Just err -> do
+            logError "Setting score failed" ["err" .= err, "story" .= jid]
+            pure False
+        Nothing -> pure True
 
 startJiraClient :: AppContext -> ProcessIO ()
 startJiraClient ctx = do
@@ -162,16 +171,6 @@ startJiraClient ctx = do
                 void $ tryTakeMVar baton
             Nothing -> pure ()
 
-    let setScore :: Jira.JiraID -> Float -> ProcessIO ()
-        setScore jid score = do
-            atomically ((.setting) <$> readTVar tState) >>= \case
-                Just setting -> do
-                    logInfo "Setting score" ["story" .= jid, "score" .= score]
-                    httpRetry 5 (liftIO (Jira.setIssueScore setting.client jid score)) >>= \case
-                        Just err -> logError "Setting score failed" ["err" .= err, "story" .= jid]
-                        Nothing -> pure ()
-                Nothing -> logError "client is not configured" []
-
     mClient <- atomically ((.setting) <$> readTVar tState)
     forM_ mClient (const loadStories)
 
@@ -192,9 +191,11 @@ startJiraClient ctx = do
                     "refresh" -> void $ tryPutMVar baton ()
                     "poker-result" ->
                         case (ev.body ^? key "value" . _JSON, ev.body ^? key "story" . _JSON, ev.body ^? key "wid" . _JSON) of
-                            (Just v, Just story, Just wid) -> do
+                            (Just score, Just jid, Just wid) -> do
                                 closeApp ctx.shared ev.client wid
-                                setScore story v
+                                atomically ((.setting) <$> readTVar tState) >>= \case
+                                    Just setting -> void $ setScore setting jid score
+                                    Nothing -> logError "client is not configured" []
                             res -> logError "Unknown result" ["ev" .= ev, "res" .= res]
                     "no-points" -> do
                         atomically $ modifyTVar' tState (#controls . #noPoints %~ not)
