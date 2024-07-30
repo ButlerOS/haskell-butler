@@ -1,3 +1,6 @@
+-- no-orphans for md2jira serialise instances
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Butler.App.MD2Jira (md2jiraApp) where
 
 import Butler
@@ -57,7 +60,8 @@ findIssue epics jid = goEpics epics
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     vState <- newTVarIO initialState
-    vCache <- newTVarIO mempty
+
+    vCache <- snd <$> newProcessMemory "cache" (pure mempty)
     vExpandedState <- newTVarIO mempty
 
     -- Keep track of the Noter app to send update
@@ -109,7 +113,7 @@ startMd2Jira ctx = do
                 renderTaskStatus task.status
             div_ do
                 toHtml $ T.strip task.info.summary
-                pre_ $ toHtml $ T.strip $ task.info.description
+                pre_ $ toHtml $ T.strip task.info.description
 
         -- Render a story
         renderStory :: Map JiraID Bool -> Story -> HtmlT STM ()
@@ -143,7 +147,7 @@ startMd2Jira ctx = do
                 toHtml $ T.strip epic.info.summary
             when (isExpanded expandedState epic.mJira) do
                 with div_ [class_ "ml-4"] do
-                    pre_ $ toHtml $ T.strip $ epic.info.description
+                    pre_ $ toHtml $ T.strip epic.info.description
                     mapM_ (renderStory expandedState) epic.stories
 
         section = with h1_ [class_ "font-bold bg-slate-300"]
@@ -254,7 +258,7 @@ startMd2Jira ctx = do
                                 logInfo "Syncing epics" ["epics" .= show state.epics]
                                 sendsHtml ctx.shared.clients $ with div_ [wid_ ctx.wid "s"] do
                                     "Start syncing..."
-                                cache <- readTVarIO vCache
+                                cache <- atomically $ readMemoryVar vCache
 
                                 (newEpics, newCache, errors) <- withRunInIO \run -> do
                                     let logger msg = run do
@@ -264,7 +268,8 @@ startMd2Jira ctx = do
                                                     pre_ do toHtml msg
 
                                     eval logger setting.client setting.project state.epics cache
-                                atomically $ writeTVar vCache newCache
+                                when (newCache /= cache) do
+                                    atomically $ modifyMemoryVar vCache (const newCache)
                                 unless (null errors) do
                                     -- TODO: send the errors to the client
                                     logError "md2jira eval errors!" ["errors" .= errors]
@@ -286,3 +291,8 @@ startMd2Jira ctx = do
                         res -> logError "Unknown result" ["ev" .= ev, "res" .= res]
                 _ -> logError "Unknown ev" ["ev" .= ev]
             _ -> pure ()
+
+instance Serialise Task
+instance Serialise TaskStatus
+instance Serialise IssueData
+instance Serialise JiraID
