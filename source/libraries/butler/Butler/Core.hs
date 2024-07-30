@@ -140,6 +140,7 @@ logError = processLog getLocName EventError
 logDebug :: HasCallStack => Text -> [Pair] -> ProcessIO ()
 logDebug = processLog getLocName EventDebug
 
+-- TODO: handle lock to enable multiple process to use the same var
 newProcessMemory :: Serialise a => StorageAddress -> ProcessIO a -> ProcessIO (a, MemoryVar a)
 newProcessMemory addr initialize = do
     os <- asks os
