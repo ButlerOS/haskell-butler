@@ -150,24 +150,28 @@ startMd2Jira ctx = do
                     pre_ $ toHtml $ T.strip epic.info.description
                     mapM_ (renderStory expandedState) epic.stories
 
-        section = with h1_ [class_ "font-bold bg-slate-300"]
+        section (name :: HtmlT STM ()) xs =
+            with h1_ [class_ "font-bold bg-slate-300 flex"] do
+                with span_ [class_ "w-6 mr-2 block text-right"] $ toHtml (showT $ length xs)
+                name
 
-        renderTaskLists :: [Epic] -> HtmlT STM ()
-        renderTaskLists epics = with div_ [wid_ ctx.wid "tasks"] do
-            let tasks = getTasks epics
+        renderTaskLists :: [(Story, Task)] -> HtmlT STM ()
+        renderTaskLists tasks = with div_ [wid_ ctx.wid "tasks"] do
             let isInprogress = \case
                     InProgress{} -> True
                     _ -> False
             let queued = filter (\(_, t) -> isInprogress t.status) tasks
             unless (null queued) do
-                section "Queue"
+                section "Queue" queued
                 forM_ queued \(story, task) -> do
                     forM_ story.mJira renderJira
+                    when (isNothing story.mScore) do
+                        with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
                     renderTask task
 
             let completed = filter (\(_, t) -> t.status == Done) tasks
             unless (null completed) do
-                section "Completed"
+                section "Completed" completed
                 forM_ completed \(story, task) -> do
                     forM_ story.mJira renderJira
                     div_ do
@@ -193,8 +197,9 @@ startMd2Jira ctx = do
                 state <- lift (readTVar vState)
                 renderStatus state.rev state.status
                 div_ do
-                    renderTaskLists state.epics
-                    section "BackLog"
+                    let tasks = getTasks state.epics
+                    renderTaskLists tasks
+                    section "BackLog" $ filter (\(_, t) -> t.status == Todo) tasks
                     expandedState <- lift (readTVar vExpandedState)
                     mapM_ (renderEpic expandedState) state.epics
 
