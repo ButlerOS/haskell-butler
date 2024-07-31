@@ -239,9 +239,9 @@ renderTable wid kind = do
         with div_ [class_ "m-6"] do
             case kind of
                 Baduk (unsafeFrom -> size) -> void do
-                    replicateM size do
+                    replicateM (size - 1) do
                         with div_ [class_ "flex flex-row"] do
-                            replicateM size do
+                            replicateM (size - 1) do
                                 with div_ [class_ "w-8 h-8 border"] mempty
                 _ -> board
     script_ (tabletopClient wid kind)
