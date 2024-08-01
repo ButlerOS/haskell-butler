@@ -171,6 +171,12 @@ startNoterApp ctx = do
     let mountUI = do
             state <- lift (readTVar tState)
             let extension = editingExt state
+            renderTaskBar ctx.wid mempty $
+                let title = case state.status of
+                        NewFile -> showT ctx.wid
+                        EditingFile _ file -> decodeUtf8 $ BS.take 24 file.name
+                 in toHtml $ "N<" <> title <> ">"
+
             with div_ [wid_ ctx.wid "w", class_ "w-full h-full flex flex-col"] do
                 with div_ [class_ "flex flex-row border-b border-indigo-500"] do
                     withTrigger_ "click" ctx.wid "refresh" i_ [class_ "ri-refresh-line cursor-pointer mx-1"] mempty

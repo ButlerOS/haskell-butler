@@ -326,6 +326,15 @@ butlerCheckbox wid name attrs value mConfirm
         Nothing -> baseAction
     attributes = [type_ "checkbox", onclick_ (action <> "; return false")]
 
+renderTaskBar :: AppID -> HtmlT STM () -> HtmlT STM () -> HtmlT STM ()
+renderTaskBar wid extra title = do
+    with span_ [wid_ wid "bar", class_ "inline-block bg-stone-600 mx-1 px-1"] do
+        with span_ [onclick_ focusScript, class_ "cursor-pointer"] do
+            title
+        extra
+  where
+    focusScript = "focusWindow(" <> showT wid <> ")"
+
 sendTriggerScriptConfirm :: AppID -> Text -> [Pair] -> Maybe Text -> Text
 sendTriggerScriptConfirm wid name attrs mConfirm = case mConfirm of
     Nothing -> script

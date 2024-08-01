@@ -134,7 +134,7 @@ startDesktopApp services ctx = do
                     with div_ [wid_ wid "w"] mempty
                     with (script_ $ renderWindow (wid, win)) [type_ "module"]
                 with div_ [id_ "display-bar", hxSwapOob_ "afterbegin"] do
-                    with span_ [wid_ wid "bar"] mempty
+                    renderBar wid
                 with div_ [id_ "display-tray", hxSwapOob_ "afterbegin"] do
                     with span_ [wid_ wid "tray"] mempty
 
@@ -283,7 +283,7 @@ desktopHtml vBgColor apps dir windows = do
             with' div_ "grow" do
                 with span_ [class_ "font-semibold mr-5 cursor-pointer", hxTrigger_ "click", wid_ shellAppID "wm-start", wsSend] ">>= start"
                 with span_ [id_ "display-bar"] do
-                    forM_ wids \wid -> with span_ [wid_ wid "bar"] mempty
+                    forM_ wids renderBar
             with' div_ "display-bar-right" do
                 with span_ [id_ "display-tray", class_ "flex h-full w-full align-center justify-center"] do
                     appIDs <- Map.keys <$> lift (getApps apps)
@@ -339,3 +339,8 @@ handleWinSwap wm ctx wid appName argv mEvent = do
     broadcastSize :: (Int, Int) -> ProcessIO ()
     broadcastSize (x, y) =
         broadcastWinMessage ["w" .= wid, "ev" .= ("resize" :: Text), "x" .= x, "y" .= y]
+
+renderBar :: AppID -> HtmlT STM ()
+renderBar wid = renderTaskBar wid mempty title
+  where
+    title = toHtml (show wid)

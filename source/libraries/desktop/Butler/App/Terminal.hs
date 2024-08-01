@@ -35,21 +35,21 @@ renderApp wid server =
         script_ (termClient wid mDim)
 
 renderTray :: AppID -> XtermServer -> HtmlT STM ()
-renderTray wid server = do
-    with span_ [wid_ wid "bar", class_ "inline-block bg-stone-600 mx-1 px-1"] do
-        span_ do
-            "XTerm ("
-            (col, row) <- fromMaybe (0, 0) <$> lift (readTVar server.dimension)
-            toHtml (show col)
-            "x"
-            toHtml (show row)
-            ")"
+renderTray wid server = renderTaskBar wid extra title
+  where
+    title = do
+        "T<"
+        (col, row) <- fromMaybe (0, 0) <$> lift (readTVar server.dimension)
+        toHtml (show col)
+        "x"
+        toHtml (show row)
+        ">"
+    extra =
         with span_ [class_ "border border-gray-500 ml-2 inline-flex rounded-md"] do
             with i_ [class_ "mx-1 cursor-pointer ri-fullscreen-line", onclick_ ("onWindowResize[" <> showT wid <> "]()")] mempty
             -- https://www.physics.udel.edu/~watson/scen103/ascii.html
             with pre_ [class_ "mx-1 cursor-pointer", onclick_ (termCmd "butlerForward('\\x0e')")] "C-n"
             with (script_ mempty) [wid_ wid "script"]
-  where
     termCmd cmd = "butlerTerminals[" <> showT wid <> "]." <> cmd
 
 termApp :: Isolation -> App

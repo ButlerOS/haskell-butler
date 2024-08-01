@@ -142,6 +142,10 @@ function setupWindowManager(chan) {
     windows[wid]["onfocus"] = onWinEvent("focus", wid);
   }
 
+  globalThis.focusWindow = (wid) => {
+    windows[wid].focus(true)
+  }
+
   // Servent event handler.
   butlerDataHandlers[chan] = buf => {
     let body = decodeJSON(buf)
