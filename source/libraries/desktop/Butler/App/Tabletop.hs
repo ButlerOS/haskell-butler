@@ -560,25 +560,19 @@ function startTabletop(wid, initialObjects) {
       sendJSONMessage(wid, moveEv)
     }
   })
-  winElt.onmouseup = event => {
-    if (glTT.current === null) {
-      return null
-    }
-    if (glTT.trashed) {
-      const delEv = {del: glTT.current.id}
-      console.log(delEv)
-      sendJSONMessage(wid, delEv)
-    }
-    updateTrash(0, 0)
-    glTT.current = null
-  }
 
   // setupObject enables moving an element
   const setupObject = (elt) => {
-    elt.onmousedown = (event) => {
-      // Ignore non-left click event
-      if (event.buttons != 1) {
-        return false;
+    elt.onclick = () => {
+      if (glTT.current != null) {
+        // Drop the item
+        if (glTT.trashed) {
+          // the item is on the trash, tell the server
+          sendJSONMessage(wid, {del: glTT.current.id})
+        }
+        updateTrash(0, 0)
+        glTT.current = null
+        return;
       }
       // Record object information for mousemouve handler
       glTT.boundingRect = elt.getBoundingClientRect()
@@ -588,9 +582,6 @@ function startTabletop(wid, initialObjects) {
       const clickEv = {click: glTT.current.id}
       // Tell the server
       sendJSONMessage(wid, clickEv)
-    };
-    elt.ondragstart = function() {
-      return false;
     };
   };
 
