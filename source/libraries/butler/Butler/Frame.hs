@@ -139,7 +139,7 @@ globalThis.sendTrigger = (wid, name, obj) => {
 }
 
 globalThis.withWID = (wid, name) => (name + "-" + wid);
-
+globalThis.withoutWID = (name) => name.split("-").slice(0, -1).join("-")
 globalThis.windows = {}
 globalThis.onWindowResize = {}
 

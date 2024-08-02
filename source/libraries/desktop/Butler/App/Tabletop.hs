@@ -1,7 +1,6 @@
 module Butler.App.Tabletop (tabletopApp) where
 
 import Data.IntSet qualified as IS
-import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Lucid.Svg (circle_, cx_, cy_, d_, defs_, fill_, offset_, path_, r_, radialGradient_, stop_, stop_color_, svg11_, transform_, version_)
 
@@ -20,13 +19,27 @@ tabletopApp =
         , size = Just (1021, 656)
         }
 
--- The data model
+{- | The name of an object.
+The initial object don't have a suffix id, e.g. "white-stone".
+Clicking on an initial object create a copy with an object id suffix, e.g. "white-stone-1".
+-}
 newtype OName = OName Text
-    deriving newtype (IsString, Eq, ToJSON, FromField, ToField)
+    deriving newtype (IsString, Eq, FromJSON, ToJSON, FromField, ToField)
 
-instance From OName Text where
-    from (OName n) = n
+{- | Get an object id
+>>> (OName "test-1").oid
+Just 1
+>>> (OName "white-sone").oid
+Nothing
+-}
+instance HasField "oid" OName (Maybe Natural) where
+    getField (OName name) = case decodeNaturalSuffix name of
+        Just (n, _) -> Just n
+        Nothing -> Nothing
 
+instance From OName Text where from (OName n) = n
+
+-- | An object on the table
 data TableObject = TableObject
     { elt :: OName
     , coord :: TVar (Word, Word)
@@ -35,14 +48,13 @@ data TableObject = TableObject
 -- | The 'TableState' is the current game on display.
 data TableState = TableState
     { current :: Game
-    , players :: TVar (Map Endpoint (Either OName (Natural, TableObject)))
     , objects :: NM.NatMap TableObject
     , dirties :: TVar IntSet
     }
     deriving (Generic)
 
 newTableState :: Game -> STM TableState
-newTableState game = TableState game <$> newTVar mempty <*> NM.newNatMap <*> newTVar mempty
+newTableState game = TableState game <$> NM.newNatMap <*> newTVar mempty
 
 data GameStatus = Selecting | Playing TableState
 
@@ -51,11 +63,13 @@ data GameKind
     | Chess
     | Checker
 
+-- | Inital game object drawing definition
 data GameObject = GameObject
     { name :: Text
     , draw :: HtmlT STM ()
     }
 
+-- | The initial game object
 gameObjects :: GameKind -> [[GameObject]]
 gameObjects = \case
     Baduk{} ->
@@ -80,7 +94,9 @@ gameObjects = \case
             , GameObject "white-pawn" whitePawn
             ]
         ]
-    _ -> []
+    Checker ->
+        -- TODO: add checker pieces
+        []
 
 gameObjectsNames :: GameKind -> [Text]
 gameObjectsNames kind = do
@@ -117,12 +133,14 @@ gameMatch gameID game = case game.name of
 newtype GameID = GameID Int64
     deriving newtype (Eq, ToJSON, FromJSON, ToField, FromField)
 
-data GameState = GameState
+-- | The main application state
+data AppState = AppState
     { status :: GameStatus
     , games :: [Game]
     }
     deriving (Generic)
 
+-- | The database stores the saved game and the object positions
 tabletopDatabase :: DatabaseMigration
 tabletopDatabase = DatabaseMigration ["games-create", "objects-create"] doUp doDown
   where
@@ -132,6 +150,7 @@ tabletopDatabase = DatabaseMigration ["games-create", "objects-create"] doUp doD
         _ -> pure ()
     doDown _ _ = pure ()
 
+-- | Load the saved game from the database
 gamesFromDB :: Database -> ProcessIO [Either Text Game]
 gamesFromDB db = fmap mkGame <$> dbQuery db "select * from games" []
   where
@@ -140,6 +159,7 @@ gamesFromDB db = fmap mkGame <$> dbQuery db "select * from games" []
             Right kind -> Right $ Game kind (Just (gameID, name))
             Left (TryFromException e _) -> Left e
 
+-- | Load a game from the database
 tableStateFromDB :: Database -> Game -> ProcessIO TableState
 tableStateFromDB db game = do
     ts <- atomically (newTableState game)
@@ -148,12 +168,13 @@ tableStateFromDB db game = do
   where
     loadObjects ts gameID = do
         objs <- traverse toObject =<< dbQuery db "SELECT name,x,y FROM objects WHERE gameid = :id" [":id" := gameID]
-        forM_ objs \obj -> case isObject obj.elt of
+        forM_ objs \obj -> case obj.elt.oid of
             Nothing -> logError "Invalid obj from db" ["name" .= obj.elt]
             Just k -> atomically (NM.insert ts.objects k obj)
 
     toObject (name, x, y) = TableObject (OName name) <$> newTVarIO (x, y)
 
+-- | Update an object position
 replaceObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
 replaceObjectDB db gameID (name, x, y) = do
     updateCount <-
@@ -164,6 +185,7 @@ replaceObjectDB db gameID (name, x, y) = do
     when (updateCount == 0) do
         insertObjectDB db gameID (name, x, y)
 
+-- | Add an object
 insertObjectDB :: Database -> GameID -> (OName, Word, Word) -> ProcessIO ()
 insertObjectDB db gameID (name, x, y) = do
     dbExecute
@@ -171,27 +193,25 @@ insertObjectDB db gameID (name, x, y) = do
         "INSERT INTO objects (gameid, name, x, y) VALUES (:gameid, :name, :x, :y)"
         [":gameid" := gameID, ":name" := name, ":x" := x, ":y" := y]
 
+-- | Delete an object
 deleteObjectDB :: Database -> GameID -> OName -> ProcessIO ()
 deleteObjectDB db gameID name = do
     dbExecute db "DELETE FROM objects where gameid = :gameid AND name = :name" [":gameid" := gameID, ":name" := name]
 
-newGameState :: Database -> ProcessIO GameState
-newGameState db = do
+-- | Initial the main app state
+newAppState :: Database -> ProcessIO AppState
+newAppState db = do
     (errors, games) <- partitionEithers <$> gamesFromDB db
     when (errors /= []) do
         logError "Tabletop save loading error" ["errors" .= errors]
-    pure $ GameState Selecting games
+    pure $ AppState Selecting games
 
-isObject :: OName -> Maybe Natural
-isObject (OName name) = case decodeNaturalSuffix name of
-    Just (n, _) -> Just n
-    Nothing -> Nothing
-
-newTableObject :: TableState -> OName -> STM (Natural, TableObject)
+-- | Create a new object
+newTableObject :: TableState -> OName -> STM TableObject
 newTableObject ts (OName name) = do
     let mkObj :: Natural -> STM TableObject
         mkObj n = TableObject (OName $ name <> "-" <> showT n) <$> newTVar (42, 42)
-    NM.addWithKeyValue ts.objects mkObj
+    NM.addWithKey ts.objects mkObj
 
 -- Html rendering
 svg :: SVG -> SVG
@@ -255,17 +275,17 @@ renderCurrentGame wid mTableState name = with div_ [wid_ wid "current-game"] do
     unless isClean do
         " *"
 
-renderLoader :: GameState -> AppID -> HtmlT STM ()
-renderLoader gameState wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
+renderLoader :: AppState -> AppID -> HtmlT STM ()
+renderLoader appState wid = with div_ [wid_ wid "tabletop-game-list", class_ "flex flex-col gap-4"] do
     "Game List"
-    mTS <- case gameState.status of
+    mTS <- case appState.status of
         Playing ts -> do
             withTrigger_ "" wid "save-game" (input_ []) [type_ "text", name_ "name", placeholder_ "New Save game"]
             pure (Just ts)
         _ -> pure Nothing
     let mGameID = (\ts -> fst <$> ts.current.name) =<< mTS
     with div_ [class_ "flex-grow"] do
-        forM_ gameState.games \game -> case game.name of
+        forM_ appState.games \game -> case game.name of
             Just (gameID, name) ->
                 div_ [class_ "flex border"] do
                     if Just gameID == mGameID
@@ -289,35 +309,38 @@ renderSelector wid = with div_ [class_ "flex-grow"] do
         gameButton "Chess" Chess
         gameButton "Checker" Checker
 
-mountUI :: GameState -> AppID -> HtmlT STM ()
-mountUI gameState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] do
-    case gameState.status of
+mountUI :: AppState -> AppID -> HtmlT STM ()
+mountUI appState wid = with div_ [wid_ wid "w", class_ "flex flex-row gap-2"] do
+    case appState.status of
         Selecting{} -> renderSelector wid
         Playing game -> renderTable wid game.current.kind
-    renderLoader gameState wid
+    renderLoader appState wid
 
--- Client events
+-- | Client events
 data TableEvent
-    = TableEventClick Text
-    | TableEventMove Word Word
-    | TableEventDelete Text
+    = -- | The client clicked an object
+      TableEventClick OName
+    | -- | The client moved an object
+      TableEventMove OName Word Word
+    | -- | The client dropped an object on the trash
+      TableEventDelete OName
     deriving (Generic, ToJSON)
 
 instance FromJSON TableEvent where
     parseJSON = withObject "TableEvent" $ \obj -> do
-        let clickParser = TableEventClick . dropWID <$> obj .: "click"
-            deleteParser = TableEventDelete . dropWID <$> obj .: "del"
-            moveParser = TableEventMove <$> obj .: "x" <*> obj .: "y"
+        let clickParser = TableEventClick <$> obj .: "click"
+            deleteParser = TableEventDelete <$> obj .: "del"
+            moveParser = TableEventMove <$> obj .: "n" <*> obj .: "x" <*> obj .: "y"
         clickParser <|> deleteParser <|> moveParser
 
 startTabletopApp :: AppContext -> ProcessIO ()
 startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
-    tGameState <- newTVarIO =<< newGameState db
+    tAppState <- newTVarIO =<< newAppState db
 
     -- Server event encoding helper
-    let newObject :: OName -> OName -> LByteString
-        newObject src elt =
-            let msg = object ["new" .= elt, "src" .= src]
+    let newObject :: OName -> OName -> Bool -> LByteString
+        newObject src elt grab =
+            let msg = object ["new" .= elt, "src" .= src, "grab" .= grab]
              in encodeMessage (from ctx.wid) (encodeJSON msg)
 
         moveObject :: OName -> (Word, Word) -> LByteString
@@ -330,86 +353,78 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
             let msg = object ["del" .= elt]
              in encodeMessage (from ctx.wid) (encodeJSON msg)
 
+    let updateDirty tableState =
+            case tableState.current.name of
+                Just (_, name') ->
+                    -- Update the current game UI to indicate it is dirty.
+                    sendsHtml ctx.shared.clients $ renderCurrentGame ctx.wid (Just tableState) name'
+                _ -> pure ()
+
     let clientHandler :: TableState -> DisplayClient -> TableEvent -> ProcessIO ()
         clientHandler tableState client = \case
-            TableEventClick (OName -> name) -> do
-                mValue <- case isObject name of
-                    Just k -> fmap (Right . (k,)) <$> atomically (NM.lookup tableState.objects k)
-                    Nothing -> pure $ Just $ Left name
-                case mValue of
-                    Nothing -> logError "Unknown name" ["name" .= name]
-                    Just value -> atomically do
-                        modifyTVar' tableState.players $ Map.insert client.endpoint value
-            TableEventMove x y ->
-                atomically (Map.lookup client.endpoint <$> readTVar tableState.players) >>= \case
-                    Just eObj -> do
-                        mTableObject <- case eObj of
-                            -- The client hold an existing object.
-                            Right (eKey, obj) -> pure $ Just (eKey, obj)
-                            -- The client hold a new object.
-                            Left name
-                                | coerce name `elem` (gameObjectsNames tableState.current.kind) -> do
-                                    -- Add the object to the tableState.
-                                    (eKey, obj) <- atomically $ newTableObject tableState name
-                                    -- Add the object to the client hand.
-                                    atomically $ modifyTVar' tableState.players $ Map.insert client.endpoint (Right (eKey, obj))
-                                    -- Tell the clients a new object has been created.
-                                    sendsBinary ctx.shared.clients $ newObject name obj.elt
-                                    pure $ Just (eKey, obj)
-                                | otherwise -> pure Nothing
-                        case mTableObject of
-                            Just (eKey, obj) -> do
-                                prevDirties <- atomically do
-                                    -- update the object coordinate.
-                                    writeTVar obj.coord (x, y)
-                                    -- add to the list of dirty object.
-                                    stateTVar tableState.dirties \dirties ->
-                                        (dirties, IS.insert (unsafeFrom @Natural @Int eKey) dirties)
-                                case tableState.current.name of
-                                    Just (_, name) | IS.null prevDirties -> do
-                                        -- Update the current game UI to indicate it is dirty.
-                                        sendsHtml ctx.shared.clients $ renderCurrentGame ctx.wid (Just tableState) name
-                                    _ -> pure ()
-                                -- Tell the clients an object moved.
-                                sendsBinary ctx.shared.clients $ moveObject obj.elt (x, y)
-                            Nothing -> logError "Unknown object" []
-                    Nothing -> logError "Player doesn't own an object" []
-            TableEventDelete (OName -> name) -> case isObject name of
+            TableEventClick name
+                | coerce name `elem` gameObjectsNames tableState.current.kind -> do
+                    -- Add the object to the tableState.
+                    obj <- atomically $ newTableObject tableState name
+
+                    -- Add the object to the client hand.
+                    atomically $ sendBinary client $ newObject name obj.elt True
+                    -- Tell the others a new object has been created.
+                    sendsBinaryButSelf client ctx.shared.clients $ newObject name obj.elt False
+                | otherwise -> logError "Unknown object" ["name" .= name]
+            TableEventMove name x y -> case name.oid of
+                Just k ->
+                    atomically (NM.lookup tableState.objects k) >>= \case
+                        Just obj -> do
+                            isNewDirty <- atomically do
+                                -- update the object coordinate.
+                                writeTVar obj.coord (x, y)
+                                -- add to the list of dirty object.
+                                stateTVar tableState.dirties \dirties ->
+                                    (IS.null dirties, IS.insert (unsafeFrom @Natural @Int k) dirties)
+                            when isNewDirty $ updateDirty tableState
+                            -- Tell the clients an object moved.
+                            sendsBinaryButSelf client ctx.shared.clients $ moveObject obj.elt (x, y)
+                        Nothing -> logError "Unknown obj" ["name" .= name]
+                Nothing -> logError "Invalid obj" ["name" .= name]
+            TableEventDelete name -> case name.oid of
                 Just k -> do
-                    isDeleted <- atomically do
+                    (isNewDirty, isDeleted) <- atomically do
                         NM.lookup tableState.objects k >>= \case
                             Just _obj -> do
                                 NM.delete tableState.objects k
-                                pure True
-                            Nothing -> pure False
+                                stateTVar tableState.dirties \dirties ->
+                                    ((IS.null dirties, True), IS.delete (unsafeFrom k) dirties)
+                            Nothing -> pure (False, False)
                     if isDeleted
                         then do
                             logDebug "Deleted" ["name" .= name]
                             sendsBinary ctx.shared.clients $ delObject name
+                            when isNewDirty $ updateDirty tableState
                             forM_ tableState.current.name \(gameID, _) -> deleteObjectDB db gameID name
                         else logError "Unknown obj" ["name" .= name]
                 Nothing -> logError "Invalid obj" ["name" .= name]
 
-    let updateState :: (GameState -> GameState) -> STM GameState
-        updateState up = stateTVar tGameState \prev ->
+    let updateState :: (AppState -> AppState) -> STM AppState
+        updateState up = stateTVar tAppState \prev ->
             let new = up prev in (new, new)
 
     let _rename :: Text -> GameID -> ProcessIO ()
         _rename name gid = dbExecute db "UPDATE games SET name = :name where id = :id" [":name" := name, ":id" := gid]
 
-    let refreshUI :: GameState -> (LByteString -> ProcessIO ()) -> ProcessIO ()
-        refreshUI gameState send = do
-            case gameState.status of
+    let refreshUI :: AppState -> (LByteString -> ProcessIO ()) -> ProcessIO ()
+        refreshUI appState send = do
+            case appState.status of
                 Playing tableState -> do
                     objs <- atomically (NM.elems tableState.objects)
                     forM_ objs \obj -> do
-                        send $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt
+                        send $ newObject (OName $ dropWID $ from $ obj.elt) obj.elt False
                         send . moveObject obj.elt =<< readTVarIO obj.coord
                 _ -> pure ()
 
     let collectDirties = do
-            gameState <- readTVar tGameState
-            case gameState.status of
+            appState <- readTVar tAppState
+            case appState.status of
                 Playing tableState -> case tableState.current.name of
                     Just (gameID, name) -> do
                         dirties <- IS.toList <$> stateTVar tableState.dirties \dirties -> (dirties, mempty)
@@ -436,12 +451,12 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
             let newGame = Game ts.current.kind (Just (gid, name))
                 addGame = #games %~ (newGame :)
                 setStatus = #status .~ Playing (ts & #current .~ newGame)
-            (objects, mDirtyObjs, gameState) <- atomically do
+            (objects, mDirtyObjs, appState) <- atomically do
                 objs <- NM.elems ts.objects
                 dirties <- collectDirties
                 (objs,dirties,) <$> updateState (addGame . setStatus)
 
-            sendsHtml ctx.shared.clients (renderLoader gameState ctx.wid)
+            sendsHtml ctx.shared.clients (renderLoader appState ctx.wid)
             forM_ mDirtyObjs \(gameID, _name, dirtyObjs) -> do
                 logInfo "Saving board before loading" ["count" .= length dirtyObjs]
                 forM_ dirtyObjs (replaceObjectDB db gameID)
@@ -463,55 +478,50 @@ startTabletopApp ctx = withDatabase "tabletop" tabletopDatabase \db -> do
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> do
-                gameState <- readTVarIO tGameState
-                atomically $ sendHtml client $ mountUI gameState ctx.wid
-                refreshUI gameState (atomically . sendBinary client)
-            AppDisplay (UserLeft client) -> do
-                (.status) <$> readTVarIO tGameState >>= \case
-                    Playing tableState -> do
-                        atomically $ modifyTVar' tableState.players (Map.delete client.endpoint)
-                    _ -> pure ()
+                appState <- readTVarIO tAppState
+                atomically $ sendHtml client $ mountUI appState ctx.wid
+                refreshUI appState (atomically . sendBinary client)
             AppData ev -> case decodeJSON @TableEvent (from ev.buffer) of
                 Just tableEvent ->
-                    (.status) <$> readTVarIO tGameState >>= \case
+                    (.status) <$> readTVarIO tAppState >>= \case
                         Playing tableState -> clientHandler tableState ev.client tableEvent
                         _ -> logError "Received data event during selection" ["ev" .= ev]
                 Nothing -> logError "Unknown event" ["ev" .= ev]
             AppTrigger ev -> case ev.trigger of
                 "new-game" -> do
-                    gameState <- atomically $ updateState (#status .~ Selecting)
-                    sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
+                    appState <- atomically $ updateState (#status .~ Selecting)
+                    sendsHtml ctx.shared.clients (mountUI appState ctx.wid)
                 "start-game" -> case tryFrom @Text <$> ev.body ^? key "kind" . _JSON of
                     (Just (Right kind)) -> do
                         ts <- atomically (newTableState (Game kind Nothing))
-                        gameState <- atomically $ updateState (#status .~ Playing ts)
-                        sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
+                        appState <- atomically $ updateState (#status .~ Playing ts)
+                        sendsHtml ctx.shared.clients (mountUI appState ctx.wid)
                     _ -> logError "Unknown game" ["ev" .= ev]
                 "save-game" -> case ev.body ^? key "name" . _JSON of
                     Just name -> do
-                        gameState <- readTVarIO tGameState
-                        case gameState.status of
+                        appState <- readTVarIO tAppState
+                        case appState.status of
                             Playing tableState -> saveGame name tableState
                             Selecting -> logError "Can't save while selecting mode" []
                     _ -> logError "Missing name" ["ev" .= ev]
                 "load-game" -> case ev.body ^? key "id" . _JSON of
                     Just gameID -> do
-                        prevState <- readTVarIO tGameState
+                        prevState <- readTVarIO tAppState
                         case filter (gameMatch gameID) prevState.games of
                             (game : _) -> do
                                 ts <- tableStateFromDB db game
-                                gameState <- atomically $ updateState (#status .~ Playing ts)
-                                sendsHtml ctx.shared.clients (mountUI gameState ctx.wid)
-                                refreshUI gameState (sendsBinary ctx.shared.clients)
+                                appState <- atomically $ updateState (#status .~ Playing ts)
+                                sendsHtml ctx.shared.clients (mountUI appState ctx.wid)
+                                refreshUI appState (sendsBinary ctx.shared.clients)
                             [] -> logError "Unknown game" ["ev" .= ev]
                     _ -> logError "Missing gameID" ["ev" .= ev]
                 "del-game" -> case ev.body ^? key "id" . _JSON of
                     Just gameID -> do
                         let removeGame = #games %~ filter (not . gameMatch gameID)
-                        gameState <- atomically $ updateState removeGame
+                        appState <- atomically $ updateState removeGame
                         dbExecute db "DELETE FROM games WHERE id = :id" [":id" := gameID]
                         dbExecute db "DELETE FROM objects WHERE gameid = :id" [":id" := gameID]
-                        sendsHtml ctx.shared.clients (renderLoader gameState ctx.wid)
+                        sendsHtml ctx.shared.clients (renderLoader appState ctx.wid)
                     _ -> logError "Missing gameID" ["ev" .= ev]
                 _ -> logError "Unknown trigger" ["ev" .= ev]
             _ -> pure ()
@@ -539,6 +549,31 @@ function startTabletop(wid, initialObjects) {
     }
   };
 
+  const clickHandler = (isStatic, elt) => {
+    if (glTT.current != null) {
+      // drop the object
+      if (glTT.trashed) {
+        // the item is on the trash, tell the server
+        sendJSONMessage(wid, {del: withoutWID(glTT.current.id)})
+      }
+      updateTrash(0, 0)
+      glTT.current = null
+    } else if (elt != null) {
+      // Record object information for mousemouve handler
+      glTT.boundingRect = elt.getBoundingClientRect()
+      glTT.shiftX = event.clientX - glTT.boundingRect.left
+      glTT.shiftY = event.clientY - glTT.boundingRect.top
+      if (isStatic) {
+        // request a new object
+        const clickEv = {click: withoutWID(elt.id)}
+        sendJSONMessage(wid, clickEv)
+      } else {
+        // grab it
+        glTT.current = elt
+      }
+    }
+  }
+
   // setup window mouse handler
   const winElt = document.getElementById(withWID(wid, "w"));
   winElt.onmousemove = debounceData(100, event => {
@@ -555,33 +590,22 @@ function startTabletop(wid, initialObjects) {
     const in_height = y > 0 && (y + glTT.boundingRect.height) < window.innerHeight;
 
     if (in_width && in_height) {
-      const moveEv = {x, y}
+      const moveEv = {x, y, n: withoutWID(glTT.current.id)}
       updateTrash(event.pageX, event.pageY)
       sendJSONMessage(wid, moveEv)
+      setPosition(glTT.current, x, y)
     }
   })
 
+  winElt.onclick = () => {
+      clickHandler(false, null)
+  }
+
   // setupObject enables moving an element
-  const setupObject = (elt) => {
-    elt.onclick = () => {
-      if (glTT.current != null) {
-        // Drop the item
-        if (glTT.trashed) {
-          // the item is on the trash, tell the server
-          sendJSONMessage(wid, {del: glTT.current.id})
-        }
-        updateTrash(0, 0)
-        glTT.current = null
-        return;
-      }
-      // Record object information for mousemouve handler
-      glTT.boundingRect = elt.getBoundingClientRect()
-      glTT.shiftX = event.clientX - glTT.boundingRect.left
-      glTT.shiftY = event.clientY - glTT.boundingRect.top
-      glTT.current = elt
-      const clickEv = {click: glTT.current.id}
-      // Tell the server
-      sendJSONMessage(wid, clickEv)
+  const setupObject = (elt, isStatic) => {
+    elt.onclick = (ev) => {
+      ev.stopPropagation()
+      clickHandler(isStatic, elt)
     };
   };
 
@@ -610,17 +634,25 @@ function startTabletop(wid, initialObjects) {
       // setup the new object
       elt.id = withWID(wid, body.new)
       elt.style.position = 'absolute'
-      setPosition(elt, 42, 100)
+      const srcPos = srcElt.getBoundingClientRect()
+      setPosition(elt, srcPos.left, srcPos.top - srcPos.y / 2)
       winElt.appendChild(elt)
-      glTT.current = elt
+
+      if (body.grab) {
+        glTT.current = elt
+      }
 
       // Attach handlers for the source object
-      setupObject(elt);
+      setupObject(elt, false);
     } else if (body.elt) {
       const elt = document.getElementById(withWID(wid, body.elt))
       if (elt === null) {
         console.error("Invalid OID", body);
         return;
+      }
+      if (glTT.current && elt.id == glTT.current.id) {
+        console.log("Object was stollen")
+        glTT.current = null
       }
       setFocus(elt);
       setPosition(elt, body.x, body.y);
@@ -632,7 +664,7 @@ function startTabletop(wid, initialObjects) {
   }
 
   initialObjects.forEach(id =>
-    setupObject(document.getElementById(withWID(wid, id)))
+    setupObject(document.getElementById(withWID(wid, id)), true)
   )
 }
   |]
