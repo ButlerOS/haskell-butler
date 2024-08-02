@@ -268,6 +268,7 @@ startNoterApp ctx = do
     forever do
         atomically (readPipe ctx.pipe) >>= \case
             AppDisplay (UserJoined client) -> do
+                logInfo "got user" []
                 newClientEvent <- atomically (mkNewClientEvent =<< newEditor client)
                 editors <- atomically $ getClientsData cursors
                 forM_ editors \editor ->
@@ -340,8 +341,8 @@ startNoterApp ctx = do
                 atomically do
                     modifyMemoryVar memFile (const $ getFileLoc dir (Just file))
                     writeTVar tState $ NoterState (EditingFile dir file) False (OT.initialServerState content)
-                -- TODO: broadcast reset
-                sendsHtml ctx.shared.clients mountUI
+                -- TODO: ensure this happen before any user join
+                pure ()
             _ -> pure ()
 
 -- from https://github.com/slab/quill/issues/2756
@@ -547,6 +548,29 @@ function setupNoterClient(wid) {
       }
       sendJSONMessage(wid, msg)
     }
+  })
+
+  // Provide global callback to enable scroll event from remote app
+  if (typeof globalQuills === "undefined") {
+    globalThis.globalQuills = {}
+  }
+  globalThis.scrollQuill = (wid, target) => {
+    console.log("scrolling", wid, target)
+    const localQuill = globalQuills[wid]
+    const text = localQuill.getText()
+    const index = text.indexOf(target)
+    if (index > -1) {
+      // Push scroll to the bottom first
+      localQuill.scrollRectIntoView(localQuill.getBounds(text.length - 2, 1))
+      localQuill.setSelection(index + target.length, 0, "api")
+    }
+  }
+
+  // Store the local quill
+  globalQuills[wid] = quill;
+  onElementRemoved(document.getElementById(withWID(wid, "w")), () => {
+    console.log("Quill removed", wid)
+    delete globalQuills[wid]
   })
 }
 |]

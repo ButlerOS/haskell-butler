@@ -179,4 +179,14 @@ globalThis.concatBuffers = (xs) => {
   })
   return res;
 }
+
+// https://stackoverflow.com/a/72303928
+globalThis.onElementRemoved = (element, callback) => {
+  new MutationObserver(function(mutations) {
+    if(!document.body.contains(element)) {
+      callback()
+      this.disconnect()
+    }
+  }).observe(element.parentElement, {childList: true})
+}
 |]

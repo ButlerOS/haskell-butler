@@ -71,6 +71,9 @@ startMd2Jira ctx = do
     mSetting <- getJiraSetting ctx.shared
 
     let
+        scroll :: AppID -> Text -> Text
+        scroll quill target = "event.stopPropagation(); scrollQuill(" <> showT quill <> ", \"" <> target <> "\")"
+
         isExpanded :: Map JiraID Bool -> Maybe JiraID -> Bool
         isExpanded _ Nothing = True
         isExpanded m (Just jid) = fromMaybe True (Map.lookup jid m)
@@ -79,6 +82,11 @@ startMd2Jira ctx = do
         addJID = \case
             Nothing -> id
             Just jid -> (wid_ ctx.wid (from jid) :)
+
+        addScroll :: AppID -> Maybe JiraID -> _ -> _
+        addScroll quill = \case
+            Nothing -> id
+            Just jid -> (onclick_ (scroll quill (from jid)) :)
 
         -- Render the expand button trigger
         expandButton :: Map JiraID Bool -> JiraID -> HtmlT STM ()
@@ -107,8 +115,8 @@ startMd2Jira ctx = do
              in with a_ (addLink [class_ "float-right cursor-pointer"]) (toHtml $ into @Text jiraID)
 
         -- Render task
-        renderTask :: Task -> HtmlT STM ()
-        renderTask task = with div_ [class_ "mb-2 bg-slate-150 flex"] do
+        renderTask :: AppID -> Task -> HtmlT STM ()
+        renderTask quill task = with div_ [class_ "mb-2 bg-slate-150 flex", onclick_ (scroll quill task.info.summary)] do
             div_ do
                 renderTaskStatus task.status
             div_ do
@@ -116,47 +124,48 @@ startMd2Jira ctx = do
                 pre_ $ toHtml $ T.strip task.info.description
 
         -- Render a story
-        renderStory :: Map JiraID Bool -> Story -> HtmlT STM ()
-        renderStory expandedState story = with div_ (addJID story.mJira [class_ "mb-2 bg-slate-200"]) do
+        renderStory :: AppID -> Map JiraID Bool -> Story -> HtmlT STM ()
+        renderStory quill expandedState story = with div_ (addJID story.mJira [class_ "mb-2 bg-slate-200"]) do
             forM_ story.mJira renderJira
-            h2_ do
-                let go (tot, done) task = (tot + 1, done + if task.status == Done then 1 else 0)
-                let (total, completed) = foldl' go (0 :: Word, 0 :: Word) story.tasks
-                when (total > 0 && completed > 0) do
-                    let percent = completed * 100 `div` total
-                    with span_ [class_ "float-right font-bold mr-2", title_ "completion"] do
-                        toHtml $ into @Text $ show percent <> "%"
-                with span_ [class_ "float-right mr-4"] do
-                    case story.mScore of
-                        Nothing -> forM_ story.mJira voteButton
-                        Just score -> with span_ [class_ "text-xs", title_ "story points"] do toHtml $ showScore score
-                forM_ story.mJira (expandButton expandedState)
-                toHtml $ T.strip story.info.summary
-            when (isExpanded expandedState story.mJira) do
-                with div_ [class_ "ml-4"] do
-                    pre_ $ toHtml $ T.strip story.info.description
-                    mapM_ renderTask story.tasks
+            with span_ (addScroll quill story.mJira []) do
+                h2_ do
+                    let go (tot, done) task = (tot + 1, done + if task.status == Done then 1 else 0)
+                    let (total, completed) = foldl' go (0 :: Word, 0 :: Word) story.tasks
+                    when (total > 0 && completed > 0) do
+                        let percent = completed * 100 `div` total
+                        with span_ [class_ "float-right font-bold mr-2", title_ "completion"] do
+                            toHtml $ into @Text $ show percent <> "%"
+                    with span_ [class_ "float-right mr-4"] do
+                        case story.mScore of
+                            Nothing -> forM_ story.mJira voteButton
+                            Just score -> with span_ [class_ "text-xs", title_ "story points"] do toHtml $ showScore score
+                    forM_ story.mJira (expandButton expandedState)
+                    toHtml $ T.strip story.info.summary
+                when (isExpanded expandedState story.mJira) do
+                    with div_ [class_ "ml-4"] do
+                        pre_ $ toHtml $ T.strip story.info.description
+                        mapM_ (renderTask quill) story.tasks
 
         -- Render a epic
-        renderEpic :: Map JiraID Bool -> Epic -> HtmlT STM ()
-        renderEpic expandedState epic = with div_ (addJID epic.mJira [class_ "pb-2 mb-2"]) do
+        renderEpic :: AppID -> Map JiraID Bool -> Epic -> HtmlT STM ()
+        renderEpic quill expandedState epic = with div_ (addJID epic.mJira [class_ "pb-2 mb-2"]) do
             forM_ epic.mJira renderJira
-
-            with h1_ [class_ "font-semibold"] do
-                forM_ epic.mJira (expandButton expandedState)
-                toHtml $ T.strip epic.info.summary
-            when (isExpanded expandedState epic.mJira) do
-                with div_ [class_ "ml-4"] do
-                    pre_ $ toHtml $ T.strip epic.info.description
-                    mapM_ (renderStory expandedState) epic.stories
+            with span_ (addScroll quill epic.mJira []) do
+                with h1_ [class_ "font-semibold"] do
+                    forM_ epic.mJira (expandButton expandedState)
+                    toHtml $ T.strip epic.info.summary
+                when (isExpanded expandedState epic.mJira) do
+                    with div_ [class_ "ml-4"] do
+                        pre_ $ toHtml $ T.strip epic.info.description
+                        mapM_ (renderStory quill expandedState) epic.stories
 
         section (name :: HtmlT STM ()) xs =
             with h1_ [class_ "font-bold bg-slate-300 flex"] do
                 with span_ [class_ "w-6 mr-2 block text-right"] $ toHtml (showT $ length xs)
                 name
 
-        renderTaskLists :: [(Story, Task)] -> HtmlT STM ()
-        renderTaskLists tasks = with div_ [wid_ ctx.wid "tasks"] do
+        renderTaskLists :: AppID -> [(Story, Task)] -> HtmlT STM ()
+        renderTaskLists quill tasks = with div_ [wid_ ctx.wid "tasks"] do
             let isInprogress = \case
                     InProgress{} -> True
                     _ -> False
@@ -167,14 +176,14 @@ startMd2Jira ctx = do
                     forM_ story.mJira renderJira
                     when (isNothing story.mScore) do
                         with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
-                    renderTask task
+                    renderTask quill task
 
             let completed = filter (\(_, t) -> t.status == Done) tasks
             unless (null completed) do
                 section "Completed" completed
                 forM_ completed \(story, task) -> do
                     forM_ story.mJira renderJira
-                    div_ do
+                    with div_ (addScroll quill story.mJira []) do
                         "- [x] "
                         toHtml $ T.strip task.info.summary
                         pre_ $ toHtml $ T.strip task.info.description
@@ -195,15 +204,16 @@ startMd2Jira ctx = do
         mountUI = do
             with div_ [wid_ ctx.wid "w", class_ "my-1 mx-2"] do
                 state <- lift (readTVar vState)
+                quill <- maybe shellAppID (.wid) <$> lift (readTVar vNoterCtx)
                 renderStatus state.rev state.status
                 div_ do
                     let tasks = getTasks state.epics
-                    renderTaskLists tasks
+                    renderTaskLists quill tasks
                     section "BackLog" $ filter (\(_, t) -> t.status == Todo) tasks
                     expandedState <- lift (readTVar vExpandedState)
-                    mapM_ (renderEpic expandedState) state.epics
+                    mapM_ (renderEpic quill expandedState) state.epics
 
-        expandJID jid issue = do
+        expandJID quill jid issue = do
             expandedState <- atomically do
                 m <- readTVar vExpandedState
                 let newState
@@ -213,8 +223,8 @@ startMd2Jira ctx = do
                 writeTVar vExpandedState newM
                 pure newM
             sendsHtml ctx.shared.clients $ case issue of
-                Left epic -> renderEpic expandedState epic
-                Right story -> renderStory expandedState story
+                Left epic -> renderEpic quill expandedState epic
+                Right story -> renderStory quill expandedState story
 
         withNoter cb =
             readTVarIO vNoterCtx >>= \case
@@ -280,10 +290,10 @@ startMd2Jira ctx = do
                                     logError "md2jira eval errors!" ["errors" .= errors]
                                 -- Generate and send text operation to noter
                                 updateNoter noterCtx state newEpics
-                "toggle" | Just jid <- ev.body ^? key "jid" . _JSON -> withData \state ->
+                "toggle" | Just jid <- ev.body ^? key "jid" . _JSON -> withNoter \noterCtx -> withData \state ->
                     case findIssue state.epics jid of
                         Nothing -> logError "unknown toggle" ["jid" .= jid]
-                        Just issue -> expandJID jid issue
+                        Just issue -> expandJID noterCtx.wid jid issue
                 "poker-result" ->
                     case (ev.body ^? key "value" . _JSON, ev.body ^? key "story" . _JSON, ev.body ^? key "wid" . _JSON) of
                         (Just score, Just jid, Just wid) -> withNoter \noterCtx -> withData \state -> do
