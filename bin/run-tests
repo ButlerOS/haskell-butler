@@ -16,7 +16,7 @@ cabal repl --with-ghc=doctest --ghc-options=-Wno-unused-packages butler
 
 log "Formatting"
 fourmolu -i source/
-cabal-fmt -i *.cabal
+cabal-gild --io butler.cabal
 nixfmt flake.nix
 
 log "Linting"

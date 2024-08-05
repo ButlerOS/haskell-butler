@@ -5,7 +5,7 @@
       "github:ButlerOS/haskell-jira-client/b1bb8aa03de7640357d6afbb5c8dbc4df0ca7233";
     jira.flake = false;
     hspkgs.url =
-      "github:podenv/hspkgs/7dca9f9db5941b1b47f92b66736ee073751d05c2";
+      "github:podenv/hspkgs/7a46854f28ab9b99c51353c81d5967f1f6fd9a9b";
     #  "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, jira, hspkgs }:
@@ -172,7 +172,7 @@
       };
 
       baseTools = with pkgs; [
-        cabal-fmt
+        cabal-gild
         nixfmt
         cabal-install
         hlint
@@ -183,6 +183,7 @@
       ];
 
     in {
+      pkgs = pkgs;
       haskellExtend = haskellExtend;
       packages."x86_64-linux".default = pkg-exe;
       packages."x86_64-linux".container = container;

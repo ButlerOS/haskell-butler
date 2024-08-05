@@ -1,31 +1,34 @@
-cabal-version:      3.0
-name:               butler
-version:            0.2.1
-synopsis:           At your service.
-description:        At your service..
-category:           Development
-homepage:           https://github.com/TristanCacqueray/butler#readme
-bug-reports:        https://github.com/TristanCacqueray/butler/issues
-author:             Tristan Cacqueray
-maintainer:         tdecacqu@redhat.com
-license:            BSD-3-Clause
-license-file:       LICENSE
-build-type:         Simple
+cabal-version: 3.0
+name: butler
+version: 0.2.1
+synopsis: At your service.
+description: At your service..
+category: Development
+homepage: https://github.com/TristanCacqueray/butler#readme
+bug-reports: https://github.com/TristanCacqueray/butler/issues
+author: Tristan Cacqueray
+maintainer: tdecacqu@redhat.com
+license: BSD-3-Clause
+license-file: LICENSE
+build-type: Simple
 extra-source-files:
   CHANGELOG.md
   data/haskell-butler-logo.svg
   data/ws.js
 
 source-repository head
-  type:     git
+  type: git
   location: https://github.com/TristanCacqueray/butler
 
 common common
-  build-depends:      base <5
-  default-language:   GHC2021
+  build-depends: base <5
+  default-language: GHC2021
   ghc-options:
-    -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures
-    -fwrite-ide-info -Wno-missing-methods
+    -Wall
+    -fwarn-incomplete-uni-patterns
+    -Wno-partial-type-signatures
+    -fwrite-ide-info
+    -Wno-missing-methods
 
   default-extensions:
     BlockArguments
@@ -43,7 +46,6 @@ common common
     OverloadedLabels
     OverloadedRecordDot
     OverloadedStrings
-    OverloadedStrings
     PartialTypeSignatures
     QuasiQuotes
     RecordWildCards
@@ -52,11 +54,15 @@ common common
     ViewPatterns
 
 common executable
-  ghc-options: -threaded -rtsopts -with-rtsopts=-T
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-T
 
 library
-  import:          common
-  hs-source-dirs:  source/libraries/butler
+  import: common
+  hs-source-dirs: source/libraries/butler
+  -- cabal-gild: discover source/libraries/butler
   exposed-modules:
     Butler
     Butler.App
@@ -99,79 +105,80 @@ library
     XStatic.Butler
 
   build-depends:
-    , aeson
-    , attoparsec
-    , base                   <5
-    , base64-bytestring
-    , binary
-    , bytestring
-    , cborg-json
-    , cgroup-rts-threads
-    , containers
-    , cryptohash-sha256
-    , directory
-    , ebml
-    , exceptions
-    , filepath
-    , friendly-time
-    , generic-lens
-    , hashable
-    , http-api-data
-    , http-client
-    , http-client-tls
-    , http-types
-    , jose
-    , ki-unlifted
-    , lens
-    , lens-aeson
-    , lucid
-    , lucid-htmx
-    , lucid-xstatic
-    , migrant-core
-    , migrant-sqlite-simple
-    , mmorph
-    , mtl
-    , network
-    , oidc-client
-    , one-line-aeson-text
-    , optparse-applicative
-    , PyF
-    , random
-    , retry
-    , serialise
-    , servant
-    , servant-auth
-    , servant-auth-server
-    , servant-lucid
-    , servant-server
-    , sqlite-simple
-    , stm
-    , tasty
-    , tasty-hunit
-    , text
-    , text-rope
-    , time
-    , typed-process
-    , unix
-    , unix-time
-    , unliftio
-    , unordered-containers
-    , uuid
-    , wai
-    , wai-websockets
-    , warp
-    , warp-tls
-    , websockets
-    , witch
-    , with-utf8
-    , xstatic
-    , xstatic-htmx
-    , xstatic-tailwind
-    , xstatic-th
+    PyF,
+    aeson,
+    attoparsec,
+    base <5,
+    base64-bytestring,
+    binary,
+    bytestring,
+    cborg-json,
+    cgroup-rts-threads,
+    containers,
+    cryptohash-sha256,
+    directory,
+    ebml,
+    exceptions,
+    filepath,
+    friendly-time,
+    generic-lens,
+    hashable,
+    http-api-data,
+    http-client,
+    http-client-tls,
+    http-types,
+    jose,
+    ki-unlifted,
+    lens,
+    lens-aeson,
+    lucid,
+    lucid-htmx,
+    lucid-xstatic,
+    migrant-core,
+    migrant-sqlite-simple,
+    mmorph,
+    mtl,
+    network,
+    oidc-client,
+    one-line-aeson-text,
+    optparse-applicative,
+    random,
+    retry,
+    serialise,
+    servant,
+    servant-auth,
+    servant-auth-server,
+    servant-lucid,
+    servant-server,
+    sqlite-simple,
+    stm,
+    tasty,
+    tasty-hunit,
+    text,
+    text-rope,
+    time,
+    typed-process,
+    unix,
+    unix-time,
+    unliftio,
+    unordered-containers,
+    uuid,
+    wai,
+    wai-websockets,
+    warp,
+    warp-tls,
+    websockets,
+    witch,
+    with-utf8,
+    xstatic,
+    xstatic-htmx,
+    xstatic-tailwind,
+    xstatic-th,
 
 library butler-desktop
-  import:          common
-  hs-source-dirs:  source/libraries/desktop
+  import: common
+  hs-source-dirs: source/libraries/desktop
+  -- cabal-gild: discover source/libraries/desktop
   exposed-modules:
     Butler.App.Chat
     Butler.App.Chess
@@ -185,8 +192,8 @@ library butler-desktop
     Butler.App.MD2Jira
     Butler.App.MineSweeper
     Butler.App.Mumbler
-    Butler.App.Noter
     Butler.App.NoVnc
+    Butler.App.Noter
     Butler.App.Painter
     Butler.App.PdfViewer
     Butler.App.PokerPlanner
@@ -213,63 +220,64 @@ library butler-desktop
     OT
 
   build-depends:
-    , aeson
-    , base64-bytestring
-    , butler
-    , bytestring
-    , containers
-    , directory
-    , ebml
-    , fast-myers-diff
-    , filepath
-    , http-client
-    , http-client-tls
-    , http-types
-    , jira-client
-    , lucid
-    , lucid-htmx
-    , lucid-svg
-    , lucid-xstatic
-    , md2jira
-    , network
-    , network-run
-    , ot
-    , posix-pty
-    , process
-    , qrcode-core
-    , qrcode-juicypixels
-    , random
-    , scientific
-    , text
-    , text-rope
-    , time
-    , typed-process
-    , unix
-    , unliftio
-    , uuid
-    , xstatic-hyperscript
-    , xstatic-novnc
-    , xstatic-otjs
-    , xstatic-pcm-player
-    , xstatic-pdfjs
-    , xstatic-quill
-    , xstatic-quill-cursors
-    , xstatic-remixicon
-    , xstatic-sweetalert2
-    , xstatic-winbox
-    , xstatic-xterm
+    aeson,
+    base64-bytestring,
+    butler,
+    bytestring,
+    containers,
+    directory,
+    ebml,
+    fast-myers-diff,
+    filepath,
+    http-client,
+    http-client-tls,
+    http-types,
+    jira-client,
+    lucid,
+    lucid-htmx,
+    lucid-svg,
+    lucid-xstatic,
+    md2jira,
+    network,
+    network-run,
+    ot,
+    posix-pty,
+    process,
+    qrcode-core,
+    qrcode-juicypixels,
+    random,
+    scientific,
+    text,
+    text-rope,
+    time,
+    typed-process,
+    unix,
+    unliftio,
+    uuid,
+    xstatic-hyperscript,
+    xstatic-novnc,
+    xstatic-otjs,
+    xstatic-pcm-player,
+    xstatic-pdfjs,
+    xstatic-quill,
+    xstatic-quill-cursors,
+    xstatic-remixicon,
+    xstatic-sweetalert2,
+    xstatic-winbox,
+    xstatic-xterm,
 
 executable butler
-  import:         common, executable
+  import: common, executable
   hs-source-dirs: source/application
-  main-is:        Main.hs
-  build-depends:  butler-desktop
+  main-is: Main.hs
+  build-depends: butler-desktop
 
 test-suite spec
-  import:             common, executable
-  hs-source-dirs:     source/test-suite
-  type:               exitcode-stdio-1.0
-  main-is:            Driver.hs
+  import: common, executable
+  hs-source-dirs: source/test-suite
+  type: exitcode-stdio-1.0
+  main-is: Driver.hs
+  -- cabal-gild: discover --exclude=**/Driver.hs source/test-suite
   other-modules:
     Butler.App.ClockTest
     Butler.App.NoterTest
@@ -282,8 +290,8 @@ test-suite spec
 
   build-tool-depends: tasty-discover:tasty-discover
   build-depends:
-    , butler
-    , butler-desktop
-    , hspec-expectations
-    , tasty
-    , tasty-hunit
+    butler,
+    butler-desktop,
+    hspec-expectations,
+    tasty,
+    tasty-hunit,
