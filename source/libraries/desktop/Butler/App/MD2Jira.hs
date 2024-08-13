@@ -75,8 +75,8 @@ startMd2Jira ctx = do
         scroll quill target = "event.stopPropagation(); scrollQuill(" <> showT quill <> ", \"" <> target <> "\")"
 
         isExpanded :: Map JiraID Bool -> Maybe JiraID -> Bool
-        isExpanded _ Nothing = True
-        isExpanded m (Just jid) = fromMaybe True (Map.lookup jid m)
+        isExpanded _ Nothing = False
+        isExpanded m (Just jid) = fromMaybe False (Map.lookup jid m)
 
         addJID :: Maybe JiraID -> _ -> _
         addJID = \case
