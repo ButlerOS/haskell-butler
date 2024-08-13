@@ -160,14 +160,15 @@ startMd2Jira ctx = do
                         mapM_ (renderStory quill expandedState) epic.stories
 
         section (name :: HtmlT STM ()) xs =
-            with h1_ [class_ "font-bold bg-slate-300 flex"] do
+            with h1_ [class_ "font-bold bg-slate-300 flex mt-4"] do
                 with span_ [class_ "w-6 mr-2 block text-right"] $ toHtml (showT $ length xs)
                 name
 
         renderTaskLists :: AppID -> [(Story, Task)] -> HtmlT STM ()
         renderTaskLists quill tasks = with div_ [wid_ ctx.wid "tasks"] do
             let isInprogress = \case
-                    InProgress{} -> True
+                    InProgress "." -> False
+                    InProgress _ -> True
                     _ -> False
             let queued = filter (\(_, t) -> isInprogress t.status) tasks
             unless (null queued) do
@@ -178,13 +179,25 @@ startMd2Jira ctx = do
                         with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
                     renderTask quill task
 
+            let isNext = \case
+                    InProgress "." -> True
+                    _ -> False
+            let next = filter (\(_, t) -> isNext t.status) tasks
+            unless (null next) do
+                section "Next" next
+                forM_ next \(story, task) -> do
+                    forM_ story.mJira renderJira
+                    with div_ (addScroll quill story.mJira []) do
+                        "[.] "
+                        toHtml $ T.strip task.info.summary
+
             let completed = filter (\(_, t) -> t.status == Done) tasks
             unless (null completed) do
                 section "Completed" completed
                 forM_ completed \(story, task) -> do
                     forM_ story.mJira renderJira
                     with div_ (addScroll quill story.mJira []) do
-                        "- [x] "
+                        "[x] "
                         toHtml $ T.strip task.info.summary
                         pre_ $ toHtml $ T.strip task.info.description
 
