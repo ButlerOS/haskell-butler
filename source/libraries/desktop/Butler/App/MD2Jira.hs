@@ -57,6 +57,15 @@ findIssue epics jid = goEpics epics
         | Just sjid <- story.mJira, sjid == jid = Just story
         | otherwise = goStories rest
 
+-- | Remove initial identation from the whole body
+unwarpBody :: Text -> Text
+unwarpBody txt
+    | T.null ident = body
+    | otherwise = T.unlines $ map (stripPrefix ident) $ T.lines body
+  where
+    body = T.dropWhile (== '\n') txt
+    ident = T.takeWhile (== ' ') body
+
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     vState <- newTVarIO initialState
@@ -121,7 +130,7 @@ startMd2Jira ctx = do
                 renderTaskStatus task.status
             div_ do
                 toHtml $ T.strip task.info.summary
-                pre_ $ toHtml $ T.strip task.info.description
+                pre_ $ toHtml $ unwarpBody task.info.description
 
         -- Render a story
         renderStory :: AppID -> Map JiraID Bool -> Story -> HtmlT STM ()
@@ -199,7 +208,7 @@ startMd2Jira ctx = do
                     with div_ (addScroll quill story.mJira []) do
                         "[x] "
                         toHtml $ T.strip task.info.summary
-                        pre_ $ toHtml $ T.strip task.info.description
+                        pre_ $ toHtml $ unwarpBody task.info.description
 
         renderStatus rev status = with div_ [wid_ ctx.wid "s"] do
             case status of
