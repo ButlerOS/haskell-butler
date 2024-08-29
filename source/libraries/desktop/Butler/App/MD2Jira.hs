@@ -66,6 +66,16 @@ unwarpBody txt
     body = T.dropWhile (== '\n') txt
     ident = T.takeWhile (== ' ') body
 
+-- | Render text by replacing urls with <a> links
+toHtmlWithLinks :: Text -> HtmlT STM ()
+toHtmlWithLinks txt = case T.breakOn "https://" txt of
+    (before, rest) -> do
+        toHtml before
+        unless (T.null rest) do
+            let url = T.takeWhile (not . isSpace) rest
+            with a_ [href_ url, target_ "_blank"] (toHtml url)
+            toHtmlWithLinks $ T.drop (T.length url) rest
+
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     vState <- newTVarIO initialState
@@ -130,7 +140,7 @@ startMd2Jira ctx = do
                 renderTaskStatus task.status
             div_ do
                 toHtml $ T.strip task.info.summary
-                pre_ $ toHtml $ unwarpBody task.info.description
+                pre_ $ toHtmlWithLinks $ unwarpBody task.info.description
 
         -- Render a story
         renderStory :: AppID -> Map JiraID Bool -> Story -> HtmlT STM ()
@@ -152,7 +162,7 @@ startMd2Jira ctx = do
                     toHtml $ T.strip story.info.summary
                 when (isExpanded expandedState story.mJira) do
                     with div_ [class_ "ml-4"] do
-                        pre_ $ toHtml $ T.strip story.info.description
+                        pre_ $ toHtmlWithLinks $ T.strip story.info.description
                         mapM_ (renderTask quill) story.tasks
 
         -- Render a epic
@@ -165,7 +175,7 @@ startMd2Jira ctx = do
                     toHtml $ T.strip epic.info.summary
                 when (isExpanded expandedState epic.mJira) do
                     with div_ [class_ "ml-4"] do
-                        pre_ $ toHtml $ T.strip epic.info.description
+                        pre_ $ toHtmlWithLinks $ T.strip epic.info.description
                         mapM_ (renderStory quill expandedState) epic.stories
 
         section (name :: HtmlT STM ()) xs =
@@ -198,7 +208,7 @@ startMd2Jira ctx = do
                     forM_ story.mJira renderJira
                     with div_ (addScroll quill story.mJira []) do
                         "[.] "
-                        toHtml $ T.strip task.info.summary
+                        toHtmlWithLinks $ T.strip task.info.summary
 
             let completed = filter (\(_, t) -> t.status == Done) tasks
             unless (null completed) do
@@ -207,8 +217,8 @@ startMd2Jira ctx = do
                     forM_ story.mJira renderJira
                     with div_ (addScroll quill story.mJira []) do
                         "[x] "
-                        toHtml $ T.strip task.info.summary
-                        pre_ $ toHtml $ unwarpBody task.info.description
+                        toHtmlWithLinks $ T.strip task.info.summary
+                        pre_ $ toHtmlWithLinks $ unwarpBody task.info.description
 
         renderStatus rev status = with div_ [wid_ ctx.wid "s"] do
             case status of
