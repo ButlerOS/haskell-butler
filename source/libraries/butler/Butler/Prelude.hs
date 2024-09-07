@@ -121,7 +121,6 @@ module Butler.Prelude (
     Data.Hashable.Hashable,
     module Data.Text.Encoding,
     module Data.Text.Encoding.Error,
-    stripPrefix,
 
     -- * unix/filepath/directory
     (</>),
@@ -327,6 +326,3 @@ instance Codec.Serialise.Serialise Data.Aeson.Value where
 
 hoistHtml :: Monad m => Html a -> HtmlT m a
 hoistHtml = hoist (pure . runIdentity)
-
-stripPrefix :: Text -> Text -> Text
-stripPrefix prefix line = fromMaybe line $ Data.Text.stripPrefix prefix line
