@@ -9,12 +9,15 @@ import Butler.App.JiraClient (JiraSetting (..), getJiraSetting, setScore)
 import Butler.App.PokerPlanner (pokerPlannerApp)
 import Butler.Core (writePipe)
 import Control.OperationalTransformation.Server (Revision)
-import Data.List (foldl')
+import Data.List (foldl', sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Jira (IssueData (..), JiraID, jiraUrl)
+import Data.UnixTime (UnixTime (..), getUnixTime)
+import Jira (IssueData (..), JiraID, Transition, jiraUrl)
 import MD2Jira
 import OT qualified
+import Text.Pandoc.Definition qualified as P
+import Text.Pandoc.Shared qualified as P (stringify)
 
 md2jiraApp :: App
 md2jiraApp = defaultApp "md2jira" startMd2Jira
@@ -22,11 +25,34 @@ md2jiraApp = defaultApp "md2jira" startMd2Jira
 data AppState = AppState
     { doc :: Text
     , rev :: Revision
-    , epics :: [Epic]
+    , document :: Document
     , status :: [Text]
     }
 initialState :: AppState
-initialState = AppState "" (-1) [] ["Waiting for data..."]
+initialState = AppState "" (-1) (Document [] []) ["Waiting for data..."]
+
+-- | A dummy pandoc to lucid implementation
+pandocBlockToHtml :: P.Block -> HtmlT STM ()
+pandocBlockToHtml = \case
+    P.Plain xs -> span_ $ goInline xs
+    P.Para xs -> p_ $ goInline xs
+    P.CodeBlock _ txt -> with pre_ [class_ "bg-gray-800 text-white px-2 py-1"] (toHtml txt)
+    P.OrderedList _ xs -> ul_ $ traverse_ (li_ . mapM_ pandocBlockToHtml) xs
+    P.BulletList xs -> ul_ $ traverse_ (li_ . mapM_ pandocBlockToHtml) xs
+    P.BlockQuote xs -> traverse_ pandocBlockToHtml xs
+    x -> toHtml $ P.stringify x
+  where
+    goInline :: [P.Inline] -> HtmlT STM ()
+    goInline = traverse_ pandocInlineToHtml
+
+    pandocInlineToHtml :: P.Inline -> HtmlT STM ()
+    pandocInlineToHtml = \case
+        P.SoftBreak -> br_ []
+        P.Strong xs -> with span_ [class_ "font-semibold"] $ goInline xs
+        P.Emph xs -> with span_ [class_ "italic"] $ goInline xs
+        P.Link _attr inline (url, _title) -> with a_ [href_ url, target_ "_blank"] (goInline inline)
+        P.Str s -> toHtmlWithLinks s
+        x -> toHtml $ P.stringify x
 
 getTasks :: [Epic] -> [(Story, Task)]
 getTasks = concatMap goEpic
@@ -57,15 +83,6 @@ findIssue epics jid = goEpics epics
         | Just sjid <- story.mJira, sjid == jid = Just story
         | otherwise = goStories rest
 
--- | Remove initial identation from the whole body
-unwarpBody :: Text -> Text
-unwarpBody txt
-    | T.null ident = body
-    | otherwise = T.unlines $ map (stripPrefix ident) $ T.lines body
-  where
-    body = T.dropWhile (== '\n') txt
-    ident = T.takeWhile (== ' ') body
-
 -- | Render text by replacing urls with <a> links
 toHtmlWithLinks :: Text -> HtmlT STM ()
 toHtmlWithLinks txt = case T.breakOn "https://" txt of
@@ -76,17 +93,40 @@ toHtmlWithLinks txt = case T.breakOn "https://" txt of
             with a_ [href_ url, target_ "_blank"] (toHtml url)
             toHtmlWithLinks $ T.drop (T.length url) rest
 
+renderAge :: Bool -> CTime -> CTime -> HtmlT STM ()
+renderAge withWarning (CTime now) (CTime updated)
+    | withWarning && days < 3 = pure mempty
+    | otherwise =
+        with span_ [class_ $ "mr-1 text-xs flex items-center" <> warnClass, title_ "Age in days"] do
+            toHtml $ show days <> "d"
+  where
+    warnClass = if withWarning && days > 14 then " text-red-600 font-bold" else ""
+    days = toInteger (now - updated) `div` (3600 * 24)
+
+renderVoteWarning :: HtmlT STM ()
+renderVoteWarning = with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
+
+storyCompletion :: Story -> Word
+storyCompletion story = percent
+  where
+    go (tot, done) task = (tot + 1, done + if task.status == Closed then 1 else 0)
+    (total, completed) = foldl' go (0 :: Word, 0 :: Word) story.tasks
+    percent
+        | total > 0 = completed * 100 `div` total
+        | otherwise = 0
+
 startMd2Jira :: AppContext -> ProcessIO ()
 startMd2Jira ctx = do
     vState <- newTVarIO initialState
 
     vCache <- snd <$> newProcessMemory "cache" (pure mempty)
     vExpandedState <- newTVarIO mempty
+    vErrors <- newTVarIO []
 
     -- Keep track of the Noter app to send update
     vNoterCtx <- newTVarIO Nothing
 
-    -- TODO: handle reload when setting changes...
+    -- TODO: handle client reload when setting changes...
     mSetting <- getJiraSetting ctx.shared
 
     let
@@ -115,110 +155,103 @@ startMd2Jira ctx = do
              in trig i_ [class_ "cursor-pointer mr-1"] expandIcon
 
         voteButton :: JiraID -> HtmlT STM ()
-        voteButton jid = with button_ [class_ btnBlueClass, onclick_ startPokerScript] "vote"
+        voteButton jid = with button_ [class_ (btnBlueClass <> " flex items-center w-12 h-6"), onclick_ startPokerScript] "vote"
           where
             startPokerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid, "story" .= jid]]
 
         renderTaskStatus :: TaskStatus -> HtmlT STM ()
-        renderTaskStatus status = with i_ [class_ "mr-1"] $
+        renderTaskStatus status = with i_ [class_ "mr-1"] do
             case status of
-                Done -> "[x]"
-                InProgress{assigned} -> toHtml assigned <> ":"
-                Todo -> "[ ]"
-
+                Open -> "☐"
+                -- InProgress{assigned} -> toHtml assigned <> ":"
+                Closed -> "☒"
         -- Render JiraID link
         renderJira jiraID =
             let addLink = case mSetting of
                     Nothing -> id
                     Just setting -> mappend [href_ (Jira.jiraUrl setting.client jiraID), target_ "blank"]
-             in with a_ (addLink [class_ "float-right cursor-pointer"]) (toHtml $ into @Text jiraID)
+             in with a_ (addLink [class_ "cursor-pointer"]) (toHtml $ into @Text jiraID)
 
         -- Render task
-        renderTask :: AppID -> Task -> HtmlT STM ()
-        renderTask quill task = with div_ [class_ "mb-2 bg-slate-150 flex", onclick_ (scroll quill task.info.summary)] do
+        renderTask :: CTime -> AppID -> Story -> Task -> HtmlT STM ()
+        renderTask now quill story task = with div_ [class_ "mb-2 bg-slate-150 flex", onclick_ (scroll quill task.title)] do
             div_ do
                 renderTaskStatus task.status
-            div_ do
-                toHtml $ T.strip task.info.summary
-                pre_ $ toHtmlWithLinks $ unwarpBody task.info.description
+            with div_ [class_ "flex-grow"] do
+                with div_ [class_ "flex"] do
+                    let assigned = filter (/= "n") task.assigned
+                    unless (null assigned) $ with span_ [class_ "text-xs flex items-center mr-1"] do
+                        traverse_ (with span_ [class_ "mr-1"] . toHtml) assigned
+                        "> "
+                    with span_ [class_ "flex-grow line-clamp-1"] do
+                        toHtmlWithLinks $ T.strip task.title
+                    forM_ story.updated (renderAge True now)
+                    when (isNothing story.mScore) renderVoteWarning
+                    forM_ story.mJira renderJira
+                traverse_ pandocBlockToHtml task.description
 
         -- Render a story
-        renderStory :: AppID -> Map JiraID Bool -> Story -> HtmlT STM ()
-        renderStory quill expandedState story = with div_ (addJID story.mJira [class_ "mb-2 bg-slate-200"]) do
-            forM_ story.mJira renderJira
-            with span_ (addScroll quill story.mJira []) do
-                h2_ do
-                    let go (tot, done) task = (tot + 1, done + if task.status == Done then 1 else 0)
-                    let (total, completed) = foldl' go (0 :: Word, 0 :: Word) story.tasks
-                    when (total > 0 && completed > 0) do
-                        let percent = completed * 100 `div` total
-                        with span_ [class_ "float-right font-bold mr-2", title_ "completion"] do
-                            toHtml $ into @Text $ show percent <> "%"
-                    with span_ [class_ "float-right mr-4"] do
-                        case story.mScore of
-                            Nothing -> forM_ story.mJira voteButton
-                            Just score -> with span_ [class_ "text-xs", title_ "story points"] do toHtml $ showScore score
+        renderStory :: CTime -> AppID -> Map JiraID Bool -> (Story, Word) -> HtmlT STM ()
+        renderStory now quill expandedState (story, percent) =
+            with div_ (addJID story.mJira (addScroll quill story.mJira [class_ "mb-2 bg-slate-200"])) do
+                with div_ [class_ "flex"] do
                     forM_ story.mJira (expandButton expandedState)
-                    toHtml $ T.strip story.info.summary
+                    with span_ [class_ "flex-grow line-clamp-1"] do
+                        toHtml $ T.strip story.title
+                    when (percent > 0) do
+                        with span_ [class_ "font-bold mr-2", title_ "completion"] do
+                            toHtml $ into @Text $ show percent <> "%"
+                    forM_ story.updated (renderAge False now)
+                    forM_ story.mScore \score ->
+                        with span_ [class_ "text-xs flex items-center mr-1", title_ "story points"] do toHtml $ showScore score
+                    forM_ story.mJira renderJira
+                    when (isNothing story.mScore) do
+                        forM_ story.mJira voteButton
+
                 when (isExpanded expandedState story.mJira) do
                     with div_ [class_ "ml-4"] do
-                        pre_ $ toHtmlWithLinks $ T.strip story.info.description
-                        mapM_ (renderTask quill) story.tasks
+                        traverse_ pandocBlockToHtml story.description
 
         -- Render a epic
-        renderEpic :: AppID -> Map JiraID Bool -> Epic -> HtmlT STM ()
-        renderEpic quill expandedState epic = with div_ (addJID epic.mJira [class_ "pb-2 mb-2"]) do
-            forM_ epic.mJira renderJira
-            with span_ (addScroll quill epic.mJira []) do
-                with h1_ [class_ "font-semibold"] do
-                    forM_ epic.mJira (expandButton expandedState)
-                    toHtml $ T.strip epic.info.summary
-                when (isExpanded expandedState epic.mJira) do
-                    with div_ [class_ "ml-4"] do
-                        pre_ $ toHtmlWithLinks $ T.strip epic.info.description
-                        mapM_ (renderStory quill expandedState) epic.stories
+        renderEpic :: CTime -> AppID -> Map JiraID Bool -> Epic -> HtmlT STM ()
+        renderEpic now quill expandedState epic = with div_ (addJID epic.mJira [class_ "pb-2 mb-2"]) do
+            with div_ (addScroll quill epic.mJira [class_ "flex font-semibold"]) do
+                forM_ epic.mJira (expandButton expandedState)
+                with span_ [class_ "flex-grow line-clamp-1"] do
+                    toHtml $ T.strip epic.title
+                forM_ epic.mJira renderJira
+            when (isExpanded expandedState epic.mJira) do
+                with div_ [class_ "ml-4"] do
+                    traverse_ pandocBlockToHtml epic.description
+                    mapM_ (renderStory now quill expandedState)
+                        . sortOn snd -- Put the stories with the lowest completion at the top
+                        . map (\story -> (story, storyCompletion story))
+                        . sortOn (\story -> story.updated) -- Put the oldest stories at the top
+                        $ epic.stories
 
         section (name :: HtmlT STM ()) xs =
             with h1_ [class_ "font-bold bg-slate-300 flex mt-4"] do
                 with span_ [class_ "w-6 mr-2 block text-right"] $ toHtml (showT $ length xs)
                 name
 
-        renderTaskLists :: AppID -> [(Story, Task)] -> HtmlT STM ()
-        renderTaskLists quill tasks = with div_ [wid_ ctx.wid "tasks"] do
-            let isInprogress = \case
-                    InProgress "." -> False
-                    InProgress _ -> True
-                    _ -> False
-            let queued = filter (\(_, t) -> isInprogress t.status) tasks
+        renderTaskLists :: CTime -> AppID -> [(Story, Task)] -> HtmlT STM ()
+        renderTaskLists now quill tasks = with div_ [wid_ ctx.wid "tasks"] do
+            let oldestFirst = sortOn (\(s, _) -> s.updated)
+            let queued = filter (\(_, t) -> t.status == Open && any (/= "n") t.assigned) tasks
             unless (null queued) do
                 section "Queue" queued
-                forM_ queued \(story, task) -> do
-                    forM_ story.mJira renderJira
-                    when (isNothing story.mScore) do
-                        with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
-                    renderTask quill task
+                forM_ (oldestFirst queued) \(story, task) -> do
+                    renderTask now quill story task
 
-            let isNext = \case
-                    InProgress "." -> True
-                    _ -> False
-            let next = filter (\(_, t) -> isNext t.status) tasks
+            let next = filter (\(_, t) -> t.status == Open && t.assigned == ["n"]) tasks
             unless (null next) do
                 section "Next" next
-                forM_ next \(story, task) -> do
-                    forM_ story.mJira renderJira
-                    with div_ (addScroll quill story.mJira []) do
-                        "[.] "
-                        toHtmlWithLinks $ T.strip task.info.summary
-
-            let completed = filter (\(_, t) -> t.status == Done) tasks
-            unless (null completed) do
-                section "Completed" completed
-                forM_ completed \(story, task) -> do
-                    forM_ story.mJira renderJira
-                    with div_ (addScroll quill story.mJira []) do
-                        "[x] "
-                        toHtmlWithLinks $ T.strip task.info.summary
-                        pre_ $ toHtmlWithLinks $ unwarpBody task.info.description
+                forM_ (oldestFirst next) \(story, task) -> do
+                    with div_ (addScroll quill story.mJira [class_ "flex"]) do
+                        renderTaskStatus task.status
+                        with span_ [class_ "flex-grow"] do
+                            toHtmlWithLinks $ T.strip task.title
+                        forM_ story.mJira renderJira
 
         renderStatus rev status = with div_ [wid_ ctx.wid "s"] do
             case status of
@@ -231,21 +264,27 @@ startMd2Jira ctx = do
                 _ -> do
                     with div_ [class_ "pb-6"] do
                         mapM_ (pre_ . toHtml) status
+            lift (readTVar vErrors) >>= \case
+                [] -> pure ()
+                errors -> do
+                    with span_ [class_ "text-red-600 font-bold"] "Push errors"
+                    with div_ [class_ "pb-6"] do
+                        mapM_ (pre_ . toHtml) errors
 
         -- Create the UI
-        mountUI = do
+        mountUI now = do
             with div_ [wid_ ctx.wid "w", class_ "my-1 mx-2"] do
                 state <- lift (readTVar vState)
                 quill <- maybe shellAppID (.wid) <$> lift (readTVar vNoterCtx)
                 renderStatus state.rev state.status
                 div_ do
-                    let tasks = getTasks state.epics
-                    renderTaskLists quill tasks
-                    section "BackLog" $ filter (\(_, t) -> t.status == Todo) tasks
+                    let tasks = getTasks state.document.epics
+                    renderTaskLists now quill tasks
+                    section "BackLog" $ filter (\(_, t) -> t.status == Open) tasks
                     expandedState <- lift (readTVar vExpandedState)
-                    mapM_ (renderEpic quill expandedState) state.epics
+                    mapM_ (renderEpic now quill expandedState) state.document.epics
 
-        expandJID quill jid issue = do
+        expandJID now quill jid issue = do
             expandedState <- atomically do
                 m <- readTVar vExpandedState
                 let newState
@@ -255,8 +294,8 @@ startMd2Jira ctx = do
                 writeTVar vExpandedState newM
                 pure newM
             sendsHtml ctx.shared.clients $ case issue of
-                Left epic -> renderEpic quill expandedState epic
-                Right story -> renderStory quill expandedState story
+                Left epic -> renderEpic now quill expandedState epic
+                Right story -> renderStory now quill expandedState (story, storyCompletion story)
 
         withNoter cb =
             readTVarIO vNoterCtx >>= \case
@@ -269,7 +308,7 @@ startMd2Jira ctx = do
                 err -> logError "Can't sync because of error" ["err" .= err]
 
         updateNoter noterCtx state newEpics = do
-            case OT.updateDoc state.doc (printer newEpics) of
+            case OT.updateDoc state.doc (printer (state.document{epics = newEpics})) of
                 Nothing -> sendsHtml ctx.shared.clients $ renderStatus state.rev state.status
                 Just ops -> do
                     mvReply <- newEmptyTMVarIO
@@ -277,8 +316,10 @@ startMd2Jira ctx = do
                     writePipe noterCtx.pipe (AppSync (SyncEvent "update-doc" msg mvReply))
 
     forever do
-        atomically (readPipe ctx.pipe) >>= \case
-            AppDisplay (UserJoined client) -> atomically $ sendHtml client mountUI
+        aev <- atomically (readPipe ctx.pipe)
+        UnixTime now _ <- liftIO getUnixTime
+        case aev of
+            AppDisplay (UserJoined client) -> atomically $ sendHtml client $ mountUI now
             AppSync es -> case es.name of
                 -- Connecting to a noter instance
                 "start-repl" | Just (noterCtx, _) <- fromDynamic @(AppContext, [String]) es.message -> do
@@ -289,11 +330,15 @@ startMd2Jira ctx = do
                     -- parse and update the state
                     atomically do
                         prevState <- readTVar vState
-                        writeTVar vState $ case parse "jira.md" doc of
-                            Left err -> prevState{Butler.App.MD2Jira.status = [into err]}
-                            Right epics -> prevState{rev, doc, epics, status = []}
+                        let newState = case parse doc of
+                                Left err -> prevState{Butler.App.MD2Jira.status = [into err]}
+                                Right document -> prevState{rev, doc, document, status = []}
+                        writeTVar vState newState
+                        -- expand the epic by default
+                        let toggleEpic im epic = maybe im (\jid -> Map.insertWith (\_n p -> p) jid True im) epic.mJira
+                        modifyTVar' vExpandedState \im -> foldl' toggleEpic im newState.document.epics
                     -- update the UI
-                    sendsHtml ctx.shared.clients mountUI
+                    sendsHtml ctx.shared.clients $ mountUI now
                 _ -> logError "Bad sync" ["action" .= es.name]
             AppTrigger ev -> case ev.trigger of
                 "sync" ->
@@ -302,7 +347,7 @@ startMd2Jira ctx = do
                         case mSetting of
                             Nothing -> pure ()
                             Just setting -> do
-                                logInfo "Syncing epics" ["epics" .= show state.epics]
+                                logInfo "Syncing epics" ["epics" .= state.document.epics]
                                 sendsHtml ctx.shared.clients $ with div_ [wid_ ctx.wid "s"] do
                                     "Start syncing..."
                                 cache <- atomically $ readMemoryVar vCache
@@ -314,32 +359,40 @@ startMd2Jira ctx = do
                                                 with div_ [wid_ ctx.wid "s", hxSwapOob_ "beforeend"] do
                                                     pre_ do toHtml msg
 
-                                    eval logger setting.client setting.project state.epics cache
+                                    eval logger setting.client setting.project state.document cache
                                 when (newCache /= cache) do
                                     atomically $ modifyMemoryVar vCache (const newCache)
                                 unless (null errors) do
                                     -- TODO: send the errors to the client
                                     logError "md2jira eval errors!" ["errors" .= errors]
+                                atomically $ writeTVar vErrors errors
                                 -- Generate and send text operation to noter
-                                updateNoter noterCtx state newEpics
+                                updateNoter noterCtx state newEpics.epics
                 "toggle" | Just jid <- ev.body ^? key "jid" . _JSON -> withNoter \noterCtx -> withData \state ->
-                    case findIssue state.epics jid of
+                    case findIssue state.document.epics jid of
                         Nothing -> logError "unknown toggle" ["jid" .= jid]
-                        Just issue -> expandJID noterCtx.wid jid issue
+                        Just issue -> expandJID now noterCtx.wid jid issue
                 "poker-result" ->
                     case (ev.body ^? key "value" . _JSON, ev.body ^? key "story" . _JSON, ev.body ^? key "wid" . _JSON) of
                         (Just score, Just jid, Just wid) -> withNoter \noterCtx -> withData \state -> do
                             closeApp ctx.shared ev.client wid
                             forM_ mSetting \setting -> do
+                                sendsHtml ctx.shared.clients $
+                                    with div_ [wid_ ctx.wid "s"] do
+                                        pre_ $ "Submiting vote for " <> toHtml (into @Text jid) <> "..."
+
                                 setScore setting jid score >>= \case
-                                    True -> updateNoter noterCtx state $ updateScore score jid state.epics
-                                    False -> sendsHtml ctx.shared.clients $ with div_ [wid_ ctx.wid "s"] do
-                                        "Vote failed to sync on JIRA"
+                                    True -> updateNoter noterCtx state $ updateScore score jid state.document.epics
+                                    False -> do
+                                        let msg = "Vote failed to sync on JIRA " <> into @Text jid
+                                        sendsHtml ctx.shared.clients $ with div_ [wid_ ctx.wid "s"] do
+                                            toHtml msg
+                                        atomically $ modifyTVar' vErrors (msg :)
                         res -> logError "Unknown result" ["ev" .= ev, "res" .= res]
                 _ -> logError "Unknown ev" ["ev" .= ev]
             _ -> pure ()
 
-instance Serialise Task
-instance Serialise TaskStatus
 instance Serialise IssueData
 instance Serialise JiraID
+instance Serialise CacheEntry
+instance Serialise Transition
