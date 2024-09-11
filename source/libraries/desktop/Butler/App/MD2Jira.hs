@@ -9,7 +9,7 @@ import Butler.App.JiraClient (JiraSetting (..), getJiraSetting, setScore)
 import Butler.App.PokerPlanner (pokerPlannerApp)
 import Butler.Core (writePipe)
 import Control.OperationalTransformation.Server (Revision)
-import Data.List (foldl', sortOn)
+import Data.List (foldl', mapAccumL, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.UnixTime (UnixTime (..), getUnixTime)
@@ -58,8 +58,16 @@ getTasks :: [Epic] -> [(Story, Task)]
 getTasks = concatMap goEpic
   where
     goEpic epic = concatMap goStory epic.stories
-    goStory story = map (goTask story) story.tasks
-    goTask story task = (story, task)
+    goStory story = snd $ mapAccumL (goTask story) story.assigned story.tasks
+    goTask story defaultAssignment task =
+        let (storyAssigned, taskAssigned) = case (task.status, task.assigned) of
+                -- This task is not assigned, use the story assignment
+                (Open, []) -> ([], defaultAssignment)
+                -- This task is marked as next, drop the story assignment
+                (Open, ["n"]) -> ([], ["n"])
+                -- Otherwise, keep the task and story assignment
+                _ -> (defaultAssignment, task.assigned)
+         in (storyAssigned, (story, Task task.status task.title taskAssigned task.description))
 
 updateScore :: Float -> JiraID -> [Epic] -> [Epic]
 updateScore score jid = map goEpic
