@@ -483,7 +483,7 @@ function setupNoterClient(wid) {
   // Handle server events
   butlerDataHandlers[wid] = (buf) => {
     const msg = decodeJSON(buf)
-    console.log("Got event:", JSON.stringify(msg))
+    // console.log("Got event:", JSON.stringify(msg))
 
     if ('cid' in msg) {
       // cursor event
@@ -528,7 +528,7 @@ function setupNoterClient(wid) {
   };
 
   quill.on('text-change', (delta, oldDelta, source) => {
-    console.log("text-change", source, JSON.stringify(delta), "old:" + JSON.stringify(oldDelta))
+    // console.log("text-change", source, JSON.stringify(delta), "old:" + JSON.stringify(oldDelta))
     if (source === "user") {
       // Remove one byte because quill always include a trailing \n
       const length = quill.getLength() - 1
@@ -539,7 +539,7 @@ function setupNoterClient(wid) {
   })
 
   quill.on('selection-change', (range, oldRange, source) => {
-    console.log("selection-change", source, JSON.stringify(range), JSON.stringify(oldRange))
+    // console.log("selection-change", source, JSON.stringify(range), JSON.stringify(oldRange))
     // Here we should only do the update when the source === "user"
     if (source === "user" && range !== oldRange) {
       let msg = null
