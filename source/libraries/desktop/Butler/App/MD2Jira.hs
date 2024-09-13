@@ -355,7 +355,7 @@ startMd2Jira ctx = do
                         case mSetting of
                             Nothing -> pure ()
                             Just setting -> do
-                                logInfo "Syncing epics" ["epics" .= state.document.epics]
+                                logInfo "Syncing epics" ["epics" .= length state.document.epics]
                                 sendsHtml ctx.shared.clients $ with div_ [wid_ ctx.wid "s"] do
                                     "Start syncing..."
                                 cache <- atomically $ readMemoryVar vCache
