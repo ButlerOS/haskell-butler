@@ -16,6 +16,7 @@ import Butler.Auth.Invitation
 
 import Butler.App.Chat
 import Butler.App.Clock
+import Butler.App.Coder
 import Butler.App.Desktop
 import Butler.App.FileManager
 import Butler.App.FileViewer
@@ -194,6 +195,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             , fileManagerApp
             , fileViewerApp
             , launcherApp
+            , coderApp
             , noterApp
             , painterApp
             , pdfViewerApp
@@ -224,6 +226,7 @@ demoDesktop extraApps = withButlerSupervisor \butlerSupervisor -> do
             <> XStatic.xterm
             <> XStatic.pcmPlayer
             <> noterApp.xfiles
+            <> coderApp.xfiles
             <> pdfViewerApp.xfiles
     allXfiles = pdfViewerApp.extraXfiles <> noterApp.extraXfiles <> XStatic.noVNC <> XStatic.winbox <> xfiles
 
