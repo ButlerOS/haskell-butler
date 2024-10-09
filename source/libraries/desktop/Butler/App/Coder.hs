@@ -187,6 +187,7 @@ startNoterApp ctx = do
                     editorList
                 with div_ [id_ "toolbar", class_ "hidden"] do
                     pure ()
+                style_ ".cm-editor { height: 100% }\n"
                 with div_ [wid_ ctx.wid "editor", class_ ""] do
                     pure ()
                 script_ (noterClient ctx.wid)
@@ -362,7 +363,10 @@ function encodeDelta(d) {
     if (d.length == 1) {
       return d[0] * -1
     } else if (d.length >= 2) {
-      return d.slice(1).join("\n")
+      const ins = d.slice(1).join("\n")
+      if (d[0] == 0)
+        return ins
+      return [d[0] * -1, ...ins]
     } else {
       throw ("Unknown delta array:" + d)
     }
@@ -392,9 +396,7 @@ function setupNoterClient(wid) {
       if (update.docChanged) {
         update.transactions.forEach(tr => {
           if (tr.annotations.indexOf("remote") == -1) {
-            //console.log(JSON.stringify(tr.changes.toJSON()))
-            // console.log(JSON.stringify(tr.changes.toJSON().map(encodeDelta)))
-            const op = ot.TextOperation.fromJSON(tr.changes.toJSON().map(encodeDelta))
+            const op = ot.TextOperation.fromJSON(tr.changes.toJSON().flatMap(encodeDelta))
             client.applyClient(op)
           }
         })
@@ -453,30 +455,28 @@ function setupNoterClient(wid) {
     }
   };
 
-/*
-  // Provide global callback to enable scroll event from remote app
-  if (typeof globalQuills === "undefined") {
-    globalThis.globalQuills = {}
-  }
-  globalThis.scrollQuill = (wid, target) => {
-    console.log("scrolling", wid, target)
-    const localQuill = globalQuills[wid]
-    const text = localQuill.getText()
-    const index = text.indexOf(target)
-    if (index > -1) {
-      // Push scroll to the bottom first
-      localQuill.scrollRectIntoView(localQuill.getBounds(text.length - 2, 1))
-      localQuill.setSelection(index + target.length, 0, "api")
+  globalEditors[wid] = {
+    scroll: (target) => {
+      const goToLine = (count, iter) => {
+        if (!iter.done)
+          return iter.value.search(target) != -1 ?
+              count
+            : goToLine(count + 1, iter.next())
+      }
+      const pos = goToLine(0, editor.state.doc.iterLines())
+      const line = editor.state.doc.line(pos)
+      editor.dispatch({
+        selection: { head: line.from, anchor: line.from },
+        effects: CodeMirror.EditorView.scrollIntoView(line.from, {
+          y: "start",
+          yMargin: 40,
+        })
+      })
     }
   }
-j
-  // Store the local quill
-  globalQuills[wid] = quill;
   onElementRemoved(document.getElementById(withWID(wid, "w")), () => {
-    console.log("Quill removed", wid)
-    delete globalQuills[wid]
+    delete globalEditors[wid]
   })
-  */
 }
 |]
         <> ("\nsetupNoterClient(" <> showT wid <> ");")

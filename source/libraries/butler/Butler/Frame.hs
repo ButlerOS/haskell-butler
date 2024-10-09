@@ -189,4 +189,12 @@ globalThis.onElementRemoved = (element, callback) => {
     }
   }).observe(element.parentElement, {childList: true})
 }
+
+// Enable cross app scroll event
+globalThis.globalEditors = {}
+globalThis.scrollEditor = (wid, target) => {
+  console.log("scrolling", wid, target)
+  const editor = globalEditors[wid]
+  editor.scroll(target)
+}
 |]
