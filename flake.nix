@@ -15,6 +15,15 @@
       haskellExtend = hpFinal: hpPrev: {
         butler = hpPrev.callCabal2nix "butler" self { };
         butler-desktop = hpPrev.callCabal2nix "butler-desktop" self { };
+        xstatic-codemirror = let
+          src = pkgs.fetchFromGitHub {
+            owner = "TristanCacqueray";
+            repo = "haskell-xstatic";
+            rev = "8a22d305fcfb439210562be3fe1e533c928ce20a";
+            sha256 = "sha256-Chzc6hhFOD2EimcVgAqN9uhxpsJRUVMic/6jr9kLtCg=";
+          };
+        in hpPrev.callCabal2nix "xstatic-codemirror" "${src}/xstatic-codemirror"
+        { };
         ebml = hpPrev.callCabal2nix "ebml" (pkgs.fetchFromGitHub {
           owner = "TristanCacqueray";
           repo = "haskell-ebml";

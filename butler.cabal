@@ -183,6 +183,7 @@ library butler-desktop
     Butler.App.Chat
     Butler.App.Chess
     Butler.App.Clock
+    Butler.App.Coder
     Butler.App.Desktop
     Butler.App.FileManager
     Butler.App.FileViewer
@@ -257,6 +258,7 @@ library butler-desktop
     unix-time,
     unliftio,
     uuid,
+    xstatic-codemirror,
     xstatic-hyperscript,
     xstatic-novnc,
     xstatic-otjs,
