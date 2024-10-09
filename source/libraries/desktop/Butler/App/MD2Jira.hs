@@ -139,7 +139,7 @@ startMd2Jira ctx = do
 
     let
         scroll :: AppID -> Text -> Text
-        scroll quill target = "event.stopPropagation(); scrollQuill(" <> showT quill <> ", \"" <> target <> "\")"
+        scroll quill target = "event.stopPropagation(); scrollEditor(" <> showT quill <> ", \"" <> target <> "\")"
 
         isExpanded :: Map JiraID Bool -> Maybe JiraID -> Bool
         isExpanded _ Nothing = False

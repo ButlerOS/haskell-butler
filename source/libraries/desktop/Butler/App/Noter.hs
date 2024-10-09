@@ -550,27 +550,21 @@ function setupNoterClient(wid) {
     }
   })
 
-  // Provide global callback to enable scroll event from remote app
-  if (typeof globalQuills === "undefined") {
-    globalThis.globalQuills = {}
-  }
-  globalThis.scrollQuill = (wid, target) => {
-    console.log("scrolling", wid, target)
-    const localQuill = globalQuills[wid]
-    const text = localQuill.getText()
-    const index = text.indexOf(target)
-    if (index > -1) {
-      // Push scroll to the bottom first
-      localQuill.scrollRectIntoView(localQuill.getBounds(text.length - 2, 1))
-      localQuill.setSelection(index + target.length, 0, "api")
+
+  globalEditors[wid] = {
+    scroll: (target) => {
+      const text = quill.getText()
+      const index = text.indexOf(target)
+      if (index > -1) {
+        // Push scroll to the bottom first
+        quill.scrollRectIntoView(quill.getBounds(text.length - 2, 1))
+        quill.setSelection(index + target.length, 0, "api")
+      }
     }
   }
-
-  // Store the local quill
-  globalQuills[wid] = quill;
   onElementRemoved(document.getElementById(withWID(wid, "w")), () => {
     console.log("Quill removed", wid)
-    delete globalQuills[wid]
+    delete globalEditors[wid]
   })
 }
 |]
