@@ -54,8 +54,13 @@ pandocBlockToHtml = \case
         P.Str s -> toHtmlWithLinks s
         x -> toHtml $ P.stringify x
 
-getTasks :: [Epic] -> [(Story, Task)]
-getTasks = concatMap goEpic
+getStories :: [Epic] -> [Story]
+getStories = concatMap goEpic
+  where
+    goEpic epic = epic.stories
+
+_getTasks :: [Epic] -> [(Story, Task)]
+_getTasks = concatMap goEpic
   where
     goEpic epic = concatMap goStory epic.stories
     goStory story = snd $ mapAccumL (goTask story) story.assigned story.tasks
@@ -112,7 +117,7 @@ renderAge withWarning (CTime now) (CTime updated)
     days = toInteger (now - updated) `div` (3600 * 24)
 
 renderVoteWarning :: HtmlT STM ()
-renderVoteWarning = with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points!"] "⚠"
+renderVoteWarning = with span_ [class_ "font-bold float-right text-red-600", title_ "Story has no points or JID!"] "⚠"
 
 storyCompletion :: Story -> Word
 storyCompletion story = percent
@@ -181,8 +186,16 @@ startMd2Jira ctx = do
              in with a_ (addLink [class_ "cursor-pointer"]) (toHtml $ into @Text jiraID)
 
         -- Render task
+        renderStoryTask :: CTime -> AppID -> Story -> [Task] -> HtmlT STM ()
+        renderStoryTask now quill story tasks = do
+            with div_ (addJID story.mJira (addScroll quill story.mJira [class_ "bg-slate-200"])) do
+                with div_ [class_ "flex"] do
+                    with span_ [class_ "flex-grow line-clamp-1"] do
+                        toHtml $ T.strip story.title
+            traverse_ (renderTask now quill story) tasks
+
         renderTask :: CTime -> AppID -> Story -> Task -> HtmlT STM ()
-        renderTask now quill story task = with div_ [class_ "mb-2 bg-slate-150 flex", onclick_ (scroll quill task.title)] do
+        renderTask now quill story task = with div_ [class_ "mb-1 bg-slate-150 flex", onclick_ (scroll quill task.title)] do
             div_ do
                 renderTaskStatus task.status
             with div_ [class_ "flex-grow"] do
@@ -194,7 +207,9 @@ startMd2Jira ctx = do
                     with span_ [class_ "flex-grow line-clamp-1"] do
                         toHtmlWithLinks $ T.strip task.title
                     forM_ story.updated (renderAge True now)
-                    when (isNothing story.mScore) renderVoteWarning
+                    when (isNothing story.mScore) $ case story.mJira of
+                        Nothing -> renderVoteWarning
+                        Just jid -> voteButton jid
                     forM_ story.mJira renderJira
                 traverse_ pandocBlockToHtml task.description
 
@@ -242,24 +257,22 @@ startMd2Jira ctx = do
                 with span_ [class_ "w-6 mr-2 block text-right"] $ toHtml (showT $ length xs)
                 name
 
-        renderTaskLists :: CTime -> AppID -> [(Story, Task)] -> HtmlT STM ()
-        renderTaskLists now quill tasks = with div_ [wid_ ctx.wid "tasks"] do
-            let oldestFirst = sortOn (\(s, _) -> s.updated)
-            let queued = filter (\(_, t) -> t.status == Open && any (/= "n") t.assigned) tasks
+        isQueued t = t.status == Open && any (/= "n") t.assigned
+        isNext t = t.status == Open && t.assigned == ["n"]
+
+        renderTaskLists :: CTime -> AppID -> [Story] -> HtmlT STM ()
+        renderTaskLists now quill stories = with div_ [wid_ ctx.wid "tasks"] do
+            let oldestFirst = sortOn (\s -> s.updated)
+            let queued = filter (\story -> any isQueued story.tasks) stories
             unless (null queued) do
                 section "Queue" queued
-                forM_ (oldestFirst queued) \(story, task) -> do
-                    renderTask now quill story task
-
-            let next = filter (\(_, t) -> t.status == Open && t.assigned == ["n"]) tasks
+                forM_ (oldestFirst queued) \story -> do
+                    renderStoryTask now quill story (filter isQueued story.tasks)
+            let next = filter (\story -> any isNext story.tasks) stories
             unless (null next) do
                 section "Next" next
-                forM_ (oldestFirst next) \(story, task) -> do
-                    with div_ (addScroll quill story.mJira [class_ "flex"]) do
-                        renderTaskStatus task.status
-                        with span_ [class_ "flex-grow"] do
-                            toHtmlWithLinks $ T.strip task.title
-                        forM_ story.mJira renderJira
+                forM_ (oldestFirst next) \story -> do
+                    renderStoryTask now quill story (filter isNext story.tasks)
 
         renderStatus rev status = with div_ [wid_ ctx.wid "s"] do
             case status of
@@ -286,9 +299,9 @@ startMd2Jira ctx = do
                 quill <- maybe shellAppID (.wid) <$> lift (readTVar vNoterCtx)
                 renderStatus state.rev state.status
                 div_ do
-                    let tasks = getTasks state.document.epics
-                    renderTaskLists now quill tasks
-                    section "BackLog" $ filter (\(_, t) -> t.status == Open) tasks
+                    let stories = getStories state.document.epics
+                    renderTaskLists now quill stories
+                    section "BackLog" $ filter (\story -> any (\t -> t.status == Open) story.tasks) stories
                     expandedState <- lift (readTVar vExpandedState)
                     mapM_ (renderEpic now quill expandedState) state.document.epics
 
