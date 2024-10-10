@@ -484,7 +484,7 @@ function setupNoterClient(wid) {
     scroll: (target) => {
       const goToLine = (count, iter) => {
         if (!iter.done)
-          return iter.value.search(target) != -1 ?
+          return iter.value.indexOf(target) != -1 ?
               count
             : goToLine(count + 1, iter.next())
       }
