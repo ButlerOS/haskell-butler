@@ -386,6 +386,30 @@ function decodeDelta(d) {
   }
 }
 
+function foldAllHeadings(body) {
+  const foldRanges = [];
+  const addFoldRange = (from, to) => {
+    if (from !== null && from < to) foldRanges.push({from, to})
+  }
+  let pos = 0;
+  let begin = null;
+  let epicBegin = null;
+  body.split('\n').forEach(l => {
+    if (l.startsWith("## ")) {
+      addFoldRange(begin, pos - 1)
+      begin = pos + l.length
+    } else if (l.startsWith("# ")) {
+      addFoldRange(begin, pos - 2)
+      begin = null
+    }
+    pos += l.length + 1
+  })
+  addFoldRange(begin, pos - 1)
+  return {
+    effects: foldRanges.map(range => CodeMirror.foldEffect.of({ from: range.from, to: range.to }))
+  };
+}
+
 function setupNoterClient(wid) {
   const elt = document.getElementById(withWID(wid, "editor"))
 
@@ -441,6 +465,7 @@ function setupNoterClient(wid) {
           to: editor.state.doc.length,
           insert: msg.body
         }, annotations: ["remote"]})
+        editor.dispatch(foldAllHeadings(msg.body))
       } else {
         // Rev without body is an acknowledge request
         client.serverAck()
