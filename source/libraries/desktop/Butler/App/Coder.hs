@@ -188,7 +188,7 @@ startNoterApp ctx = do
                 with div_ [id_ "toolbar", class_ "hidden"] do
                     pure ()
                 style_ ".cm-editor { height: 100% }\n"
-                with div_ [wid_ ctx.wid "editor", class_ ""] do
+                with div_ [wid_ ctx.wid "editor", class_ "overflow-auto"] do
                     pure ()
                 script_ (noterClient ctx.wid)
 
