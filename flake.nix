@@ -19,8 +19,8 @@
           src = pkgs.fetchFromGitHub {
             owner = "TristanCacqueray";
             repo = "haskell-xstatic";
-            rev = "8a22d305fcfb439210562be3fe1e533c928ce20a";
-            sha256 = "sha256-Chzc6hhFOD2EimcVgAqN9uhxpsJRUVMic/6jr9kLtCg=";
+            rev = "d66976c03ace001952a17d67846e8b1bc22b84ab";
+            sha256 = "sha256-9PBFr2sIcFg/VG93IfnfIak3fl0af0xDhtZvneCEqsk=";
           };
         in hpPrev.callCabal2nix "xstatic-codemirror" "${src}/xstatic-codemirror"
         { };
