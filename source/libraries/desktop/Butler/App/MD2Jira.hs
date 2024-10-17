@@ -9,7 +9,7 @@ import Butler.App.JiraClient (JiraSetting (..), getJiraSetting, setScore)
 import Butler.App.PokerPlanner (pokerPlannerApp)
 import Butler.Core (writePipe)
 import Control.OperationalTransformation.Server (Revision)
-import Data.List (foldl', mapAccumL, sortOn)
+import Data.List (foldl', mapAccumL, sortBy, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.UnixTime (UnixTime (..), getUnixTime)
@@ -188,14 +188,21 @@ startMd2Jira ctx = do
         -- Render task
         renderStoryTask :: CTime -> AppID -> Story -> [Task] -> HtmlT STM ()
         renderStoryTask now quill story tasks = do
-            with div_ (addJID story.mJira (addScroll quill story.mJira [class_ "bg-slate-200"])) do
+            let color = case story.priority of
+                    Just High -> "bg-red-100"
+                    Just Low -> "bg-slate-100"
+                    _ -> "bg-slate-200"
+            with div_ (addJID story.mJira (addScroll quill story.mJira [class_ color])) do
                 with div_ [class_ "flex"] do
                     with span_ [class_ "flex-grow line-clamp-1"] do
                         toHtml $ T.strip story.title
-            traverse_ (renderTask now quill story) tasks
+                    forM_ story.updated (renderAge True now)
+                    when (isNothing story.mScore) $ maybe renderVoteWarning voteButton story.mJira
+                    forM_ story.mJira renderJira
+            traverse_ (renderTask quill) tasks
 
-        renderTask :: CTime -> AppID -> Story -> Task -> HtmlT STM ()
-        renderTask now quill story task = with div_ [class_ "mb-1 bg-slate-150 flex", onclick_ (scroll quill task.title)] do
+        renderTask :: AppID -> Task -> HtmlT STM ()
+        renderTask quill task = with div_ [class_ "mb-1 bg-slate-150 flex", onclick_ (scroll quill task.title)] do
             div_ do
                 renderTaskStatus task.status
             with div_ [class_ "flex-grow"] do
@@ -206,9 +213,6 @@ startMd2Jira ctx = do
                         "> "
                     with span_ [class_ "flex-grow line-clamp-1"] do
                         toHtmlWithLinks $ T.strip task.title
-                    forM_ story.updated (renderAge True now)
-                    when (isNothing story.mScore) $ maybe renderVoteWarning voteButton story.mJira
-                    forM_ story.mJira renderJira
                 traverse_ pandocBlockToHtml task.description
 
         -- Render a story
@@ -258,18 +262,21 @@ startMd2Jira ctx = do
         isQueued t = t.status == Open && any (/= "n") t.assigned
         isNext t = t.status == Open && t.assigned == ["n"]
 
+        getPrio story = fromMaybe Medium story.priority
+        highPrioThenOldest s1 s2 = compare (getPrio s2) (getPrio s1) <> compare s1.updated s2.updated
+
         renderTaskLists :: CTime -> AppID -> [Story] -> HtmlT STM ()
         renderTaskLists now quill stories = with div_ [wid_ ctx.wid "tasks"] do
-            let oldestFirst = sortOn (\s -> s.updated)
+            let sortStories = sortBy highPrioThenOldest
             let queued = filter (\story -> any isQueued story.tasks) stories
             unless (null queued) do
                 section "Queue" queued
-                forM_ (oldestFirst queued) \story -> do
+                forM_ (sortStories queued) \story -> do
                     renderStoryTask now quill story (filter isQueued story.tasks)
             let next = filter (\story -> any isNext story.tasks) stories
             unless (null next) do
                 section "Next" next
-                forM_ (oldestFirst next) \story -> do
+                forM_ (sortStories next) \story -> do
                     renderStoryTask now quill story (filter isNext story.tasks)
 
         renderStatus rev status = with div_ [wid_ ctx.wid "s"] do

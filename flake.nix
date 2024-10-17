@@ -2,7 +2,7 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     jira.url =
-      "github:ButlerOS/haskell-jira-client/17282e2986827de54ea2f61d75eb0f52fef5ff11";
+      "github:ButlerOS/haskell-jira-client/a8d6a1f8bdfbfccbab58827316dc430f10416fcf";
     jira.flake = false;
     hspkgs.url =
       "github:podenv/hspkgs/7a46854f28ab9b99c51353c81d5967f1f6fd9a9b";
