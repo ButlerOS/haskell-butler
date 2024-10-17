@@ -22,17 +22,17 @@
     "jira": {
       "flake": false,
       "locked": {
-        "lastModified": 1726061455,
-        "narHash": "sha256-BQ06dWE6mQGMUbSxsmYRcRwK2JCp1kZKakw4h+aw4ng=",
+        "lastModified": 1729193511,
+        "narHash": "sha256-N3zQpNx65KvFVENbu6kBjJarq6uL1pFxmCA8f6NhP4c=",
         "owner": "ButlerOS",
         "repo": "haskell-jira-client",
-        "rev": "17282e2986827de54ea2f61d75eb0f52fef5ff11",
+        "rev": "a8d6a1f8bdfbfccbab58827316dc430f10416fcf",
         "type": "github"
       },
       "original": {
         "owner": "ButlerOS",
         "repo": "haskell-jira-client",
-        "rev": "17282e2986827de54ea2f61d75eb0f52fef5ff11",
+        "rev": "a8d6a1f8bdfbfccbab58827316dc430f10416fcf",
         "type": "github"
       }
     },
