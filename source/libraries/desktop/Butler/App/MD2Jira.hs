@@ -207,9 +207,7 @@ startMd2Jira ctx = do
                     with span_ [class_ "flex-grow line-clamp-1"] do
                         toHtmlWithLinks $ T.strip task.title
                     forM_ story.updated (renderAge True now)
-                    when (isNothing story.mScore) $ case story.mJira of
-                        Nothing -> renderVoteWarning
-                        Just jid -> voteButton jid
+                    when (isNothing story.mScore) $ maybe renderVoteWarning voteButton story.mJira
                     forM_ story.mJira renderJira
                 traverse_ pandocBlockToHtml task.description
 
