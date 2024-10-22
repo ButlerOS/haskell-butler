@@ -97,15 +97,15 @@ startNoterApp ctx = do
 
     -- Return the current file name extension
     let editingExt state = case state.status of
-            NewFile -> mempty
-            EditingFile _ file -> BS.takeWhileEnd (/= 46) file.name
+            NewFile -> (Nothing, mempty)
+            EditingFile dir file -> (Just (dir, file), BS.takeWhileEnd (/= 46) file.name)
 
     -- Handle the connection to a REPL
     (tmREPLApp :: TVar (Maybe AppInstance)) <- newTVarIO Nothing
     (tmREPLBaton :: MVar ()) <- newEmptyMVar
     let initREPL :: AppInstance -> ProcessIO ()
         initREPL appInstance = do
-            ext <- editingExt <$> readTVarIO tState
+            (fp, ext) <- editingExt <$> readTVarIO tState
             let
                 commandArgs :: [String]
                 commandArgs
@@ -115,7 +115,7 @@ startNoterApp ctx = do
                     | otherwise = ["node"]
 
             logInfo "Initializing REPL" ["ext" .= decodeUtf8 ext, "cmd" .= commandArgs]
-            appCall appInstance "start-repl" (ctx, commandArgs) >>= \case
+            appCall appInstance "start-repl" (fp, ctx, commandArgs) >>= \case
                 Just () -> do
                     atomically $ writeTVar tmREPLApp (Just appInstance)
                     doUpdateREPL
@@ -170,7 +170,7 @@ startNoterApp ctx = do
 
     let mountUI = do
             state <- lift (readTVar tState)
-            let extension = editingExt state
+            let (_, extension) = editingExt state
             renderTaskBar ctx.wid mempty $
                 let title = case state.status of
                         NewFile -> showT ctx.wid

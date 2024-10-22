@@ -12,7 +12,7 @@ import Control.OperationalTransformation.Server (Revision)
 import Data.List (foldl', mapAccumL, sortBy, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Data.UnixTime (UnixTime (..), getUnixTime)
+import Data.UnixTime (UnixTime (..), formatUnixTimeGMT, getUnixTime)
 import Jira (IssueData (..), JiraID, Transition, jiraUrl)
 import MD2Jira
 import OT qualified
@@ -96,6 +96,12 @@ findIssue epics jid = goEpics epics
         | Just sjid <- story.mJira, sjid == jid = Just story
         | otherwise = goStories rest
 
+filterIssue :: JiraID -> [Epic] -> [Epic]
+filterIssue jid = map filterStory . filter (\e -> e.mJira /= Just jid)
+  where
+    filterStory :: Epic -> Epic
+    filterStory epic = epic{stories = filter (\s -> s.mJira /= Just jid) epic.stories}
+
 -- | Render text by replacing urls with <a> links
 toHtmlWithLinks :: Text -> HtmlT STM ()
 toHtmlWithLinks txt = case T.breakOn "https://" txt of
@@ -138,6 +144,7 @@ startMd2Jira ctx = do
 
     -- Keep track of the Noter app to send update
     vNoterCtx <- newTVarIO Nothing
+    vNoterFile <- newTVarIO Nothing
 
     -- TODO: handle client reload when setting changes...
     mSetting <- getJiraSetting ctx.shared
@@ -171,6 +178,10 @@ startMd2Jira ctx = do
         voteButton jid = with button_ [class_ (btnBlueClass <> " flex items-center w-12 h-6"), onclick_ startPokerScript] "vote"
           where
             startPokerScript = startAppScript pokerPlannerApp ["argv" .= object ["requestor" .= ctx.wid, "story" .= jid]]
+
+        archiveButton :: JiraID -> HtmlT STM ()
+        archiveButton jid =
+            withTrigger "click" ctx.wid "archive" ["jid" .= jid] button_ [class_ (btnGreenClass <> " flex items-center h-6")] "archive"
 
         renderTaskStatus :: TaskStatus -> HtmlT STM ()
         renderTaskStatus status = with i_ [class_ "mr-1"] do
@@ -218,10 +229,10 @@ startMd2Jira ctx = do
         -- Render a story
         renderStory :: CTime -> AppID -> Map JiraID Bool -> (Story, Word) -> HtmlT STM ()
         renderStory now quill expandedState (story, percent) =
-            with div_ (addJID story.mJira (addScroll quill story.mJira [class_ "mb-2 bg-slate-200"])) do
+            with div_ (addJID story.mJira [class_ "mb-2 bg-slate-200"]) do
                 with div_ [class_ "flex"] do
                     forM_ story.mJira (expandButton expandedState)
-                    with span_ [class_ "flex-grow line-clamp-1"] do
+                    with span_ (addScroll quill story.mJira [class_ "flex-grow line-clamp-1"]) do
                         toHtml $ T.strip story.title
                     when (percent > 0) do
                         with span_ [class_ "font-bold mr-2", title_ "completion"] do
@@ -230,8 +241,9 @@ startMd2Jira ctx = do
                     forM_ story.mScore \score ->
                         with span_ [class_ "text-xs flex items-center mr-1", title_ "story points"] do toHtml $ showScore score
                     forM_ story.mJira renderJira
-                    when (isNothing story.mScore) do
-                        forM_ story.mJira voteButton
+                    if isNothing story.mScore
+                        then forM_ story.mJira voteButton
+                        else when (percent == 100) $ forM_ story.mJira archiveButton
 
                 when (isExpanded expandedState story.mJira) do
                     with div_ [class_ "ml-4"] do
@@ -323,6 +335,27 @@ startMd2Jira ctx = do
                 Left epic -> renderEpic now quill expandedState epic
                 Right story -> renderStory now quill expandedState (story, storyCompletion story)
 
+        archiveJID now noterCtx state jid dir file = do
+            case findIssue state.document.epics jid of
+                Nothing -> logError "Couldn't find issue" ["jid" .= jid]
+                Just (Left _epic) -> logError "Epic archive is not implemented" ["jid" .= jid]
+                Just (Right story) -> do
+                    let ts = decodeUtf8 $ formatUnixTimeGMT "%Y-%m-%d" (UnixTime now 0)
+                    let archiveTxt = encodeUtf8 $ "\n\n" <> printer (Document [] [Epic Nothing ("Archived on " <> ts) [] [story]])
+                    let archiveFileName = "archive_" <> into @FileName file.name
+                    let doUpdate = updateNoter noterCtx state $ filterIssue jid state.document.epics
+                    lookupChild dir archiveFileName >>= \case
+                        Nothing -> do
+                            logInfo "Creating archive" ["fp" .= archiveFileName, "jid" .= jid]
+                            void $ createFile dir archiveFileName ("This file contains the archived stories\n" <> archiveTxt)
+                            doUpdate
+                        Just (File f) -> do
+                            logInfo "Appending to archive" ["fp" .= archiveFileName, "jid" .= jid]
+                            appendFileBS dir f archiveTxt
+                            doUpdate
+                        Just (Directory adir) ->
+                            logError "Archive file is a directory!" ["dir" .= adir]
+
         withNoter cb =
             readTVarIO vNoterCtx >>= \case
                 Nothing -> logError "No Noter Application for syncing..." []
@@ -348,8 +381,10 @@ startMd2Jira ctx = do
             AppDisplay (UserJoined client) -> atomically $ sendHtml client $ mountUI now
             AppSync es -> case es.name of
                 -- Connecting to a noter instance
-                "start-repl" | Just (noterCtx, _) <- fromDynamic @(AppContext, [String]) es.message -> do
-                    atomically $ writeTVar vNoterCtx (Just noterCtx)
+                "start-repl" | Just (noterCtx, mFile, _) <- fromDynamic @(AppContext, Maybe (Directory, File), [String]) es.message -> do
+                    atomically do
+                        writeTVar vNoterCtx (Just noterCtx)
+                        writeTVar vNoterFile mFile
                     atomically (putTMVar es.reply (toDyn ()))
                 -- The markdown was updated
                 "new-doc" | Just (rev, doc) <- fromDynamic @(Revision, Text) es.message -> do
@@ -398,6 +433,10 @@ startMd2Jira ctx = do
                     case findIssue state.document.epics jid of
                         Nothing -> logError "unknown toggle" ["jid" .= jid]
                         Just issue -> expandJID now noterCtx.wid jid issue
+                "archive" | Just jid <- ev.body ^? key "jid" . _JSON -> withNoter \noterCtx -> withData \state ->
+                    readTVarIO vNoterFile >>= \case
+                        Nothing -> logError "unknown noter file" []
+                        Just (dir, file) -> archiveJID now noterCtx state jid dir file
                 "poker-result" ->
                     case (ev.body ^? key "value" . _JSON, ev.body ^? key "story" . _JSON, ev.body ^? key "wid" . _JSON) of
                         (Just score, Just jid, Just wid) -> withNoter \noterCtx -> withData \state -> do
