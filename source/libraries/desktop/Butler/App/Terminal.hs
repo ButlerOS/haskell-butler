@@ -113,7 +113,7 @@ startTermApp isolation mMkApp ctx = do
             AppDisplay _ -> sendHtmlOnConnect draw ev
             AppData de -> atomically $ writeTChan server.inputChan (from de.buffer)
             AppSync es -> case es.name of
-                "start-repl" | Just (_, args) <- fromDynamic @(AppContext, [String]) es.message -> do
+                "start-repl" | Just (_, _, args) <- fromDynamic @(AppContext, Maybe (Directory, File), [String]) es.message -> do
                     -- Purge existing app definition
                     void $ tryTakeMVar vApp
                     let

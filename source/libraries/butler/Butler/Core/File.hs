@@ -20,6 +20,7 @@ module Butler.Core.File (
     createFile,
     readFileBS,
     writeFileBS,
+    appendFileBS,
     deleteFile,
 
     -- * Rename/Move API
@@ -155,6 +156,12 @@ writeFileBS dir file buf = do
     ensureDirectory dir
     liftIO $ BS.writeFile (getFilePath dir file) buf
     atomically $ writeTVar file.size (bufLength buf)
+
+appendFileBS :: MonadIO m => Directory -> File -> ByteString -> m ()
+appendFileBS dir file buf = do
+    ensureDirectory dir
+    liftIO $ BS.appendFile (getFilePath dir file) buf
+    atomically $ modifyTVar' file.size (+ bufLength buf)
 
 deleteFile :: MonadIO m => Directory -> File -> m ()
 deleteFile dir file = do
